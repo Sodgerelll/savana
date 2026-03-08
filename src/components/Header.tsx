@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ShoppingBag, Search, User, Menu, X, ChevronDown } from "lucide-react";
+import { ShoppingBag, Search, User, Menu, X } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import "./Header.css";
@@ -15,8 +15,6 @@ export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [announcementVisible, setAnnouncementVisible] = useState(true);
-  const [shopDropdownOpen, setShopDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const announcements = [t.announcement1, t.announcement2, t.announcement3];
 
@@ -37,16 +35,6 @@ export default function Header() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShopDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const shopLinks = [
     { label: t.allNaturalSoap, to: "/collections/soap" },
     { label: t.skinCare, to: "/collections/skin-care" },
@@ -58,166 +46,140 @@ export default function Header() {
 
   return (
     <>
-      {/* Announcement Bar */}
-      <div className="announcement-bar">
-        <span
-          className={`announcement-text ${announcementVisible ? "visible" : "hidden"}`}
-        >
-          {announcements[announcementIndex]}
-        </span>
-      </div>
+      {/* ── STICKY HEADER BLOCK (announcement + header together) ── */}
+      <div className={`site-header-wrap${scrolled ? " scrolled" : ""}`}>
 
-      {/* Header */}
-      <header className={`header ${scrolled ? "scrolled" : ""}`}>
-        {/* Top row: logo centered, icons right */}
-        <div className="header-top container">
-          {/* Left side: mobile hamburger + language toggle */}
-          <div className="header-left">
-            <button
-              className="header-icon mobile-menu-toggle"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Menu"
-            >
-              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-            <button
-              className="lang-toggle"
-              onClick={() => setLanguage(language === "EN" ? "MN" : "EN")}
-              aria-label="Toggle language"
-            >
-              <span className={language === "EN" ? "lang-active" : ""}>EN</span>
-              <span className="lang-sep">|</span>
-              <span className={language === "MN" ? "lang-active" : ""}>MN</span>
-            </button>
-          </div>
-
-          {/* Center: Logo */}
-          <Link to="/" className="logo">
-            <span className="logo-text">Prairie Soap Shack</span>
-          </Link>
-
-          {/* Right: Icons */}
-          <div className="header-actions">
-            <button
-              className="header-icon"
-              onClick={() => setSearchOpen(!searchOpen)}
-              aria-label="Search"
-            >
-              <Search size={18} />
-            </button>
-            <Link to="/account" className="header-icon" aria-label="Account">
-              <User size={18} />
-            </Link>
-            <button
-              className="header-icon cart-btn"
-              onClick={() => setIsCartOpen(true)}
-              aria-label="Cart"
-            >
-              <ShoppingBag size={18} />
-              {totalItems > 0 && <span className="cart-count">{totalItems}</span>}
-            </button>
-          </div>
+        {/* Announcement bar */}
+        <div className="announcement-bar">
+          <span className={`announcement-text${announcementVisible ? " visible" : " hidden"}`}>
+            {announcements[announcementIndex]}
+          </span>
         </div>
 
-        {/* Nav row */}
-        <nav className="main-nav-bar">
-          <div className="main-nav container">
-            {/* Shop dropdown */}
-            <div className="nav-item dropdown-parent" ref={dropdownRef}>
+        {/* Header */}
+        <div className="header-inner">
+
+          {/* Row 1: left controls | logo | right icons */}
+          <div className="header-row header-row-top container">
+
+            <div className="h-left">
               <button
-                className="nav-link dropdown-trigger"
-                onClick={() => setShopDropdownOpen(!shopDropdownOpen)}
-                aria-expanded={shopDropdownOpen}
+                className="icon-btn mobile-toggle"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open menu"
               >
-                {t.shop} <ChevronDown size={12} className={`chevron ${shopDropdownOpen ? "open" : ""}`} />
+                <Menu size={22} />
               </button>
-              {shopDropdownOpen && (
-                <div className="dropdown-menu">
-                  {shopLinks.map((link) => (
-                    <Link
-                      key={link.to}
-                      to={link.to}
-                      className="dropdown-item"
-                      onClick={() => setShopDropdownOpen(false)}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
+              <button
+                className="lang-btn"
+                onClick={() => setLanguage(language === "EN" ? "MN" : "EN")}
+              >
+                <span className={language === "EN" ? "lang-on" : ""}>EN</span>
+                <span className="lang-div">|</span>
+                <span className={language === "MN" ? "lang-on" : ""}>MN</span>
+              </button>
             </div>
 
-            <Link to="/about" className="nav-link">{t.aboutUs}</Link>
-            <Link to="/find-us" className="nav-link">{t.findUs}</Link>
-            <Link to="/contact" className="nav-link">{t.contact}</Link>
-          </div>
-        </nav>
-      </header>
+            <Link to="/" className="site-logo">Prairie Soap Shack</Link>
 
-      {/* Search Overlay */}
+            <div className="h-right">
+              <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search">
+                <Search size={20} />
+              </button>
+              <Link to="/account" className="icon-btn" aria-label="Account">
+                <User size={20} />
+              </Link>
+              <button className="icon-btn cart-icon-btn" onClick={() => setIsCartOpen(true)} aria-label="Cart">
+                <ShoppingBag size={20} />
+                {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: navigation */}
+          <nav className="header-nav">
+            <div className="header-row container">
+
+              {/* Shop with pure-CSS dropdown */}
+              <div className="nav-has-dropdown">
+                <span className="nav-link nav-shop-trigger">
+                  {t.shop} <span className="nav-caret">▾</span>
+                </span>
+                <div className="nav-dropdown">
+                  <div className="nav-dropdown-inner">
+                    {shopLinks.map((lnk) => (
+                      <Link
+                        key={lnk.to}
+                        to={lnk.to}
+                        className="nav-dropdown-item"
+                      >
+                        {lnk.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <Link to="/about"   className="nav-link">{t.aboutUs}</Link>
+              <Link to="/find-us" className="nav-link">{t.findUs}</Link>
+              <Link to="/contact" className="nav-link">{t.contact}</Link>
+            </div>
+          </nav>
+
+        </div>
+      </div>
+
+      {/* ── SEARCH OVERLAY ── */}
       {searchOpen && (
-        <div className="search-overlay">
-          <div className="search-container container">
+        <div className="search-overlay" onClick={() => setSearchOpen(false)}>
+          <div className="search-inner container" onClick={(e) => e.stopPropagation()}>
             <input
+              autoFocus
               type="text"
               placeholder={t.searchPlaceholder}
-              className="search-input"
-              autoFocus
+              className="search-field"
             />
-            <button className="search-close" onClick={() => setSearchOpen(false)}>
+            <button className="icon-btn" onClick={() => setSearchOpen(false)}>
               <X size={20} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Mobile Nav */}
-      <div className={`mobile-nav ${mobileMenuOpen ? "open" : ""}`}>
-        <div className="mobile-nav-inner">
-          <div className="mobile-nav-section">
-            <p className="mobile-nav-label">{t.shop}</p>
-            {shopLinks.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className="mobile-nav-link"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-          <div className="mobile-nav-section">
-            <Link to="/about" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
-              {t.aboutUs}
+      {/* ── MOBILE DRAWER ── */}
+      {mobileMenuOpen && (
+        <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />
+      )}
+      <div className={`mobile-drawer${mobileMenuOpen ? " open" : ""}`}>
+        <div className="mobile-drawer-head">
+          <button className="icon-btn" onClick={() => setMobileMenuOpen(false)}>
+            <X size={22} />
+          </button>
+        </div>
+        <div className="mobile-drawer-body">
+          <p className="mobile-section-label">{t.shop}</p>
+          {shopLinks.map((lnk) => (
+            <Link key={lnk.to} to={lnk.to} className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
+              {lnk.label}
             </Link>
-            <Link to="/find-us" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
-              {t.findUs}
-            </Link>
-            <Link to="/contact" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
-              {t.contact}
-            </Link>
-          </div>
-          <div className="mobile-lang-toggle">
+          ))}
+          <div className="mobile-divider" />
+          <Link to="/about"   className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.aboutUs}</Link>
+          <Link to="/find-us" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.findUs}</Link>
+          <Link to="/contact" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.contact}</Link>
+          <div className="mobile-divider" />
+          <div className="mobile-lang">
             <button
-              className={`mobile-lang-btn ${language === "EN" ? "active" : ""}`}
+              className={`mobile-lang-btn${language === "EN" ? " active" : ""}`}
               onClick={() => { setLanguage("EN"); setMobileMenuOpen(false); }}
-            >
-              English
-            </button>
+            >English</button>
             <button
-              className={`mobile-lang-btn ${language === "MN" ? "active" : ""}`}
+              className={`mobile-lang-btn${language === "MN" ? " active" : ""}`}
               onClick={() => { setLanguage("MN"); setMobileMenuOpen(false); }}
-            >
-              Монгол
-            </button>
+            >Монгол</button>
           </div>
         </div>
       </div>
-
-      {mobileMenuOpen && (
-        <div className="mobile-overlay" onClick={() => setMobileMenuOpen(false)} />
-      )}
     </>
   );
 }

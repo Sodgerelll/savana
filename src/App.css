@@ -1,6 +1,12 @@
-/* The header is sticky and includes the announcement bar above it.
-   The announcement bar is NOT sticky (only the header below it is),
-   so main needs no extra top margin. */
+/* Fixed header height: 34px (announcement) + 72px (top row) + 40px (nav) = 146px */
 main {
-  min-height: calc(100vh - var(--header-height) - var(--announcement-height));
+  padding-top: 146px;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  /* Mobile: 34px (announcement) + 60px (top row) = 94px (no nav row) */
+  main {
+    padding-top: 94px;
+  }
 }
