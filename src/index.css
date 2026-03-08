@@ -1,14 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Petrona:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 
 :root {
-  --color-bg: #FAF9F6;
+  --color-bg: rgb(250, 249, 246);
   --color-bg-alt: #F2F0EB;
-  --color-text: #757261;
+  --color-text: rgb(117, 114, 97);
   --color-text-dark: #4A4737;
-  --color-heading: #3D3B2F;
-  --color-accent: #5A5103;
+  --color-heading: rgb(117, 114, 97);
+  --color-accent: rgb(90, 81, 3);
   --color-accent-hover: #6E6304;
-  --color-border: #B7B9A7;
+  --color-border: rgb(183, 185, 167);
   --color-border-light: #D8D9CD;
   --color-sale: #d72c0d;
   --color-white: #FFFFFF;
@@ -18,7 +18,8 @@
   --font-body: 'Petrona', serif;
 
   --max-width: 1400px;
-  --header-height: 80px;
+  --header-height: 56px;
+  --announcement-height: 36px;
 }
 
 *, *::before, *::after {
@@ -79,25 +80,14 @@ ul, ol {
   padding: 0 2rem;
 }
 
-.announcement-bar {
-  background-color: var(--color-accent);
-  color: var(--color-bg);
-  text-align: center;
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-family: var(--font-body);
-  font-weight: 500;
-}
-
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   padding: 0.875rem 2rem;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -128,6 +118,17 @@ ul, ol {
   color: var(--color-white);
 }
 
+.btn-outline-white {
+  background-color: transparent;
+  color: #fff;
+  border-color: #fff;
+}
+
+.btn-outline-white:hover {
+  background-color: #fff;
+  color: var(--color-accent);
+}
+
 .btn-light {
   background-color: var(--color-white);
   color: var(--color-heading);
@@ -140,6 +141,7 @@ ul, ol {
   border-color: var(--color-white);
 }
 
+/* Sections */
 .section {
   padding: 5rem 0;
 }
@@ -152,21 +154,70 @@ ul, ol {
 .section-header h2 {
   font-size: 2.5rem;
   margin-bottom: 1rem;
+  letter-spacing: 0.01em;
 }
 
 .section-header p {
-  font-size: 1.05rem;
+  font-size: 1rem;
   max-width: 600px;
   margin: 0 auto;
   color: var(--color-text);
 }
 
+/* Product grid */
 .product-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
 }
 
+/* Breadcrumb */
+.breadcrumb {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  letter-spacing: 0.05em;
+}
+
+.breadcrumb a {
+  color: var(--color-text);
+  transition: color 0.2s;
+}
+
+.breadcrumb a:hover {
+  color: var(--color-accent);
+}
+
+/* Keyframes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.7s ease forwards;
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+/* Responsive */
 @media (max-width: 1024px) {
   .product-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -196,19 +247,4 @@ ul, ol {
     grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
   }
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.fade-in {
-  animation: fadeInUp 0.6s ease forwards;
 }

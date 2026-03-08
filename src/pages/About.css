@@ -1,20 +1,26 @@
+.about-page {
+  min-height: 60vh;
+}
+
 .about-hero {
-  text-align: center;
-  padding: 4rem 2rem 3rem;
-  background-color: var(--color-bg-alt);
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  padding: 4.5rem 0 3.5rem;
 }
 
 .about-hero h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
+  color: rgb(60, 54, 10);
   margin-bottom: 0.75rem;
 }
 
 .about-hero p {
-  font-size: 1.1rem;
-  color: var(--color-text);
+  font-size: 1rem;
+  color: rgb(80, 72, 20);
+  opacity: 0.85;
 }
 
+/* Intro section */
 .about-intro-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -26,15 +32,17 @@
   overflow: hidden;
 }
 
-.about-intro-image img {
+.about-image-placeholder {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  aspect-ratio: 4/5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .about-intro-content h2 {
   font-family: var(--font-heading);
-  font-size: 2.5rem;
+  font-size: 2.25rem;
   margin-bottom: 1.5rem;
 }
 
@@ -42,8 +50,10 @@
   font-size: 0.95rem;
   line-height: 1.8;
   margin-bottom: 1.25rem;
+  color: var(--color-text);
 }
 
+/* Values */
 .about-values {
   background-color: var(--color-bg-alt);
 }
@@ -58,9 +68,11 @@
   text-align: center;
 }
 
-.about-value svg {
+.about-value-icon {
   color: var(--color-accent);
   margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
 }
 
 .about-value h3 {
@@ -72,14 +84,15 @@
 .about-value p {
   font-size: 0.9rem;
   line-height: 1.7;
+  color: var(--color-text);
 }
 
+/* Banner */
 .about-banner {
   position: relative;
-  height: 400px;
+  height: 380px;
   display: flex;
   align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 
@@ -88,42 +101,30 @@
   inset: 0;
 }
 
-.about-banner-bg img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.about-banner-bg::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-}
-
 .about-banner-content {
   position: relative;
   z-index: 1;
   text-align: center;
-  color: #fff;
   max-width: 600px;
-  padding: 0 2rem;
+  padding: 2rem;
 }
 
 .about-banner-content h2 {
   font-family: var(--font-heading);
-  font-size: 2.75rem;
-  color: #fff;
+  font-size: 2.5rem;
+  color: rgb(60, 54, 10);
   margin-bottom: 1rem;
 }
 
 .about-banner-content p {
   font-size: 1rem;
+  color: rgb(80, 72, 20);
   margin-bottom: 1.75rem;
-  opacity: 0.9;
-  line-height: 1.6;
+  line-height: 1.65;
+  opacity: 0.85;
 }
 
+/* Process */
 .process-steps {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -134,23 +135,29 @@
 .step-number {
   display: inline-block;
   font-family: var(--font-heading);
-  font-size: 2rem;
+  font-size: 2.25rem;
   color: var(--color-accent);
   margin-bottom: 0.75rem;
+  opacity: 0.7;
 }
 
 .process-step h3 {
   font-family: var(--font-heading);
-  font-size: 1.35rem;
+  font-size: 1.3rem;
   margin-bottom: 0.75rem;
 }
 
 .process-step p {
   font-size: 0.9rem;
   line-height: 1.7;
+  color: var(--color-text);
 }
 
 @media (max-width: 768px) {
+  .about-hero h1 {
+    font-size: 2.5rem;
+  }
+
   .about-intro-grid {
     grid-template-columns: 1fr;
     gap: 2rem;
@@ -168,6 +175,11 @@
   .process-steps {
     grid-template-columns: 1fr 1fr;
     gap: 2rem;
+  }
+
+  .about-banner {
+    height: auto;
+    padding: 3rem 0;
   }
 
   .about-banner-content h2 {

@@ -8,6 +8,7 @@ export interface Product {
   images: string[];
   variants?: { name: string; price: number }[];
   badge?: string;
+  bestSeller?: boolean;
 }
 
 export interface Collection {
@@ -15,223 +16,323 @@ export interface Collection {
   name: string;
   slug: string;
   description: string;
-  image: string;
+  gradient: string;
 }
 
 export const collections: Collection[] = [
   {
     id: 1,
-    name: "Bar Soaps",
-    slug: "bar-soaps",
+    name: "All Natural Soap",
+    slug: "soap",
     description: "Handcrafted natural bar soaps made with love on the Canadian prairies.",
-    image: "https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=600&h=400&fit=crop",
+    gradient: "linear-gradient(135deg, #c8bfa8 0%, #b5a98e 100%)",
   },
   {
     id: 2,
-    name: "Body Butters",
-    slug: "body-butters",
-    description: "Rich, nourishing body butters for deep hydration.",
-    image: "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=600&h=400&fit=crop",
+    name: "Skin Care",
+    slug: "skin-care",
+    description: "Natural skincare formulated with wildcrafted botanicals and essential oils.",
+    gradient: "linear-gradient(135deg, #d4c9b0 0%, #c2b49a 100%)",
   },
   {
     id: 3,
-    name: "Body Sprays",
-    slug: "body-sprays",
-    description: "Natural body sprays with essential oil blends.",
-    image: "https://images.unsplash.com/photo-1594913415176-a99d3e2e1744?w=600&h=400&fit=crop",
+    name: "Body Care",
+    slug: "body-care",
+    description: "Rich, nourishing body care products for deep hydration.",
+    gradient: "linear-gradient(135deg, #bfc8aa 0%, #aab592 100%)",
   },
   {
     id: 4,
-    name: "Hair Care",
-    slug: "hair-care",
-    description: "Solid conditioner bars and natural hair care products.",
-    image: "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=600&h=400&fit=crop",
+    name: "Hair",
+    slug: "hair",
+    description: "Natural hair care crafted with prairie botanicals.",
+    gradient: "linear-gradient(135deg, #c4bda8 0%, #b0a890 100%)",
   },
   {
     id: 5,
-    name: "Skincare Sets",
-    slug: "skincare-sets",
-    description: "Curated sets of our best skincare products.",
-    image: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=600&h=400&fit=crop",
+    name: "Lip Care",
+    slug: "lip-care",
+    description: "Nourishing lip balms made with natural waxes and botanical oils.",
+    gradient: "linear-gradient(135deg, #d0c0b0 0%, #bda898 100%)",
   },
   {
     id: 6,
-    name: "Accessories",
-    slug: "accessories",
-    description: "Soap dishes, travel boxes, and more.",
-    image: "https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=600&h=400&fit=crop",
+    name: "Best Sellers",
+    slug: "best-sellers",
+    description: "Our most-loved products, tried and trusted by the prairie community.",
+    gradient: "linear-gradient(135deg, #c8c0a0 0%, #b5aa88 100%)",
   },
 ];
 
 export const products: Product[] = [
+  // Soap
   {
     id: 1,
-    name: "After Sun Body Spray",
-    price: 12.0,
-    description: "A soothing body spray perfect for after-sun care. Made with natural ingredients to calm and hydrate your skin.",
-    category: "body-sprays",
-    images: ["https://images.unsplash.com/photo-1594913415176-a99d3e2e1744?w=500&h=500&fit=crop"],
+    name: "Eucalyptus Mint Soap",
+    price: 13.25,
+    description:
+      "Wake up your senses with this invigorating eucalyptus and mint soap. A spa experience in your daily shower. Made with saponified oils and pure essential oils.",
+    category: "soap",
+    images: [""],
+    bestSeller: true,
   },
   {
     id: 2,
-    name: "Carrot Pudding Soap",
+    name: "Goldenrod & Tallow Soap",
     price: 13.25,
-    description: "A warm, spiced soap inspired by classic carrot pudding. Rich in vitamins and natural moisturizers.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=500&h=500&fit=crop"],
+    description:
+      "Traditional tallow soap infused with wild goldenrod harvested from the Alberta prairies. Rich, creamy lather with prairie botanicals.",
+    category: "soap",
+    images: [""],
+    bestSeller: true,
   },
   {
     id: 3,
-    name: "Charcoal & Yarrow Soap",
+    name: "Wild Rose Hip Soap",
     price: 13.25,
-    description: "Activated charcoal meets wild yarrow in this deeply cleansing bar. Perfect for oily or combination skin.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1612817288484-6f916006741a?w=500&h=500&fit=crop"],
+    description:
+      "A delicate, nourishing soap crafted with wild rose hip oil and botanicals. Gentle on skin with a light floral scent.",
+    category: "soap",
+    images: [""],
   },
   {
     id: 4,
-    name: "Chore Bar",
-    price: 12.0,
-    description: "A versatile cleaning bar for dishes, laundry, and general household cleaning. All-natural and effective.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=500&h=500&fit=crop"],
-    variants: [
-      { name: "With Tin", price: 12.0 },
-      { name: "Without Tin", price: 10.0 },
-    ],
+    name: "Saskatoon Berry Soap",
+    price: 13.25,
+    description:
+      "Prairie-inspired soap featuring the beloved Saskatoon berry. Packed with antioxidants and naturally moisturizing.",
+    category: "soap",
+    images: [""],
   },
   {
     id: 5,
-    name: "Conditioner Bar - Grapefruit Orange",
-    price: 23.95,
-    description: "A solid conditioner bar with uplifting grapefruit and orange essential oils. Leaves hair soft and manageable.",
-    category: "hair-care",
-    images: ["https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=500&h=500&fit=crop"],
+    name: "Charcoal & Yarrow Soap",
+    price: 13.25,
+    description:
+      "Activated charcoal meets wild yarrow in this deeply cleansing bar. Perfect for oily or combination skin.",
+    category: "soap",
+    images: [""],
   },
   {
     id: 6,
-    name: "Conditioner Bar - Rosemary Mint",
-    price: 23.95,
-    description: "Invigorating rosemary and mint solid conditioner bar. Stimulates the scalp and adds shine.",
-    category: "hair-care",
-    images: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=500&h=500&fit=crop"],
+    name: "Lavender Milk Soap",
+    price: 13.25,
+    description:
+      "Calming lavender with nourishing milk creates this soothing, luxurious bar. Perfect for sensitive or dry skin.",
+    category: "soap",
+    images: [""],
+    bestSeller: true,
   },
   {
     id: 7,
     name: "Dandelion & Honey Soap",
     price: 13.25,
-    description: "Gentle and moisturizing soap made with real dandelion-infused oil and local prairie honey.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=500&h=500&fit=crop"],
+    description:
+      "Gentle and moisturizing soap made with real dandelion-infused oil and local prairie honey. A true prairie original.",
+    category: "soap",
+    images: [""],
   },
   {
     id: 8,
-    name: "Essential Skincare Set",
-    price: 118.0,
-    description: "A complete skincare routine featuring our best-selling products. The perfect gift or self-care treat.",
-    category: "skincare-sets",
-    images: ["https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=500&h=500&fit=crop"],
-    variants: [
-      { name: "Small Set", price: 118.0 },
-      { name: "Large Set", price: 177.0 },
-    ],
-    badge: "Best Seller",
+    name: "Forest Bath Soap",
+    price: 13.25,
+    description:
+      "A woodsy, grounding soap that brings the forest to your bathroom. Made with pine and cedarwood essential oils.",
+    category: "soap",
+    images: [""],
   },
+  // Skin Care
   {
     id: 9,
-    name: "Eucalyptus Mint Body Butter",
-    price: 28.0,
-    description: "A rich, whipped body butter infused with eucalyptus and mint essential oils. Deep moisture with a refreshing scent.",
-    category: "body-butters",
-    images: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=500&h=500&fit=crop"],
+    name: "Rejuvenate Face Serum",
+    price: 58.0,
+    description:
+      "A potent face serum formulated with wildcrafted botanicals to rejuvenate and restore your skin's natural glow.",
+    category: "skin-care",
+    images: [""],
+    bestSeller: true,
   },
   {
     id: 10,
-    name: "Eucalyptus Mint Soap",
-    price: 13.25,
-    description: "Wake up your senses with this invigorating eucalyptus and mint soap. A spa experience in your shower.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1612817288484-6f916006741a?w=500&h=500&fit=crop"],
+    name: "Refresh Face Toner",
+    price: 44.0,
+    description:
+      "A balancing face toner made with botanical extracts to refresh and prep your skin for the day ahead.",
+    category: "skin-care",
+    images: [""],
   },
   {
     id: 11,
-    name: "Forest Bath Body Spray",
-    price: 18.0,
-    description: "Immerse yourself in the Canadian forest with this grounding body spray. Notes of pine, cedar, and earth.",
-    category: "body-sprays",
-    images: ["https://images.unsplash.com/photo-1594913415176-a99d3e2e1744?w=500&h=500&fit=crop"],
+    name: "Restorative Face Cream",
+    price: 34.0,
+    description:
+      "A rich, deeply nourishing face cream that restores moisture and supports healthy skin barrier function.",
+    category: "skin-care",
+    images: [""],
   },
   {
     id: 12,
-    name: "Forest Bath Soap",
-    price: 13.25,
-    description: "A woodsy, grounding soap that brings the forest to your bathroom. Made with pine and cedarwood essential oils.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=500&h=500&fit=crop"],
+    name: "Renew Oil Cleanser",
+    price: 36.0,
+    description:
+      "A gentle oil cleanser that effectively removes makeup and impurities while nourishing the skin.",
+    category: "skin-care",
+    images: [""],
   },
   {
     id: 13,
-    name: "Gardener Bar Soap",
-    price: 13.25,
-    description: "A hardworking soap for green thumbs. Exfoliating and deodorizing with pumice and essential oils.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=500&h=500&fit=crop"],
+    name: "Essential Skincare Set",
+    price: 118.0,
+    description:
+      "A complete skincare routine featuring our best-selling products. The perfect gift or self-care treat.",
+    category: "skin-care",
+    images: [""],
+    badge: "Best Seller",
+    bestSeller: true,
   },
   {
     id: 14,
-    name: "Goldenrod & Tallow Soap",
-    price: 13.25,
-    description: "Traditional tallow soap infused with wild goldenrod. Rich, creamy lather with prairie botanicals.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1612817288484-6f916006741a?w=500&h=500&fit=crop"],
+    name: "Replenish Eye Serum",
+    price: 28.0,
+    description:
+      "A targeted eye serum to replenish and brighten the delicate skin around the eyes.",
+    category: "skin-care",
+    images: [""],
   },
+  // Body Care
   {
     id: 15,
-    name: "Handcrafted Wooden Soap Travel Box",
-    price: 40.0,
-    description: "A beautiful handcrafted wooden box perfect for traveling with your favorite bar soap. Made from sustainable wood.",
-    category: "accessories",
-    images: ["https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=500&h=500&fit=crop"],
+    name: "Prairie Gold Balm",
+    price: 27.5,
+    description:
+      "A multi-use healing balm made with prairie-sourced ingredients. Soothes and protects dry, cracked skin.",
+    category: "body-care",
+    images: [""],
+    bestSeller: true,
   },
   {
     id: 16,
-    name: "Hard Working Hands Soap",
-    price: 13.25,
-    description: "Specially formulated for hardworking hands. Deep cleaning with gentle exfoliation and moisturizing oils.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=500&h=500&fit=crop"],
+    name: "Pine Resin Salve",
+    price: 16.0,
+    description:
+      "Traditional pine resin salve with powerful healing properties. A prairie staple for cuts, scrapes, and dry skin.",
+    category: "body-care",
+    images: [""],
   },
   {
     id: 17,
-    name: "Lavender Oat Soap",
-    price: 13.25,
-    description: "Calming lavender with soothing colloidal oatmeal. Perfect for sensitive or irritated skin.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1612817288484-6f916006741a?w=500&h=500&fit=crop"],
+    name: "White Spruce Body Butter",
+    price: 28.0,
+    description:
+      "A rich, whipped body butter infused with white spruce. Deep moisture with a fresh, woodsy scent.",
+    category: "body-care",
+    images: [""],
   },
   {
     id: 18,
-    name: "Lemongrass Soap",
-    price: 13.25,
-    description: "Bright and energizing lemongrass soap. A fresh, clean scent that uplifts your mood.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=500&h=500&fit=crop"],
+    name: "Eucalyptus Mint Body Butter",
+    price: 28.0,
+    description:
+      "A refreshing body butter with eucalyptus and mint essential oils. Deeply moisturizing with an invigorating scent.",
+    category: "body-care",
+    images: [""],
   },
   {
     id: 19,
-    name: "Rose Clay Facial Bar",
-    price: 14.50,
-    description: "A gentle facial bar with rose clay and rosehip oil. Cleanses without stripping natural oils.",
-    category: "bar-soaps",
-    images: ["https://images.unsplash.com/photo-1612817288484-6f916006741a?w=500&h=500&fit=crop"],
-    badge: "New",
+    name: "Sage Foot Balm",
+    price: 22.0,
+    description:
+      "A soothing foot balm with sage and nourishing botanicals. Perfect for tired, dry feet after a long day.",
+    category: "body-care",
+    images: [""],
   },
   {
     id: 20,
-    name: "Tallow Balm",
-    price: 24.0,
-    description: "A deeply nourishing tallow-based balm for dry or damaged skin. Simple, traditional, effective.",
-    category: "body-butters",
-    images: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=500&h=500&fit=crop"],
+    name: "Forest Bath Body Spray",
+    price: 18.0,
+    description:
+      "Immerse yourself in the Canadian forest with this grounding body spray. Notes of pine, cedar, and earth.",
+    category: "body-care",
+    images: [""],
+  },
+  // Hair
+  {
+    id: 21,
+    name: "Shampoo Bar Rosemary Mint",
+    price: 21.95,
+    description:
+      "Invigorating rosemary and mint solid shampoo bar. Cleanses gently while stimulating the scalp for healthy hair.",
+    category: "hair",
+    images: [""],
+    bestSeller: true,
+  },
+  {
+    id: 22,
+    name: "Conditioner Bar Rosemary Mint",
+    price: 23.95,
+    description:
+      "Invigorating rosemary and mint solid conditioner bar. Stimulates the scalp and adds shine to every strand.",
+    category: "hair",
+    images: [""],
+  },
+  {
+    id: 23,
+    name: "Prairie Man Bar 3-in-1",
+    price: 13.25,
+    description:
+      "The ultimate all-in-one bar for the prairie man. Works as shampoo, conditioner, and body wash. Rugged and natural.",
+    category: "hair",
+    images: [""],
+  },
+  // Lip Care
+  {
+    id: 24,
+    name: "Rose Hip Lip Balm",
+    price: 12.0,
+    description:
+      "Our best-selling lip balm made with wild rose hip oil. Deeply nourishing and long-lasting moisture for dry lips.",
+    category: "lip-care",
+    images: [""],
+    badge: "Best Seller",
+    bestSeller: true,
+  },
+  {
+    id: 25,
+    name: "Wild Mint Lip Balm",
+    price: 12.0,
+    description:
+      "A refreshing lip balm with wild mint essential oil. Cooling and nourishing for a fresh, smooth pout.",
+    category: "lip-care",
+    images: [""],
+  },
+  {
+    id: 26,
+    name: "Raspberry Vanilla Lip Balm",
+    price: 12.0,
+    description:
+      "A delicious raspberry and vanilla lip balm. Moisturizing and subtly sweet for lips that stay soft all day.",
+    category: "lip-care",
+    images: [""],
+  },
+  {
+    id: 27,
+    name: "Peony Lip Balm",
+    price: 12.0,
+    description:
+      "A delicate peony-scented lip balm. Lightweight and nourishing with a beautiful floral note.",
+    category: "lip-care",
+    images: [""],
+  },
+  {
+    id: 28,
+    name: "Lip Balm Four-Pack",
+    price: 40.0,
+    description:
+      "Save with our popular four-pack of lip balms. Mix and match your favorite scents for the perfect gift or personal collection.",
+    category: "lip-care",
+    images: [""],
+    badge: "Save",
   },
 ];
+
+export const bestSellerProducts = products.filter((p) => p.bestSeller).slice(0, 4);

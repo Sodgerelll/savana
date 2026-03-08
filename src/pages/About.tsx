@@ -1,23 +1,34 @@
 import { Link } from "react-router-dom";
 import { Leaf, Heart, Sun, Sprout } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 import "./About.css";
 
 export default function About() {
+  const { t } = useLanguage();
+
   return (
     <div className="about-page">
       <div className="about-hero">
-        <h1>Our Story</h1>
-        <p>From the heart of the Canadian prairies to your home.</p>
+        <div className="container">
+          <h1>{t.aboutHeroHeading}</h1>
+          <p>{t.aboutHeroSub}</p>
+        </div>
       </div>
 
       <section className="about-intro section">
         <div className="container">
           <div className="about-intro-grid">
             <div className="about-intro-image">
-              <img
-                src="https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=600&h=700&fit=crop"
-                alt="Handcrafted soaps"
-              />
+              <div
+                className="about-image-placeholder"
+                style={{ background: "linear-gradient(135deg, #e8e0d0 0%, #c8bfa8 100%)" }}
+              >
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none">
+                  <ellipse cx="50" cy="60" rx="32" ry="22" fill="rgba(255,255,255,0.2)" />
+                  <rect x="20" y="32" width="60" height="38" rx="19" fill="rgba(255,255,255,0.28)" />
+                  <path d="M34 32 Q50 14 66 32" stroke="rgba(255,255,255,0.45)" strokeWidth="3" fill="none" />
+                </svg>
+              </div>
             </div>
             <div className="about-intro-content">
               <h2>Where It All Began</h2>
@@ -49,7 +60,9 @@ export default function About() {
           </div>
           <div className="about-values-grid">
             <div className="about-value">
-              <Leaf size={36} strokeWidth={1.2} />
+              <div className="about-value-icon">
+                <Leaf size={32} strokeWidth={1.2} />
+              </div>
               <h3>Natural Ingredients</h3>
               <p>
                 We use only plant-based oils, butters, and pure essential oils.
@@ -58,7 +71,9 @@ export default function About() {
               </p>
             </div>
             <div className="about-value">
-              <Heart size={36} strokeWidth={1.2} />
+              <div className="about-value-icon">
+                <Heart size={32} strokeWidth={1.2} />
+              </div>
               <h3>Small Batch</h3>
               <p>
                 Every product is handcrafted in small batches, ensuring exceptional
@@ -67,7 +82,9 @@ export default function About() {
               </p>
             </div>
             <div className="about-value">
-              <Sun size={36} strokeWidth={1.2} />
+              <div className="about-value-icon">
+                <Sun size={32} strokeWidth={1.2} />
+              </div>
               <h3>Prairie Inspired</h3>
               <p>
                 Our recipes are inspired by the beauty and bounty of the Canadian
@@ -76,7 +93,9 @@ export default function About() {
               </p>
             </div>
             <div className="about-value">
-              <Sprout size={36} strokeWidth={1.2} />
+              <div className="about-value-icon">
+                <Sprout size={32} strokeWidth={1.2} />
+              </div>
               <h3>Sustainable</h3>
               <p>
                 We're committed to reducing our environmental footprint. From
@@ -89,19 +108,17 @@ export default function About() {
       </section>
 
       <section className="about-banner">
-        <div className="about-banner-bg">
-          <img
-            src="https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=1600&h=500&fit=crop"
-            alt="Prairie landscape"
-          />
-        </div>
-        <div className="about-banner-content">
+        <div
+          className="about-banner-bg"
+          style={{ background: "linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 50%, #c8bfa8 100%)" }}
+        />
+        <div className="about-banner-content container">
           <h2>Nourish Your Skin, Naturally</h2>
           <p>
             Every bar tells a story of simple, honest ingredients working together
             to nourish and protect your skin.
           </p>
-          <Link to="/collections" className="btn btn-light">
+          <Link to="/collections" className="btn btn-outline">
             Shop Our Products
           </Link>
         </div>
@@ -127,7 +144,7 @@ export default function About() {
             <div className="process-step">
               <span className="step-number">03</span>
               <h3>Cure</h3>
-              <p>Our soaps are cured for 4-6 weeks, allowing them to develop their optimal hardness and mildness.</p>
+              <p>Our soaps are cured for 4–6 weeks, allowing them to develop their optimal hardness and mildness.</p>
             </div>
             <div className="process-step">
               <span className="step-number">04</span>

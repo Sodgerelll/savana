@@ -1,18 +1,24 @@
+.contact-page {
+  min-height: 60vh;
+}
+
 .contact-hero {
-  text-align: center;
-  padding: 4rem 2rem 3rem;
-  background-color: var(--color-bg-alt);
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  padding: 4.5rem 0 3.5rem;
 }
 
 .contact-hero h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
+  color: rgb(60, 54, 10);
   margin-bottom: 0.75rem;
 }
 
 .contact-hero p {
-  font-size: 1.05rem;
-  color: var(--color-text);
+  font-size: 1rem;
+  color: rgb(80, 72, 20);
+  max-width: 520px;
+  opacity: 0.85;
 }
 
 .contact-grid {
@@ -23,8 +29,9 @@
 
 .contact-form-section h2 {
   font-family: var(--font-heading);
-  font-size: 1.75rem;
+  font-size: 2rem;
   margin-bottom: 2rem;
+  color: var(--color-heading);
 }
 
 .contact-form {
@@ -39,10 +46,15 @@
   gap: 1.25rem;
 }
 
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
 .form-group label {
-  display: block;
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-heading);
   font-weight: 600;
@@ -60,6 +72,7 @@
   outline: none;
   transition: border-color 0.25s;
   resize: vertical;
+  font-family: var(--font-body);
 }
 
 .form-group input:focus,
@@ -67,34 +80,45 @@
   border-color: var(--color-accent);
 }
 
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: var(--color-border);
+}
+
 .contact-info-section {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
-  padding-top: 1rem;
+  gap: 1.5rem;
+  padding-top: 0.5rem;
 }
 
 .contact-info-card {
-  text-align: center;
-  padding: 2rem;
+  padding: 1.75rem;
   background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  text-align: center;
 }
 
-.contact-info-card svg {
+.contact-info-icon {
   color: var(--color-accent);
   margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: center;
 }
 
 .contact-info-card h3 {
   font-family: var(--font-heading);
   font-size: 1.15rem;
   margin-bottom: 0.5rem;
+  color: var(--color-heading);
 }
 
 .contact-info-card p,
 .contact-info-card a {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--color-text);
+  text-decoration: none;
+  line-height: 1.6;
 }
 
 .contact-info-card a:hover {
@@ -102,6 +126,10 @@
 }
 
 @media (max-width: 768px) {
+  .contact-hero h1 {
+    font-size: 2.5rem;
+  }
+
   .contact-grid {
     grid-template-columns: 1fr;
     gap: 3rem;
@@ -118,6 +146,6 @@
 
   .contact-info-card {
     flex: 1;
-    min-width: 200px;
+    min-width: 180px;
   }
 }

@@ -1,90 +1,110 @@
-.collections-hero {
-  text-align: center;
-  padding: 4rem 2rem 3rem;
-  background-color: var(--color-bg-alt);
+.collections-page {
+  min-height: 60vh;
 }
 
-.collections-hero h1 {
+.collections-hero {
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  padding: 4rem 0 3rem;
+}
+
+.collections-hero-inner .breadcrumb {
+  margin-bottom: 1.25rem;
+  color: rgb(80, 72, 20);
+  font-size: 0.78rem;
+}
+
+.collections-hero-inner .breadcrumb a {
+  color: rgb(80, 72, 20);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.collections-hero-inner .breadcrumb a:hover {
+  color: var(--color-accent);
+}
+
+.collections-hero-inner h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
+  color: rgb(60, 54, 10);
   margin-bottom: 0.75rem;
 }
 
-.collections-hero p {
-  font-size: 1.05rem;
-  max-width: 500px;
-  margin: 0 auto 1rem;
-  color: var(--color-text);
+.collections-hero-inner p {
+  font-size: 1rem;
+  color: rgb(80, 72, 20);
+  max-width: 560px;
+  opacity: 0.85;
 }
 
-.breadcrumb {
-  font-size: 0.8rem;
-  color: var(--color-text);
-  letter-spacing: 0.05em;
-}
-
-.breadcrumb a {
-  color: var(--color-accent);
-  transition: color 0.25s;
-}
-
-.breadcrumb a:hover {
-  color: var(--color-accent-hover);
+.collections-body {
+  padding-top: 3rem;
+  padding-bottom: 5rem;
 }
 
 .category-filters {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 0.5rem;
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
 }
 
 .filter-btn {
-  padding: 0.5rem 1.25rem;
-  font-size: 0.8rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  padding: 0.4rem 1rem;
   border: 1px solid var(--color-border);
   color: var(--color-text);
+  background-color: transparent;
   transition: all 0.25s;
-  font-family: var(--font-body);
+  text-decoration: none;
+  display: inline-block;
 }
 
 .filter-btn:hover,
 .filter-btn.active {
-  background-color: var(--color-heading);
-  color: var(--color-white);
-  border-color: var(--color-heading);
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
 }
 
 .results-count {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--color-text);
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  letter-spacing: 0.04em;
 }
 
 .no-products {
   text-align: center;
-  padding: 4rem 0;
+  padding: 5rem 0;
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .no-products p {
-  font-size: 1.1rem;
-  margin-bottom: 1.5rem;
+  font-size: 1rem;
 }
 
 @media (max-width: 768px) {
-  .collections-hero h1 {
+  .collections-hero {
+    padding: 3rem 0 2rem;
+  }
+
+  .collections-hero-inner h1 {
     font-size: 2.25rem;
   }
 
   .category-filters {
-    gap: 0.35rem;
+    gap: 0.4rem;
   }
 
   .filter-btn {
-    padding: 0.4rem 0.75rem;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
+    padding: 0.35rem 0.75rem;
   }
 }

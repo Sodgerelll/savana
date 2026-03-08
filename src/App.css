@@ -1,4 +1,6 @@
-/* App-level styles - minimal since global styles handle most things */
+/* The header is sticky and includes the announcement bar above it.
+   The announcement bar is NOT sticky (only the header below it is),
+   so main needs no extra top margin. */
 main {
-  min-height: calc(100vh - var(--header-height));
+  min-height: calc(100vh - var(--header-height) - var(--announcement-height));
 }

@@ -1,3 +1,11 @@
+.product-detail {
+  min-height: 60vh;
+}
+
+.pd-breadcrumb {
+  padding: 1.5rem 0;
+}
+
 .product-detail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -5,56 +13,77 @@
   padding-bottom: 3rem;
 }
 
+/* Image area */
+.product-detail-images {
+  position: relative;
+}
+
 .product-main-image {
   position: relative;
-  background-color: var(--color-bg-alt);
   aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
 }
 
-.product-main-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.product-main-icon {
+  opacity: 0.6;
 }
 
+.pd-badge {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  background-color: var(--color-accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.75rem;
+}
+
+/* Info */
 .product-detail-info h1 {
   font-family: var(--font-heading);
   font-size: 2.5rem;
   font-weight: 400;
   margin-bottom: 0.75rem;
+  line-height: 1.15;
 }
 
-.product-detail-price {
-  font-size: 1.25rem;
+.pd-price {
+  font-size: 1.2rem;
   color: var(--color-text);
   margin-bottom: 1.5rem;
 }
 
-.product-detail-description {
+.pd-description {
   margin-bottom: 2rem;
   padding-bottom: 2rem;
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.product-detail-description p {
+.pd-description p {
   font-size: 0.95rem;
   line-height: 1.8;
+  color: var(--color-text);
 }
 
-.product-variants {
-  margin-bottom: 1.5rem;
-}
-
-.product-variants label,
-.product-quantity label {
+.pd-label {
   display: block;
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
   color: var(--color-heading);
   font-weight: 600;
+}
+
+.pd-variants {
+  margin-bottom: 1.5rem;
 }
 
 .variant-buttons {
@@ -64,10 +93,10 @@
 }
 
 .variant-btn {
-  padding: 0.6rem 1.25rem;
+  padding: 0.55rem 1.1rem;
   border: 1px solid var(--color-border);
   background: transparent;
-  font-size: 0.85rem;
+  font-size: 0.83rem;
   color: var(--color-text);
   transition: all 0.25s;
   font-family: var(--font-body);
@@ -76,11 +105,12 @@
 
 .variant-btn:hover,
 .variant-btn.active {
-  border-color: var(--color-heading);
-  color: var(--color-heading);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background-color: rgba(90, 81, 3, 0.04);
 }
 
-.product-quantity {
+.pd-quantity {
   margin-bottom: 1.5rem;
 }
 
@@ -98,23 +128,31 @@
   color: var(--color-text);
   display: flex;
   align-items: center;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.quantity-selector button:hover {
+  color: var(--color-accent);
 }
 
 .quantity-selector span {
   padding: 0.6rem 1.25rem;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   min-width: 3rem;
   text-align: center;
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
 }
 
-.add-to-cart-btn {
+.pd-add-btn {
   width: 100%;
   margin-bottom: 2rem;
   padding: 1rem;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
-.product-features {
+.pd-features {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -123,7 +161,7 @@
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.feature-item {
+.pd-feature {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -131,16 +169,16 @@
   color: var(--color-text);
 }
 
-.feature-item svg {
+.pd-feature svg {
   color: var(--color-accent);
   flex-shrink: 0;
 }
 
-.product-accordion details {
+.pd-accordion details {
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.product-accordion summary {
+.pd-accordion summary {
   padding: 1rem 0;
   font-family: var(--font-heading);
   font-size: 1rem;
@@ -150,26 +188,28 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  user-select: none;
 }
 
-.product-accordion summary::-webkit-details-marker {
+.pd-accordion summary::-webkit-details-marker {
   display: none;
 }
 
-.product-accordion summary::after {
+.pd-accordion summary::after {
   content: '+';
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 300;
+  color: var(--color-accent);
 }
 
-.product-accordion details[open] summary::after {
+.pd-accordion details[open] summary::after {
   content: '\2212';
 }
 
-.product-accordion details p {
+.pd-accordion details p {
   padding: 0 0 1rem;
   font-size: 0.9rem;
-  line-height: 1.7;
+  line-height: 1.75;
   color: var(--color-text);
 }
 
@@ -184,6 +224,6 @@
   }
 
   .product-detail-info h1 {
-    font-size: 1.75rem;
+    font-size: 1.85rem;
   }
 }

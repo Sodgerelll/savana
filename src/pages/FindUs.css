@@ -1,0 +1,229 @@
+.find-us-page {
+  min-height: 60vh;
+}
+
+.find-us-hero {
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  padding: 4.5rem 0 3.5rem;
+}
+
+.find-us-hero h1 {
+  font-family: var(--font-heading);
+  font-size: 3rem;
+  color: rgb(60, 54, 10);
+  margin-bottom: 0.75rem;
+}
+
+.find-us-hero p {
+  font-size: 1rem;
+  color: rgb(80, 72, 20);
+  max-width: 520px;
+  opacity: 0.85;
+}
+
+.find-us-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 4rem;
+  align-items: start;
+}
+
+/* Map area */
+.map-section h2 {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  color: var(--color-heading);
+}
+
+.map-placeholder {
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  border: 1px solid var(--color-border-light);
+  height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-placeholder-inner {
+  text-align: center;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.map-placeholder-inner svg {
+  color: var(--color-accent);
+  opacity: 0.6;
+}
+
+.map-placeholder-inner p {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: rgb(60, 54, 10);
+}
+
+.map-note {
+  font-family: var(--font-body) !important;
+  font-size: 0.88rem !important;
+  color: rgb(80, 72, 20) !important;
+  max-width: 320px;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+.map-ig-btn {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Info cards */
+.find-us-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.find-us-card {
+  padding: 1.75rem;
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+}
+
+.find-us-card-icon {
+  color: var(--color-accent);
+  margin-bottom: 0.75rem;
+  display: flex;
+}
+
+.find-us-card h3 {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-heading);
+}
+
+.find-us-card p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+
+/* Markets grid */
+.markets-section {
+  background-color: var(--color-bg-alt);
+}
+
+.markets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.market-card {
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border-light);
+  padding: 1.75rem;
+  transition: box-shadow 0.3s ease;
+}
+
+.market-card:hover {
+  box-shadow: 0 4px 16px rgba(90, 81, 3, 0.08);
+}
+
+.market-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.market-icon {
+  color: var(--color-accent);
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+}
+
+.market-card-header h3 {
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+  color: var(--color-heading);
+  line-height: 1.3;
+}
+
+.market-detail,
+.market-season {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-bottom: 0.5rem;
+}
+
+.market-detail svg,
+.market-season svg {
+  color: var(--color-accent);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.market-season {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* CTA section */
+.find-us-cta {
+  padding: 5rem 0;
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 60%, #c8bfa8 100%);
+}
+
+.find-us-cta-inner {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.find-us-cta-inner h2 {
+  font-family: var(--font-heading);
+  font-size: 2.25rem;
+  color: rgb(60, 54, 10);
+  margin-bottom: 1rem;
+}
+
+.find-us-cta-inner p {
+  font-size: 0.95rem;
+  color: rgb(80, 72, 20);
+  line-height: 1.75;
+  margin-bottom: 2rem;
+  opacity: 0.85;
+}
+
+@media (max-width: 768px) {
+  .find-us-hero h1 {
+    font-size: 2.5rem;
+  }
+
+  .find-us-grid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .map-placeholder {
+    height: 280px;
+  }
+
+  .markets-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .find-us-cta-inner h2 {
+    font-size: 1.85rem;
+  }
+}

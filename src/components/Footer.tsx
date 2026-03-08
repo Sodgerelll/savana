@@ -1,68 +1,87 @@
 import { Link } from "react-router-dom";
 import { Instagram, Facebook, Mail } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 import "./Footer.css";
 
 export default function Footer() {
+  const { t } = useLanguage();
+
   return (
     <footer className="footer">
+      {/* Newsletter */}
       <div className="footer-newsletter">
         <div className="container">
-          <div className="newsletter-content">
-            <h2>Join the Prairie Family</h2>
-            <p>Subscribe for exclusive offers, skincare tips, and new product announcements.</p>
-            <form className="newsletter-form" onSubmit={(e) => e.preventDefault()}>
-              <input type="email" placeholder="Your email address" className="newsletter-input" />
-              <button type="submit" className="btn btn-primary">Subscribe</button>
+          <div className="footer-newsletter-inner">
+            <h2>{t.newsletterHeading}</h2>
+            <p>{t.newsletterSubtext}</p>
+            <form className="newsletter-form-footer" onSubmit={(e) => e.preventDefault()}>
+              <input type="email" placeholder={t.newsletterPlaceholder} className="newsletter-input-footer" />
+              <button type="submit" className="btn btn-primary newsletter-submit">{t.subscribe}</button>
             </form>
           </div>
         </div>
       </div>
 
+      {/* Main footer grid */}
       <div className="footer-main">
         <div className="container">
           <div className="footer-grid">
-            <div className="footer-col">
-              <h3>Prairie Soap Shack</h3>
-              <p className="footer-about">
-                Handcrafted natural skin and body care products made with love on the Canadian prairies.
-                We believe in simple, honest ingredients that nourish your skin and respect the earth.
-              </p>
+            {/* Col 1: Brand */}
+            <div className="footer-col footer-col-brand">
+              <Link to="/" className="footer-logo">Prairie Soap Shack</Link>
+              <p className="footer-about">{t.footerBrandDesc}</p>
               <div className="social-links">
-                <a href="#" aria-label="Instagram"><Instagram size={20} /></a>
-                <a href="#" aria-label="Facebook"><Facebook size={20} /></a>
-                <a href="#" aria-label="Email"><Mail size={20} /></a>
+                <a href="#" aria-label="Instagram" rel="noopener noreferrer">
+                  <Instagram size={18} />
+                </a>
+                <a href="#" aria-label="Facebook" rel="noopener noreferrer">
+                  <Facebook size={18} />
+                </a>
+                <a href="mailto:hello@prairiesoapshack.com" aria-label="Email">
+                  <Mail size={18} />
+                </a>
               </div>
             </div>
 
+            {/* Col 2: Shop */}
             <div className="footer-col">
-              <h4>Shop</h4>
+              <h4>{t.footerShop}</h4>
               <ul>
-                <li><Link to="/collections">All Products</Link></li>
-                <li><Link to="/collections/bar-soaps">Bar Soaps</Link></li>
-                <li><Link to="/collections/body-butters">Body Butters</Link></li>
-                <li><Link to="/collections/body-sprays">Body Sprays</Link></li>
-                <li><Link to="/collections/hair-care">Hair Care</Link></li>
-                <li><Link to="/collections/skincare-sets">Skincare Sets</Link></li>
+                <li><Link to="/collections">{t.allProducts}</Link></li>
+                <li><Link to="/collections/soap">{t.allNaturalSoap}</Link></li>
+                <li><Link to="/collections/skin-care">{t.skinCare}</Link></li>
+                <li><Link to="/collections/body-care">{t.bodyCare}</Link></li>
+                <li><Link to="/collections/hair">{t.hair}</Link></li>
+                <li><Link to="/collections/lip-care">{t.lipCare}</Link></li>
+                <li><Link to="/collections/best-sellers">{t.bestSellers}</Link></li>
               </ul>
             </div>
 
+            {/* Col 3: Info */}
             <div className="footer-col">
-              <h4>Information</h4>
+              <h4>{t.footerInfo}</h4>
               <ul>
-                <li><Link to="/about">About Us</Link></li>
-                <li><Link to="/contact">Contact</Link></li>
-                <li><Link to="/shipping">Shipping & Returns</Link></li>
-                <li><Link to="/wholesale">Wholesale</Link></li>
-                <li><Link to="/faq">FAQ</Link></li>
+                <li><Link to="/about">{t.footerAbout}</Link></li>
+                <li><Link to="/find-us">{t.findUs}</Link></li>
+                <li><Link to="/contact">{t.contact}</Link></li>
+                <li><Link to="/shipping">{t.footerShippingReturns}</Link></li>
+                <li><Link to="/wholesale">{t.footerWholesale}</Link></li>
+                <li><Link to="/faq">{t.footerFAQ}</Link></li>
               </ul>
             </div>
 
+            {/* Col 4: Contact */}
             <div className="footer-col">
-              <h4>Contact</h4>
-              <ul className="contact-info">
+              <h4>{t.footerContact}</h4>
+              <ul className="footer-contact-list">
                 <li>Alberta, Canada</li>
                 <li>
                   <a href="mailto:hello@prairiesoapshack.com">hello@prairiesoapshack.com</a>
+                </li>
+                <li>
+                  <a href="https://instagram.com/prairiesoapshack" target="_blank" rel="noopener noreferrer">
+                    @prairiesoapshack
+                  </a>
                 </li>
               </ul>
             </div>
@@ -70,12 +89,19 @@ export default function Footer() {
         </div>
       </div>
 
+      {/* Bottom bar */}
       <div className="footer-bottom">
         <div className="container">
-          <p>&copy; {new Date().getFullYear()} Prairie Soap Shack. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} {t.footerCopyright}</p>
           <div className="footer-bottom-links">
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
+            <Link to="/privacy">{t.footerPolicies}</Link>
+            <Link to="/terms">Terms</Link>
+            <div className="payment-icons">
+              <span className="payment-icon">VISA</span>
+              <span className="payment-icon">MC</span>
+              <span className="payment-icon">AMEX</span>
+              <span className="payment-icon">PP</span>
+            </div>
           </div>
         </div>
       </div>
