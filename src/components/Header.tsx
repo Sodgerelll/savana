@@ -1,39 +1,31 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ShoppingBag, Search, User, Menu, X } from "lucide-react";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
+import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
+import { getActiveCollections, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Header.css";
 
-const ANNOUNCEMENT_INTERVAL = 4000;
 const SCROLL_THRESHOLD = 10; // px before we consider "scrolled"
 
 export default function Header() {
+  const { pathname } = useLocation();
+  const isHome = pathname === "/";
   const { totalItems, setIsCartOpen } = useCart();
+  const { user, logout } = useAuth();
+  const { collections, settings } = useStorefront();
   const { language, setLanguage, t } = useLanguage();
+  const visibleSettings = getRenderableSettings(settings);
+  const activeCollections = getActiveCollections(collections);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [headerHidden, setHeaderHidden] = useState(false);
-  const [announcementIndex, setAnnouncementIndex] = useState(0);
-  const [announcementVisible, setAnnouncementVisible] = useState(true);
 
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
-
-  const announcements = [t.announcement1, t.announcement2, t.announcement3];
-
-  // Announcement rotation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAnnouncementVisible(false);
-      setTimeout(() => {
-        setAnnouncementIndex((prev) => (prev + 1) % announcements.length);
-        setAnnouncementVisible(true);
-      }, 400);
-    }, ANNOUNCEMENT_INTERVAL);
-    return () => clearInterval(interval);
-  }, [announcements.length]);
 
   // Scroll behavior: hide on scroll-down, show on scroll-up with solid bg
   useEffect(() => {
@@ -73,33 +65,33 @@ export default function Header() {
   }, []);
 
   const shopLinks = [
-    { label: t.allNaturalSoap, to: "/collections/soap" },
-    { label: t.skinCare, to: "/collections/skin-care" },
-    { label: t.bodyCare, to: "/collections/body-care" },
-    { label: t.hair, to: "/collections/hair" },
-    { label: t.lipCare, to: "/collections/lip-care" },
-    { label: t.bestSellers, to: "/collections/best-sellers" },
+    ...activeCollections.map((collection) => ({
+      label: collection.name,
+      to: `/collections/${collection.slug}`,
+    })),
   ];
 
   const headerClasses = [
     "site-header-wrap",
+    !isHome ? "subpage-sticky" : "",
+    !isHome ? "solid" : "",
     scrolled ? "scrolled" : "",
-    headerHidden ? "header-hidden" : "",
+    isHome && headerHidden ? "header-hidden" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
+  const accountHref = user ? "/account" : "/login";
+
+  const handleMobileLogout = async () => {
+    await logout();
+    setMobileMenuOpen(false);
+  };
+
   return (
     <>
-      {/* ── STICKY HEADER BLOCK (announcement + header together) ── */}
+      {/* ── STICKY HEADER BLOCK ── */}
       <div className={headerClasses}>
-
-        {/* Announcement bar */}
-        <div className="announcement-bar">
-          <span className={`announcement-text${announcementVisible ? " visible" : " hidden"}`}>
-            {announcements[announcementIndex]}
-          </span>
-        </div>
 
         {/* Header */}
         <div className="header-inner">
@@ -125,14 +117,18 @@ export default function Header() {
               </button>
             </div>
 
-            <Link to="/" className="site-logo">Prairie Soap Shack</Link>
+            <Link to="/" className="site-logo">{visibleSettings.brandName}</Link>
 
             <div className="h-right">
               <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search">
                 <Search size={20} />
               </button>
-              <Link to="/account" className="icon-btn" aria-label="Account">
-                <User size={20} />
+              <Link to={accountHref} className="icon-btn account-link-btn" aria-label={user ? t.account : t.login}>
+                <span className="account-icon-wrap">
+                  <User size={20} />
+                  {user && <span className="account-status-dot" />}
+                </span>
+                <span className="account-link-label">{user ? t.account : t.login}</span>
               </Link>
               <button className="icon-btn cart-icon-btn" onClick={() => setIsCartOpen(true)} aria-label="Cart">
                 <ShoppingBag size={20} />
@@ -212,6 +208,15 @@ export default function Header() {
           <Link to="/about" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.aboutUs}</Link>
           <Link to="/find-us" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.findUs}</Link>
           <Link to="/contact" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.contact}</Link>
+          <div className="mobile-divider" />
+          <Link to={accountHref} className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
+            {user ? t.account : t.login}
+          </Link>
+          {user && (
+            <button type="button" className="mobile-link mobile-link-btn" onClick={handleMobileLogout}>
+              {t.logout}
+            </button>
+          )}
           <div className="mobile-divider" />
           <div className="mobile-lang">
             <button

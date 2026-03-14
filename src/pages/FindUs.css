@@ -74,6 +74,11 @@
   opacity: 0.85;
 }
 
+.map-note-link {
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
 .map-ig-btn {
   margin-top: 0.5rem;
   display: inline-flex;

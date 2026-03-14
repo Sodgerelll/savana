@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export type Language = "EN" | "MN";
 
@@ -104,6 +105,29 @@ export interface Translations {
   storeHours: string;
   // Search
   searchPlaceholder: string;
+  // Auth
+  account: string;
+  login: string;
+  logout: string;
+  password: string;
+  confirmPassword: string;
+  passwordPlaceholder: string;
+  confirmPasswordPlaceholder: string;
+  loginHeading: string;
+  loginSubtext: string;
+  signIn: string;
+  createAccount: string;
+  noAccount: string;
+  haveAccount: string;
+  authLoading: string;
+  loginToCheckout: string;
+  accountHeading: string;
+  accountSubtext: string;
+  signedInAs: string;
+  authStatus: string;
+  authenticated: string;
+  memberSince: string;
+  openCart: string;
 }
 
 const en: Translations = {
@@ -140,20 +164,20 @@ const en: Translations = {
   learnOurStory: "Learn Our Story",
   collectionsHeading: "Our Collections",
   testimonialsHeading: "What Our Customers Are Saying",
-  newsletterHeading: "Join Our Prairie Community",
+  newsletterHeading: "Join the SAVANA Community",
   newsletterSubtext:
-    "Get updates on new products, seasonal collections, and prairie living tips",
+    "Get updates on new products, seasonal collections, and SAVANA news",
   newsletterPlaceholder: "Your email address",
   subscribe: "Subscribe",
   footerBrandDesc:
-    "Handcrafted natural skin and body care products made with love on the Canadian prairies. Simple, honest ingredients that nourish your skin and respect the earth.",
+    "Organic soap, solid shampoo, and wellness products made in Mongolia with thoughtful natural ingredients.",
   footerShop: "Shop",
   footerInfo: "Info",
   footerContact: "Contact",
   footerAbout: "About Us",
   footerPolicies: "Policies",
   footerFAQ: "FAQ",
-  footerCopyright: "Prairie Soap Shack. All rights reserved.",
+  footerCopyright: "SAVANA. All rights reserved.",
   footerShippingReturns: "Shipping & Returns",
   footerWholesale: "Wholesale",
   cartTitle: "Cart",
@@ -175,11 +199,11 @@ const en: Translations = {
   noProducts: "No products found in this collection.",
   viewAllProducts: "View All Products",
   aboutHeroHeading: "Our Story",
-  aboutHeroSub: "From the heart of the Canadian prairies to your home.",
+  aboutHeroSub: "From Mongolia to your home.",
   contactHeading: "Contact Us",
   contactSub: "We'd love to hear from you. Get in touch with any questions or feedback.",
   findUsHeading: "Find Us",
-  findUsSub: "Visit us at local markets and events across Alberta.",
+  findUsSub: "Find SAVANA through our official channels and delivery information.",
   sendMessage: "Send Us a Message",
   name: "Name",
   email: "Email",
@@ -195,6 +219,28 @@ const en: Translations = {
   marketSchedule: "Market Schedule",
   storeHours: "Store Hours",
   searchPlaceholder: "Search our store...",
+  account: "Account",
+  login: "Login",
+  logout: "Logout",
+  password: "Password",
+  confirmPassword: "Confirm Password",
+  passwordPlaceholder: "Enter your password",
+  confirmPasswordPlaceholder: "Repeat your password",
+  loginHeading: "Login and continue with your Savana session",
+  loginSubtext: "Firebase email/password authentication is now connected for secure sign in and account access.",
+  signIn: "Sign In",
+  createAccount: "Create Account",
+  noAccount: "Don't have an account?",
+  haveAccount: "Already have an account?",
+  authLoading: "Processing...",
+  loginToCheckout: "Login to Checkout",
+  accountHeading: "My Account",
+  accountSubtext: "Manage your session and continue from cart to the next order step.",
+  signedInAs: "Signed in as",
+  authStatus: "Status",
+  authenticated: "Authenticated",
+  memberSince: "Member since",
+  openCart: "Open Cart",
 };
 
 const mn: Translations = {
@@ -231,20 +277,20 @@ const mn: Translations = {
   learnOurStory: "Манай түүхийг мэдэх",
   collectionsHeading: "Манай цуглуулга",
   testimonialsHeading: "Манай үйлчлүүлэгчид юу хэлж байна",
-  newsletterHeading: "Манай Прэйри Нийгэмлэгт нэгдээрэй",
+  newsletterHeading: "SAVANA нийгэмлэгт нэгдээрэй",
   newsletterSubtext:
-    "Шинэ бүтээгдэхүүн, улирлын цуглуулга, прэйри амьдралын зөвлөмжийн талаар мэдээлэл авах",
+    "Шинэ бүтээгдэхүүн, улирлын цуглуулга, SAVANA-ийн мэдээ мэдээллийг аваарай",
   newsletterPlaceholder: "Таны и-мэйл хаяг",
   subscribe: "Бүртгүүлэх",
   footerBrandDesc:
-    "Канадын тал нутагт хайраар хийсэн байгалийн арьс, биеийн тусламжийн бүтээгдэхүүнүүд. Арьсыг тэжээж, байгалийг хүндэтгэх энгийн, шударга бүрэлдэхүүн хэсгүүд.",
+    "Монголд бүтээгдсэн органик саван, хатуу шампунь, эрүүл мэндийн бүтээгдэхүүнүүд.",
   footerShop: "Дэлгүүр",
   footerInfo: "Мэдээлэл",
   footerContact: "Холбоо барих",
   footerAbout: "Бидний тухай",
   footerPolicies: "Бодлого",
   footerFAQ: "Түгээмэл асуулт",
-  footerCopyright: "Prairie Soap Shack. Бүх эрх хуулиар хамгаалагдсан.",
+  footerCopyright: "SAVANA. Бүх эрх хуулиар хамгаалагдсан.",
   footerShippingReturns: "Хүргэлт & Буцаалт",
   footerWholesale: "Бөөний худалдаа",
   cartTitle: "Сагс",
@@ -286,6 +332,28 @@ const mn: Translations = {
   marketSchedule: "Зах зээлийн хуваарь",
   storeHours: "Дэлгүүрийн цагийн хуваарь",
   searchPlaceholder: "Дэлгүүрт хайх...",
+  account: "Бүртгэл",
+  login: "Нэвтрэх",
+  logout: "Гарах",
+  password: "Нууц үг",
+  confirmPassword: "Нууц үг давтах",
+  passwordPlaceholder: "Нууц үгээ оруулна уу",
+  confirmPasswordPlaceholder: "Нууц үгээ дахин оруулна уу",
+  loginHeading: "Savana системд нэвтэрч сешнээ үргэлжлүүлнэ үү",
+  loginSubtext: "Firebase email/password authentication холбогдсон тул аюулгүй нэвтрэлт, account access ашиглах боломжтой боллоо.",
+  signIn: "Нэвтрэх",
+  createAccount: "Бүртгэл үүсгэх",
+  noAccount: "Бүртгэлгүй юу?",
+  haveAccount: "Бүртгэлтэй юу?",
+  authLoading: "Боловсруулж байна...",
+  loginToCheckout: "Захиалга хийхийн тулд нэвтэр",
+  accountHeading: "Миний бүртгэл",
+  accountSubtext: "Сешнээ удирдаж, сагсаас дараагийн захиалгын алхам руу шилжинэ үү.",
+  signedInAs: "Нэвтэрсэн хаяг",
+  authStatus: "Төлөв",
+  authenticated: "Баталгаажсан",
+  memberSince: "Гишүүн болсон огноо",
+  openCart: "Сагс нээх",
 };
 
 interface LanguageContextType {
@@ -296,8 +364,23 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const LANGUAGE_STORAGE_KEY = "savana.language";
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<Language>("EN");
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window === "undefined") {
+      return "MN";
+    }
+
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return storedLanguage === "EN" || storedLanguage === "MN" ? storedLanguage : "MN";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    }
+  }, [language]);
 
   const t = language === "EN" ? en : mn;
 

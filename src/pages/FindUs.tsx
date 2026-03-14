@@ -1,36 +1,15 @@
-import { MapPin, Clock, Calendar, Instagram } from "lucide-react";
+import { MapPin, Clock, Calendar, Facebook, Instagram } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { useStorefront } from "../context/StorefrontContext";
+import { getActiveMarkets, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./FindUs.css";
 
-const markets = [
-  {
-    name: "Calgary Farmers' Market",
-    schedule: "Saturdays, 9am – 3pm",
-    address: "510 77 Ave SE, Calgary, AB",
-    season: "Year-round",
-  },
-  {
-    name: "Edmonton City Market",
-    schedule: "Saturdays, 8am – 3pm",
-    address: "103A Ave & 97 St NW, Edmonton, AB",
-    season: "May – October",
-  },
-  {
-    name: "Red Deer Farmers' Market",
-    schedule: "Saturdays, 8am – 1pm",
-    address: "4747 53 St, Red Deer, AB",
-    season: "Year-round",
-  },
-  {
-    name: "Lethbridge Farmer's Market",
-    schedule: "Thursdays, 10am – 2pm",
-    address: "400 Stafford Dr N, Lethbridge, AB",
-    season: "April – October",
-  },
-];
-
 export default function FindUs() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const { markets, settings } = useStorefront();
+  const visibleSettings = getRenderableSettings(settings);
+  const activeMarkets = getActiveMarkets(markets);
+  const hasMapLink = /^https?:\/\//i.test(visibleSettings.mapNote);
 
   return (
     <div className="find-us-page">
@@ -50,19 +29,36 @@ export default function FindUs() {
               <div className="map-placeholder">
                 <div className="map-placeholder-inner">
                   <MapPin size={48} strokeWidth={1} />
-                  <p>Alberta, Canada</p>
-                  <p className="map-note">
-                    We sell at farmers' markets and craft fairs across Alberta.
-                    Follow us on Instagram for the most up-to-date schedule.
-                  </p>
+                  <p>{visibleSettings.location}</p>
+                  {hasMapLink ? (
+                    <a
+                      href={visibleSettings.mapNote}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="map-note map-note-link"
+                    >
+                      {language === "MN" ? "Google Maps дээр харах" : "View on Google Maps"}
+                    </a>
+                  ) : (
+                    <p className="map-note">{visibleSettings.mapNote}</p>
+                  )}
                   <a
-                    href="https://instagram.com/prairiesoapshack"
+                    href={visibleSettings.facebookUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-outline map-ig-btn"
+                  >
+                    <Facebook size={16} />
+                    Facebook
+                  </a>
+                  <a
+                    href={visibleSettings.instagramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-outline map-ig-btn"
                   >
                     <Instagram size={16} />
-                    @prairiesoapshack
+                    {visibleSettings.instagramHandle}
                   </a>
                 </div>
               </div>
@@ -75,11 +71,7 @@ export default function FindUs() {
                   <Calendar size={22} strokeWidth={1.2} />
                 </div>
                 <h3>{t.marketSchedule}</h3>
-                <p>
-                  We participate in markets and craft fairs throughout Alberta,
-                  from spring through fall, with select winter markets in December.
-                  Check our Instagram for the most current schedule.
-                </p>
+                <p>{visibleSettings.marketIntro}</p>
               </div>
 
               <div className="find-us-card">
@@ -87,10 +79,7 @@ export default function FindUs() {
                   <Clock size={22} strokeWidth={1.2} />
                 </div>
                 <h3>{t.storeHours}</h3>
-                <p>
-                  We are an online-first business. Orders are shipped Monday–Friday.
-                  Market hours vary by location — see our schedule below.
-                </p>
+                <p>{visibleSettings.storeHoursText}</p>
               </div>
             </div>
           </div>
@@ -101,12 +90,12 @@ export default function FindUs() {
       <section className="markets-section section">
         <div className="container">
           <div className="section-header">
-            <h2>Where to Find Us</h2>
-            <p>We're at these markets throughout the year. Come say hello!</p>
+            <h2>{language === "MN" ? "Биднийг эндээс олоорой" : "Where to Find Us"}</h2>
+            <p>{language === "MN" ? "Жилийн турш оролцдог зах, эвентүүдийн мэдээлэл." : "Markets and seasonal events currently configured in the shop admin."}</p>
           </div>
           <div className="markets-grid">
-            {markets.map((market, index) => (
-              <div key={index} className="market-card">
+            {activeMarkets.map((market) => (
+              <div key={market.id} className="market-card">
                 <div className="market-card-header">
                   <MapPin size={18} className="market-icon" />
                   <h3>{market.name}</h3>
@@ -133,14 +122,10 @@ export default function FindUs() {
       <section className="find-us-cta">
         <div className="container">
           <div className="find-us-cta-inner">
-            <h2>Carry Prairie Soap Shack in Your Store?</h2>
-            <p>
-              We welcome wholesale inquiries from local retailers, spas, and boutiques
-              across Alberta and beyond. Let's work together to bring prairie-crafted
-              natural products to more people.
-            </p>
-            <a href="mailto:wholesale@prairiesoapshack.com" className="btn btn-primary">
-              Inquire About Wholesale
+            <h2>{visibleSettings.wholesaleHeading}</h2>
+            <p>{visibleSettings.wholesaleText}</p>
+            <a href={`mailto:${visibleSettings.wholesaleEmail}`} className="btn btn-primary">
+              {language === "MN" ? "Бөөний хамтын ажиллагаа" : "Inquire About Wholesale"}
             </a>
           </div>
         </div>
