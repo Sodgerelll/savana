@@ -1,9 +1,13 @@
 import { Mail, MapPin, Clock } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { useStorefront } from "../context/StorefrontContext";
+import { getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Contact.css";
 
 export default function Contact() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const { settings } = useStorefront();
+  const visibleSettings = getRenderableSettings(settings);
 
   return (
     <div className="contact-page">
@@ -48,21 +52,21 @@ export default function Contact() {
                   <Mail size={22} strokeWidth={1.2} />
                 </div>
                 <h3>{t.email}</h3>
-                <a href="mailto:hello@prairiesoapshack.com">hello@prairiesoapshack.com</a>
+                <a href={`mailto:${visibleSettings.contactEmail}`}>{visibleSettings.contactEmail}</a>
               </div>
               <div className="contact-info-card">
                 <div className="contact-info-icon">
                   <MapPin size={22} strokeWidth={1.2} />
                 </div>
-                <h3>Location</h3>
-                <p>Alberta, Canada</p>
+                <h3>{language === "MN" ? "Байршил" : "Location"}</h3>
+                <p>{visibleSettings.location}</p>
               </div>
               <div className="contact-info-card">
                 <div className="contact-info-icon">
                   <Clock size={22} strokeWidth={1.2} />
                 </div>
-                <h3>Response Time</h3>
-                <p>We typically respond within 24–48 hours</p>
+                <h3>{language === "MN" ? "Хариу өгөх хугацаа" : "Response Time"}</h3>
+                <p>{visibleSettings.responseTime}</p>
               </div>
             </div>
           </div>

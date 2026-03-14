@@ -1,5 +1,5 @@
 /* ============================================================
-   SITE HEADER WRAP  —  fixed block containing bar + header
+   SITE HEADER WRAP
    ============================================================ */
 .site-header-wrap {
   position: fixed;
@@ -15,8 +15,17 @@
   transform: translateY(0);
 }
 
+.site-header-wrap.subpage-sticky {
+  position: sticky;
+}
+
 /* When user has scrolled past hero: solid bg */
 .site-header-wrap.scrolled {
+  background: #faf9f6;
+  box-shadow: 0 2px 18px rgba(0,0,0,0.09);
+}
+
+.site-header-wrap.solid {
   background: #faf9f6;
   box-shadow: 0 2px 18px rgba(0,0,0,0.09);
 }
@@ -25,25 +34,6 @@
 .site-header-wrap.header-hidden {
   transform: translateY(-100%);
 }
-
-/* ============================================================
-   ANNOUNCEMENT BAR
-   ============================================================ */
-.announcement-bar {
-  background: rgb(90, 81, 3);
-  color: #fff;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Petrona', serif;
-  font-size: 0.72rem;
-  letter-spacing: 0.09em;
-  overflow: hidden;
-}
-.announcement-text          { transition: opacity 0.38s; }
-.announcement-text.visible  { opacity: 1; }
-.announcement-text.hidden   { opacity: 0; }
 
 /* ============================================================
    HEADER INNER
@@ -56,6 +46,11 @@
 
 /* When scrolled, give header-inner a solid look */
 .site-header-wrap.scrolled .header-inner {
+  background: #faf9f6;
+  border-bottom: 1px solid #d8d9cd;
+}
+
+.site-header-wrap.solid .header-inner {
   background: #faf9f6;
   border-bottom: 1px solid #d8d9cd;
 }
@@ -81,6 +76,44 @@
 }
 .h-right { justify-content: flex-end; }
 
+.account-link-btn {
+  gap: 0.45rem;
+}
+
+.account-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.account-status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d4c9b0;
+  border: 1px solid rgba(90, 81, 3, 0.2);
+}
+
+.site-header-wrap.scrolled .account-status-dot {
+  background: rgb(90, 81, 3);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.site-header-wrap.solid .account-status-dot {
+  background: rgb(90, 81, 3);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.account-link-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* Logo — white when transparent, dark when scrolled */
 .site-logo {
   font-family: 'EB Garamond', serif;
@@ -95,6 +128,10 @@
   text-shadow: 0 1px 6px rgba(0,0,0,0.2);
 }
 .site-header-wrap.scrolled .site-logo {
+  color: rgb(117, 114, 97);
+  text-shadow: none;
+}
+.site-header-wrap.solid .site-logo {
   color: rgb(117, 114, 97);
   text-shadow: none;
 }
@@ -118,8 +155,16 @@
   color: rgb(117, 114, 97);
   filter: none;
 }
+.site-header-wrap.solid .icon-btn {
+  color: rgb(117, 114, 97);
+  filter: none;
+}
 .icon-btn:hover { opacity: 0.7; }
 .site-header-wrap.scrolled .icon-btn:hover {
+  color: rgb(90, 81, 3);
+  opacity: 1;
+}
+.site-header-wrap.solid .icon-btn:hover {
   color: rgb(90, 81, 3);
   opacity: 1;
 }
@@ -156,8 +201,17 @@
   color: rgb(117, 114, 97);
   filter: none;
 }
+.site-header-wrap.solid .lang-btn {
+  border-color: rgb(183, 185, 167);
+  color: rgb(117, 114, 97);
+  filter: none;
+}
 .lang-btn:hover { border-color: rgba(255,255,255,0.8); }
 .site-header-wrap.scrolled .lang-btn:hover {
+  border-color: rgb(90, 81, 3);
+  color: rgb(90, 81, 3);
+}
+.site-header-wrap.solid .lang-btn:hover {
   border-color: rgb(90, 81, 3);
   color: rgb(90, 81, 3);
 }
@@ -171,6 +225,10 @@
   transition: background-color 0.35s ease, border-color 0.35s ease;
 }
 .site-header-wrap.scrolled .header-nav {
+  background: #faf9f6;
+  border-top: 1px solid #d8d9cd;
+}
+.site-header-wrap.solid .header-nav {
   background: #faf9f6;
   border-top: 1px solid #d8d9cd;
 }
@@ -204,6 +262,10 @@
   color: rgb(117, 114, 97);
   text-shadow: none;
 }
+.site-header-wrap.solid .nav-link {
+  color: rgb(117, 114, 97);
+  text-shadow: none;
+}
 
 /* Underline hover animation */
 .nav-link::after {
@@ -217,6 +279,9 @@
 .site-header-wrap.scrolled .nav-link::after {
   background: rgb(90, 81, 3);
 }
+.site-header-wrap.solid .nav-link::after {
+  background: rgb(90, 81, 3);
+}
 
 .nav-link:hover,
 .nav-has-dropdown:hover .nav-shop-trigger {
@@ -224,6 +289,11 @@
 }
 .site-header-wrap.scrolled .nav-link:hover,
 .site-header-wrap.scrolled .nav-has-dropdown:hover .nav-shop-trigger {
+  color: rgb(90, 81, 3);
+  opacity: 1;
+}
+.site-header-wrap.solid .nav-link:hover,
+.site-header-wrap.solid .nav-has-dropdown:hover .nav-shop-trigger {
   color: rgb(90, 81, 3);
   opacity: 1;
 }
@@ -415,6 +485,15 @@
 }
 .mobile-link:hover { color: rgb(90, 81, 3); }
 
+.mobile-link-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font-family: 'Petrona', serif;
+  cursor: pointer;
+}
+
 .mobile-divider { height: 1.5rem; }
 
 .mobile-lang {
@@ -447,6 +526,7 @@
   .site-logo     { font-size: 1.3rem; }
   .lang-btn      { display: none; }
   .header-row-top { height: 60px; }
+  .account-link-label { display: none; }
 }
 @media (max-width: 480px) {
   .site-logo { font-size: 1.1rem; }

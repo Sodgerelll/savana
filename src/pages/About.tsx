@@ -1,10 +1,15 @@
 import { Link } from "react-router-dom";
 import { Leaf, Heart, Sun, Sprout } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { useStorefront } from "../context/StorefrontContext";
+import { getRenderableSettings } from "../lib/storefrontHelpers";
 import "./About.css";
 
 export default function About() {
   const { t } = useLanguage();
+  const { settings } = useStorefront();
+  const visibleSettings = getRenderableSettings(settings);
+  const aboutParagraphs = visibleSettings.aboutIntroBody.split("\n\n").filter(Boolean);
 
   return (
     <div className="about-page">
@@ -31,23 +36,10 @@ export default function About() {
               </div>
             </div>
             <div className="about-intro-content">
-              <h2>Where It All Began</h2>
-              <p>
-                Prairie Soap Shack started in a small kitchen in rural Alberta, born
-                from a passion for natural living and a desire to create skincare
-                products that are both effective and gentle on the earth.
-              </p>
-              <p>
-                What began as a hobby of making soap for family and friends quickly
-                grew into something more. Word spread about our handcrafted bars, and
-                before we knew it, Prairie Soap Shack was born.
-              </p>
-              <p>
-                Today, we continue to handcraft every product in small batches,
-                ensuring the same quality and care that went into our very first bar
-                of soap. We source our ingredients thoughtfully, prioritizing local
-                and sustainable options whenever possible.
-              </p>
+              <h2>{visibleSettings.aboutIntroTitle}</h2>
+              {aboutParagraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
             </div>
           </div>
         </div>
@@ -85,11 +77,11 @@ export default function About() {
               <div className="about-value-icon">
                 <Sun size={32} strokeWidth={1.2} />
               </div>
-              <h3>Prairie Inspired</h3>
+              <h3>Mongolia Inspired</h3>
               <p>
-                Our recipes are inspired by the beauty and bounty of the Canadian
-                prairies. From wildflower-infused oils to locally harvested honey,
-                we celebrate our prairie roots.
+                Our recipes are inspired by local ingredients, practical daily care,
+                and the clean aesthetic that defines SAVANA. We focus on products
+                that feel simple, useful, and intentional.
               </p>
             </div>
             <div className="about-value">

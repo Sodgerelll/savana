@@ -1,12 +1,21 @@
-/* Fixed header height: 34px (announcement) + 72px (top row) + 40px (nav) = 146px */
-main {
-  padding-top: 146px;
+.app-main {
   min-height: 100vh;
 }
 
+.app-main.no-header {
+  padding-top: 0;
+}
+
+.app-main.home-header-offset {
+  padding-top: 112px;
+}
+
 @media (max-width: 768px) {
-  /* Mobile: 34px (announcement) + 60px (top row) = 94px (no nav row) */
-  main {
-    padding-top: 94px;
+  .app-main.no-header {
+    padding-top: 0;
+  }
+
+  .app-main.home-header-offset {
+    padding-top: 60px;
   }
 }

@@ -1,10 +1,15 @@
 import { Link } from "react-router-dom";
 import { Instagram, Facebook, Mail } from "lucide-react";
+import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
+import { getActiveCollections, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Footer.css";
 
 export default function Footer() {
   const { t } = useLanguage();
+  const { collections, settings } = useStorefront();
+  const activeCollections = getActiveCollections(collections);
+  const visibleSettings = getRenderableSettings(settings);
 
   return (
     <footer className="footer">
@@ -28,16 +33,16 @@ export default function Footer() {
           <div className="footer-grid">
             {/* Col 1: Brand */}
             <div className="footer-col footer-col-brand">
-              <Link to="/" className="footer-logo">Prairie Soap Shack</Link>
-              <p className="footer-about">{t.footerBrandDesc}</p>
+              <Link to="/" className="footer-logo">{visibleSettings.brandName}</Link>
+              <p className="footer-about">{visibleSettings.brandDescription}</p>
               <div className="social-links">
-                <a href="#" aria-label="Instagram" rel="noopener noreferrer">
+                <a href={visibleSettings.instagramUrl} aria-label="Instagram" rel="noopener noreferrer" target="_blank">
                   <Instagram size={18} />
                 </a>
-                <a href="#" aria-label="Facebook" rel="noopener noreferrer">
+                <a href={visibleSettings.facebookUrl} aria-label="Facebook" rel="noopener noreferrer" target="_blank">
                   <Facebook size={18} />
                 </a>
-                <a href="mailto:hello@prairiesoapshack.com" aria-label="Email">
+                <a href={`mailto:${visibleSettings.contactEmail}`} aria-label="Email">
                   <Mail size={18} />
                 </a>
               </div>
@@ -48,12 +53,11 @@ export default function Footer() {
               <h4>{t.footerShop}</h4>
               <ul>
                 <li><Link to="/collections">{t.allProducts}</Link></li>
-                <li><Link to="/collections/soap">{t.allNaturalSoap}</Link></li>
-                <li><Link to="/collections/skin-care">{t.skinCare}</Link></li>
-                <li><Link to="/collections/body-care">{t.bodyCare}</Link></li>
-                <li><Link to="/collections/hair">{t.hair}</Link></li>
-                <li><Link to="/collections/lip-care">{t.lipCare}</Link></li>
-                <li><Link to="/collections/best-sellers">{t.bestSellers}</Link></li>
+                {activeCollections.map((collection) => (
+                  <li key={collection.id}>
+                    <Link to={`/collections/${collection.slug}`}>{collection.name}</Link>
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -74,13 +78,18 @@ export default function Footer() {
             <div className="footer-col">
               <h4>{t.footerContact}</h4>
               <ul className="footer-contact-list">
-                <li>Alberta, Canada</li>
+                <li>{visibleSettings.location}</li>
                 <li>
-                  <a href="mailto:hello@prairiesoapshack.com">hello@prairiesoapshack.com</a>
+                  <a href={`mailto:${visibleSettings.contactEmail}`}>{visibleSettings.contactEmail}</a>
                 </li>
                 <li>
-                  <a href="https://instagram.com/prairiesoapshack" target="_blank" rel="noopener noreferrer">
-                    @prairiesoapshack
+                  <a href={visibleSettings.facebookUrl} target="_blank" rel="noopener noreferrer">
+                    Facebook
+                  </a>
+                </li>
+                <li>
+                  <a href={visibleSettings.instagramUrl} target="_blank" rel="noopener noreferrer">
+                    {visibleSettings.instagramHandle}
                   </a>
                 </li>
               </ul>

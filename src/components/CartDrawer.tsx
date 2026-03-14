@@ -1,20 +1,28 @@
 import { X, Minus, Plus, ShoppingBag } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useStorefront } from "../context/StorefrontContext";
+import { formatStorePrice, getCategoryGradient, getProductPrimaryImage } from "../lib/storefrontHelpers";
 import "./CartDrawer.css";
 
 export default function CartDrawer() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { items, removeItem, updateQuantity, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { t } = useLanguage();
+  const { collections } = useStorefront();
 
-  const formatPrice = (price: number) => `$${price.toFixed(2)} CAD`;
+  const handleCheckout = () => {
+    setIsCartOpen(false);
 
-  const categoryGradients: Record<string, string> = {
-    soap: "linear-gradient(135deg, #c8bfa8 0%, #b5a98e 100%)",
-    "skin-care": "linear-gradient(135deg, #d4c9b0 0%, #c2b49a 100%)",
-    "body-care": "linear-gradient(135deg, #bfc8aa 0%, #aab592 100%)",
-    hair: "linear-gradient(135deg, #c4bda8 0%, #b0a890 100%)",
-    "lip-care": "linear-gradient(135deg, #d0c0b0 0%, #bda898 100%)",
+    if (user) {
+      navigate("/account");
+      return;
+    }
+
+    navigate("/login", { state: { from: "/account" } });
   };
 
   return (
@@ -44,18 +52,26 @@ export default function CartDrawer() {
                   <div
                     className="cart-item-image"
                     style={{
-                      background: categoryGradients[item.product.category] || categoryGradients.soap,
+                      background: getCategoryGradient(collections, item.product.category),
                     }}
                   >
-                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-                      <ellipse cx="18" cy="22" rx="11" ry="7" fill="rgba(255,255,255,0.25)" />
-                      <rect x="8" y="12" width="20" height="13" rx="7" fill="rgba(255,255,255,0.32)" />
-                    </svg>
+                    {getProductPrimaryImage(item.product) ? (
+                      <img
+                        src={getProductPrimaryImage(item.product)}
+                        alt={item.product.name}
+                        className="cart-item-photo"
+                      />
+                    ) : (
+                      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+                        <ellipse cx="18" cy="22" rx="11" ry="7" fill="rgba(255,255,255,0.25)" />
+                        <rect x="8" y="12" width="20" height="13" rx="7" fill="rgba(255,255,255,0.32)" />
+                      </svg>
+                    )}
                   </div>
                   <div className="cart-item-info">
                     <h4>{item.product.name}</h4>
                     {item.variant && <p className="cart-item-variant">{item.variant}</p>}
-                    <p className="cart-item-price">{formatPrice(item.product.price)}</p>
+                    <p className="cart-item-price">{formatStorePrice(item.product.price)}</p>
                     <div className="cart-item-quantity">
                       <button
                         onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
@@ -86,11 +102,11 @@ export default function CartDrawer() {
             <div className="cart-footer">
               <div className="cart-subtotal">
                 <span>{t.cartSubtotal}</span>
-                <span>{formatPrice(totalPrice)}</span>
+                <span>{formatStorePrice(totalPrice)}</span>
               </div>
               <p className="cart-note">{t.cartNote}</p>
-              <button className="btn btn-primary cart-checkout-btn">
-                {t.checkout}
+              <button className="btn btn-primary cart-checkout-btn" onClick={handleCheckout}>
+                {user ? t.checkout : t.loginToCheckout}
               </button>
             </div>
           </>

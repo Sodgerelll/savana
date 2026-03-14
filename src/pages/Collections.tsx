@@ -1,34 +1,33 @@
 import { useParams, Link } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
 import { useLanguage } from "../context/LanguageContext";
-import { products, collections } from "../data/products";
+import { useStorefront } from "../context/StorefrontContext";
+import { getActiveCollections, getActiveProducts, SYSTEM_COLLECTION_SLUG } from "../lib/storefrontHelpers";
 import "./Collections.css";
 
 export default function Collections() {
   const { slug } = useParams();
   const { t } = useLanguage();
+  const { products, collections } = useStorefront();
+  const activeCollections = getActiveCollections(collections);
+  const visibleProducts = getActiveProducts(products, collections);
+  const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
 
   const currentCollection = slug
-    ? collections.find((c) => c.slug === slug)
+    ? activeCollections.find((c) => c.slug === slug)
     : null;
 
-  // For best-sellers slug, show bestSeller products
-  const filteredProducts = slug === "best-sellers"
-    ? products.filter((p) => p.bestSeller)
+  const filteredProducts = slug === SYSTEM_COLLECTION_SLUG
+    ? bestSellersVisible
+      ? visibleProducts.filter((p) => p.bestSeller)
+      : []
     : slug
-    ? products.filter((p) => p.category === slug)
-    : products;
+      ? visibleProducts.filter((p) => p.category === slug)
+      : visibleProducts;
 
-  const collectionNameMap: Record<string, string> = {
-    soap: t.allNaturalSoap,
-    "skin-care": t.skinCare,
-    "body-care": t.bodyCare,
-    hair: t.hair,
-    "lip-care": t.lipCare,
-    "best-sellers": t.bestSellers,
-  };
-
-  const title = slug ? (collectionNameMap[slug] || currentCollection?.name || slug) : t.allProducts;
+  const title = slug
+    ? currentCollection?.name || (slug === SYSTEM_COLLECTION_SLUG ? t.bestSellers : slug)
+    : t.allProducts;
   const description = currentCollection
     ? currentCollection.description
     : "Browse our complete collection of handcrafted natural products.";
@@ -54,13 +53,13 @@ export default function Collections() {
           >
             {t.allProducts}
           </Link>
-          {collections.map((c) => (
+          {activeCollections.map((c) => (
             <Link
               to={`/collections/${c.slug}`}
               key={c.id}
               className={`filter-btn ${c.slug === slug ? "active" : ""}`}
             >
-              {collectionNameMap[c.slug] || c.name}
+              {c.name}
             </Link>
           ))}
         </div>
