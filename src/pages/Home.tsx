@@ -174,10 +174,9 @@ export default function Home() {
           ))}
         </div>
         <div className="hero-overlay" />
-        <div className="hero-shell container">
+          <div className="hero-shell container">
           <div className="hero-stage">
             <div key={currentHero.id} className="hero-content hero-content-card">
-              <p className="hero-label">{visibleSettings.brandName}</p>
               <h1 className="hero-heading">{currentHero.title}</h1>
               <p className="hero-subtext">{currentHero.description}</p>
               <div className="hero-actions">

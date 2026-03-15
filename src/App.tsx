@@ -4,6 +4,7 @@ import { CartProvider } from "./context/CartContext";
 import { AuthProvider } from "./context/AuthContext";
 import { StorefrontProvider } from "./context/StorefrontContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import "./App.css";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -16,6 +17,7 @@ import Contact from "./pages/Contact";
 import FindUs from "./pages/FindUs";
 import Login from "./pages/Login";
 import Account from "./pages/Account";
+import Checkout from "./pages/Checkout";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -27,8 +29,8 @@ function ScrollToTop() {
 
 function AppShell() {
   const { pathname } = useLocation();
-  const hideHeader = pathname === "/account";
-  const hideFooter = pathname === "/account";
+  const hideHeader = pathname === "/account" || pathname === "/checkout";
+  const hideFooter = pathname === "/account" || pathname === "/checkout";
   const isHome = pathname === "/";
   const mainClasses = [
     "app-main",
@@ -52,6 +54,7 @@ function AppShell() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/find-us" element={<FindUs />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/checkout" element={<Checkout />} />
           <Route
             path="/account"
             element={

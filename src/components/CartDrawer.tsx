@@ -13,17 +13,17 @@ export default function CartDrawer() {
   const { items, removeItem, updateQuantity, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { t } = useLanguage();
   const { collections } = useStorefront();
-  const canCheckout = Boolean(user && !user.isAnonymous);
+  const canCheckout = Boolean(user);
 
   const handleCheckout = () => {
     setIsCartOpen(false);
 
     if (canCheckout) {
-      navigate("/account");
+      navigate("/checkout");
       return;
     }
 
-    navigate("/login", { state: { from: "/account" } });
+    navigate("/login", { state: { from: "/checkout" } });
   };
 
   return (
@@ -72,17 +72,17 @@ export default function CartDrawer() {
                   <div className="cart-item-info">
                     <h4>{item.product.name}</h4>
                     {item.variant && <p className="cart-item-variant">{item.variant}</p>}
-                    <p className="cart-item-price">{formatStorePrice(item.product.price)}</p>
+                    <p className="cart-item-price">{formatStorePrice(item.unitPrice)}</p>
                     <div className="cart-item-quantity">
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variant)}
                         aria-label="Decrease quantity"
                       >
                         <Minus size={12} />
                       </button>
                       <span>{item.quantity}</span>
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.variant)}
                         aria-label="Increase quantity"
                       >
                         <Plus size={12} />
@@ -91,7 +91,7 @@ export default function CartDrawer() {
                   </div>
                   <button
                     className="cart-item-remove"
-                    onClick={() => removeItem(item.product.id)}
+                    onClick={() => removeItem(item.product.id, item.variant)}
                     aria-label="Remove item"
                   >
                     <X size={14} />

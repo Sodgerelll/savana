@@ -118,7 +118,6 @@ export interface Translations {
   signIn: string;
   createAccount: string;
   signInWithGoogle: string;
-  signInWithFacebook: string;
   continueAsGuest: string;
   phoneNumber: string;
   phoneNumberPlaceholder: string;
@@ -243,11 +242,10 @@ const en: Translations = {
   passwordPlaceholder: "Enter your password",
   confirmPasswordPlaceholder: "Repeat your password",
   loginHeading: "Login and continue with your Savana session",
-  loginSubtext: "Use phone verification, Gmail, Facebook, guest access, or email/password to continue securely.",
+  loginSubtext: "Use phone number and password, Gmail, guest access, or email/password to continue securely.",
   signIn: "Sign In",
   createAccount: "Create Account",
   signInWithGoogle: "Continue with Google",
-  signInWithFacebook: "Continue with Facebook",
   continueAsGuest: "Continue as Guest",
   phoneNumber: "Phone Number",
   phoneNumberPlaceholder: "+97699112233",
@@ -258,7 +256,7 @@ const en: Translations = {
   resendCode: "Resend Code",
   useDifferentPhone: "Use Different Number",
   orContinueWith: "or continue with",
-  orContinueWithPhone: "or use phone verification",
+  orContinueWithPhone: "or use phone number and password",
   phoneCodeSent: "Verification code sent.",
   phoneCodeSentHelp: "Enter the SMS code to finish signing in.",
   guestSessionActive: "Guest session is active. You can continue shopping or switch to a full account.",
@@ -372,11 +370,10 @@ const mn: Translations = {
   passwordPlaceholder: "Нууц үгээ оруулна уу",
   confirmPasswordPlaceholder: "Нууц үгээ дахин оруулна уу",
   loginHeading: "Savana системд нэвтэрч сешнээ үргэлжлүүлнэ үү",
-  loginSubtext: "Утасны баталгаажуулалт, Gmail, Facebook, guest access эсвэл и-мэйл/нууц үгээр аюулгүй нэвтэрч үргэлжлүүлнэ үү.",
+  loginSubtext: "Утасны дугаар, нууц үг, Gmail, guest access эсвэл и-мэйл/нууц үгээр аюулгүй нэвтэрч үргэлжлүүлнэ үү.",
   signIn: "Нэвтрэх",
   createAccount: "Бүртгэл үүсгэх",
   signInWithGoogle: "Google-ээр үргэлжлүүлэх",
-  signInWithFacebook: "Facebook-ээр үргэлжлүүлэх",
   continueAsGuest: "Зочноор үргэлжлүүлэх",
   phoneNumber: "Утасны дугаар",
   phoneNumberPlaceholder: "+97699112233",
@@ -387,7 +384,7 @@ const mn: Translations = {
   resendCode: "Код дахин илгээх",
   useDifferentPhone: "Өөр дугаар ашиглах",
   orContinueWith: "эсвэл дараахаар үргэлжлүүлэх",
-  orContinueWithPhone: "эсвэл утасны баталгаажуулалт ашиглах",
+  orContinueWithPhone: "эсвэл утасны дугаар, нууц үг ашиглах",
   phoneCodeSent: "Баталгаажуулах код илгээгдлээ.",
   phoneCodeSentHelp: "SMS-ээр ирсэн кодыг оруулж нэвтрэлтээ дуусгана уу.",
   guestSessionActive: "Зочин сешн идэвхтэй байна. Та дэлгүүрлэж үргэлжлүүлэх эсвэл бүрэн бүртгэл рүү шилжиж болно.",

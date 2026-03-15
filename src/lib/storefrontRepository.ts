@@ -221,6 +221,7 @@ export function getStorefrontStructure() {
     settings: `sites/${STOREFRONT_SITE_ID}/settings/general`,
     collections: "collections/{collectionId}",
     products: "products/{productId}",
+    orders: "orders/{orderId}",
     heroBanners: `sites/${STOREFRONT_SITE_ID}/heroBanners/{bannerId}`,
     markets: `sites/${STOREFRONT_SITE_ID}/markets/{marketId}`,
     testimonials: `sites/${STOREFRONT_SITE_ID}/testimonials/{testimonialId}`,

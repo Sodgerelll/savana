@@ -18,7 +18,7 @@ import type { User } from "firebase/auth";
 import { db } from "./firebase";
 
 export type UserAuthMethod = "email" | "google" | "facebook" | "phone" | "guest" | "unknown";
-export type UserRole = "customer" | "admin" | "sysadmin";
+export type UserRole = "customer" | "worker" | "admin" | "sysadmin";
 
 export interface UserProfile {
   uid: string;
@@ -49,10 +49,13 @@ function parseConfigList(value: string | undefined, normalize: (item: string) =>
 
 const sysadminUids = parseConfigList(import.meta.env.VITE_SYSADMIN_UIDS, (item) => item.trim());
 const adminUids = parseConfigList(import.meta.env.VITE_ADMIN_UIDS, (item) => item.trim());
+const workerUids = parseConfigList(import.meta.env.VITE_WORKER_UIDS, (item) => item.trim());
 const sysadminEmails = parseConfigList(import.meta.env.VITE_SYSADMIN_EMAILS);
 const adminEmails = parseConfigList(import.meta.env.VITE_ADMIN_EMAILS);
+const workerEmails = parseConfigList(import.meta.env.VITE_WORKER_EMAILS);
 const sysadminPhones = parseConfigList(import.meta.env.VITE_SYSADMIN_PHONES, (item) => normalizePhoneNumber(item) ?? "");
 const adminPhones = parseConfigList(import.meta.env.VITE_ADMIN_PHONES, (item) => normalizePhoneNumber(item) ?? "");
+const workerPhones = parseConfigList(import.meta.env.VITE_WORKER_PHONES, (item) => normalizePhoneNumber(item) ?? "");
 
 function normalizePhoneNumber(value: string | null | undefined) {
   if (!value) {
@@ -121,7 +124,7 @@ function deserializeUserProfile(snapshot: QueryDocumentSnapshot<DocumentData> | 
     email: typeof data.email === "string" ? data.email : null,
     phoneNumber: typeof data.phoneNumber === "string" ? data.phoneNumber : null,
     displayName: typeof data.displayName === "string" ? data.displayName : null,
-    role: data.role === "sysadmin" || data.role === "admin" ? data.role : "customer",
+    role: data.role === "sysadmin" || data.role === "admin" || data.role === "worker" ? data.role : "customer",
     registrationMethod:
       data.registrationMethod === "email" ||
       data.registrationMethod === "google" ||
@@ -166,7 +169,7 @@ export function resolveUserRole(identity: {
   phoneNumber?: string | null;
   role?: UserRole | null;
 }) {
-  if (identity.role === "sysadmin" || identity.role === "admin") {
+  if (identity.role === "sysadmin" || identity.role === "admin" || identity.role === "worker") {
     return identity.role;
   }
 
@@ -184,6 +187,14 @@ export function resolveUserRole(identity: {
     (identity.phoneNumber && adminPhones.has(normalizePhoneNumber(identity.phoneNumber) ?? ""))
   ) {
     return "admin";
+  }
+
+  if (
+    (identity.uid && workerUids.has(identity.uid)) ||
+    (identity.email && workerEmails.has(identity.email.toLowerCase())) ||
+    (identity.phoneNumber && workerPhones.has(normalizePhoneNumber(identity.phoneNumber) ?? ""))
+  ) {
+    return "worker";
   }
 
   return "customer";
@@ -214,6 +225,8 @@ export async function syncUserProfile(
     registrationMethod?: UserAuthMethod;
     hasPassword?: boolean;
     phoneLoginEmail?: string | null;
+    phoneNumber?: string | null;
+    email?: string | null;
   } = {},
 ) {
   if (user.isAnonymous) {
@@ -230,8 +243,11 @@ export async function syncUserProfile(
 
   const nextProfile: UserProfile = {
     uid: user.uid,
-    email: user.email ?? existingProfile?.email ?? null,
-    phoneNumber: normalizePhoneNumber(user.phoneNumber) ?? existingProfile?.phoneNumber ?? null,
+    email: options.email !== undefined ? options.email : user.email ?? existingProfile?.email ?? null,
+    phoneNumber:
+      options.phoneNumber !== undefined
+        ? normalizePhoneNumber(options.phoneNumber)
+        : normalizePhoneNumber(user.phoneNumber) ?? existingProfile?.phoneNumber ?? null,
     displayName: user.displayName ?? existingProfile?.displayName ?? null,
     role: existingProfile?.role ?? "customer",
     registrationMethod: existingProfile?.registrationMethod ?? options.registrationMethod ?? currentMethod,

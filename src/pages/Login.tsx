@@ -1,12 +1,12 @@
 import { ShieldCheck, ShoppingBag, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage, type Language } from "../context/LanguageContext";
 import "./Auth.css";
 
 type AuthMode = "login" | "register";
-type PhoneAccessMode = "code" | "password";
+type CredentialTab = "email" | "phone";
 
 function getAuthErrorMessage(code: string | undefined, language: Language) {
   const messages = {
@@ -27,6 +27,7 @@ function getAuthErrorMessage(code: string | undefined, language: Language) {
       "auth/missing-verification-id": "Request a verification code first.",
       "auth/network-request-failed": "Network error. Check your connection and try again.",
       "auth/operation-not-allowed": "This sign-in method is not enabled in Firebase yet.",
+      "auth/phone-already-in-use": "This phone number is already registered.",
       "auth/phone-password-not-enabled": "This phone number does not have password login enabled.",
       "auth/popup-blocked": "The popup was blocked by the browser.",
       "auth/popup-closed-by-user": "The sign-in window was closed before completion.",
@@ -53,6 +54,7 @@ function getAuthErrorMessage(code: string | undefined, language: Language) {
       "auth/missing-verification-id": "Эхлээд баталгаажуулах код хүснэ үү.",
       "auth/network-request-failed": "Сүлжээний алдаа гарлаа. Холболтоо шалгаад дахин оролдоно уу.",
       "auth/operation-not-allowed": "Энэ нэвтрэх арга Firebase дээр хараахан идэвхжээгүй байна.",
+      "auth/phone-already-in-use": "Энэ утасны дугаар аль хэдийн бүртгэлтэй байна.",
       "auth/phone-password-not-enabled": "Энэ утасны дугаарт password нэвтрэлт тохируулагдаагүй байна.",
       "auth/popup-blocked": "Хөтөч popup цонхыг блоклосон байна.",
       "auth/popup-closed-by-user": "Нэвтрэх цонх дуусахаас өмнө хаагдлаа.",
@@ -98,34 +100,27 @@ export default function Login() {
     signIn,
     signUp,
     signInWithGoogle,
-    signInWithFacebook,
     signInAsGuest,
     signInWithPhonePassword,
-    requestPhoneCode,
-    confirmPhoneCode,
-    resetPhoneSignIn,
+    signUpWithPhonePassword,
     logout,
   } = useAuth();
   const { t, language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
-  const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
   const locationState = location.state as { from?: string } | null;
   const redirectPath = locationState?.from ?? "/account";
 
   const [mode, setMode] = useState<AuthMode>("login");
-  const [phoneAccessMode, setPhoneAccessMode] = useState<PhoneAccessMode>("code");
+  const [credentialTab, setCredentialTab] = useState<CredentialTab>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phonePassword, setPhonePassword] = useState("");
   const [confirmPhonePassword, setConfirmPhonePassword] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
-  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     if (!loading && user && !user.isAnonymous) {
@@ -135,22 +130,29 @@ export default function Login() {
 
   const isBusy = pendingAction !== null || loading;
   const isGuestSession = Boolean(user?.isAnonymous);
-  const showPhonePasswordLogin = mode === "login" && phoneAccessMode === "password";
   const phoneMethodLabel =
     language === "MN"
       ? {
-          code: "SMS код",
-          password: "Нууц үг",
-          loginHelp: "Утасны дугаараар код эсвэл нууц үгээр нэвтэрнэ.",
-          registerHelp: "Утасны дугаараа баталгаажуулаад нууц үгтэй бүртгэл үүсгэнэ.",
+          loginHelp: "Утасны дугаар, нууц үгээр нэвтэрнэ.",
+          registerHelp: "Утасны дугаар, нууц үгээр бүртгэл үүсгэнэ.",
           typeLabel: "Бүртгэлийн төрөл",
+          tabLabel: "Утас",
         }
       : {
-          code: "SMS Code",
-          password: "Password",
-          loginHelp: "Sign in with your phone number using an SMS code or password.",
-          registerHelp: "Verify your phone number and create a password-protected account.",
+          loginHelp: "Sign in using your phone number and password.",
+          registerHelp: "Create an account using your phone number and password.",
           typeLabel: "Registration Type",
+          tabLabel: "Phone",
+        };
+  const emailMethodLabel =
+    language === "MN"
+      ? {
+          help: "И-мэйл, нууц үгээр нэвтрэх эсвэл бүртгэл үүсгэх.",
+          tabLabel: "И-мэйл",
+        }
+      : {
+          help: "Use your email and password to sign in or create an account.",
+          tabLabel: "Email",
         };
 
   const handleAuthFailure = (authError: unknown) => {
@@ -168,7 +170,6 @@ export default function Login() {
   const runAuthAction = async (action: string, callback: () => Promise<void>) => {
     setPendingAction(action);
     setError("");
-    setNotice("");
 
     try {
       await callback();
@@ -179,23 +180,9 @@ export default function Login() {
     }
   };
 
-  const resetPhoneFlow = (options: { clearPassword?: boolean } = {}) => {
-    resetPhoneSignIn();
-    setPhoneCodeSent(false);
-    setVerificationCode("");
-
-    if (options.clearPassword) {
-      setPhonePassword("");
-      setConfirmPhonePassword("");
-    }
-  };
-
   const handleModeChange = (nextMode: AuthMode) => {
     setMode(nextMode);
-    setPhoneAccessMode("code");
-    resetPhoneFlow();
     setError("");
-    setNotice("");
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -217,13 +204,18 @@ export default function Login() {
     });
   };
 
-  const validatePhoneRegistrationPassword = () => {
+  const validatePhoneCredentials = () => {
+    if (!phoneNumber.trim()) {
+      setError(getAuthErrorMessage("auth/missing-phone-number", language));
+      return false;
+    }
+
     if (!phonePassword.trim()) {
       setError(getAuthErrorMessage("phonePasswordRequired", language));
       return false;
     }
 
-    if (phonePassword !== confirmPhonePassword) {
+    if (mode === "register" && phonePassword !== confirmPhonePassword) {
       setError(getAuthErrorMessage("passwordMismatch", language));
       return false;
     }
@@ -231,79 +223,34 @@ export default function Login() {
     return true;
   };
 
-  const handlePhonePasswordLogin = async (event: FormEvent<HTMLFormElement>) => {
+  const handlePhoneSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    await runAuthAction("phone-password", async () => {
-      await signInWithPhonePassword(phoneNumber.trim(), phonePassword);
+    if (!validatePhoneCredentials()) {
+      return;
+    }
+
+    await runAuthAction("phone", async () => {
+      if (mode === "login") {
+        await signInWithPhonePassword(phoneNumber.trim(), phonePassword);
+      } else {
+        await signUpWithPhonePassword(phoneNumber.trim(), phonePassword);
+      }
+
       navigate(redirectPath, { replace: true });
-    });
-  };
-
-  const handlePhoneCodeFlow = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!phoneNumber.trim()) {
-      setError(getAuthErrorMessage("auth/missing-phone-number", language));
-      return;
-    }
-
-    if (mode === "register" && !phoneCodeSent && !validatePhoneRegistrationPassword()) {
-      return;
-    }
-
-    await runAuthAction(phoneCodeSent ? "phone-verify" : "phone-code", async () => {
-      if (phoneCodeSent) {
-        await confirmPhoneCode(
-          verificationCode.trim(),
-          mode === "register" ? { registrationPassword: phonePassword } : undefined,
-        );
-        navigate(redirectPath, { replace: true });
-        return;
-      }
-
-      if (!recaptchaContainerRef.current) {
-        throw new Error("reCAPTCHA container is not ready.");
-      }
-
-      await requestPhoneCode(phoneNumber.trim(), recaptchaContainerRef.current);
-      setPhoneCodeSent(true);
-      setVerificationCode("");
-      setNotice(`${t.phoneCodeSent} ${t.phoneCodeSentHelp}`);
-    });
-  };
-
-  const handleResendCode = async () => {
-    if (mode === "register" && !validatePhoneRegistrationPassword()) {
-      return;
-    }
-
-    await runAuthAction("phone-resend", async () => {
-      resetPhoneFlow();
-
-      if (!recaptchaContainerRef.current) {
-        throw new Error("reCAPTCHA container is not ready.");
-      }
-
-      await requestPhoneCode(phoneNumber.trim(), recaptchaContainerRef.current);
-      setPhoneCodeSent(true);
-      setNotice(`${t.phoneCodeSent} ${t.phoneCodeSentHelp}`);
     });
   };
 
   const handleGuestSignIn = async () => {
     await runAuthAction("guest", async () => {
-      resetPhoneFlow();
       await signInAsGuest();
-      navigate("/collections", { replace: true });
+      navigate(redirectPath, { replace: true });
     });
   };
 
   const handleGuestLogout = async () => {
     await runAuthAction("logout", async () => {
-      resetPhoneFlow({ clearPassword: true });
       await logout();
-      setNotice("");
     });
   };
 
@@ -344,8 +291,8 @@ export default function Login() {
               <Sparkles size={18} />
               <span>
                 {language === "MN"
-                  ? "Утас, Gmail, Facebook, и-мэйл бүртгэл бүгд нэг нэвтрэх дэлгэцэнд"
-                  : "Phone, Gmail, Facebook, and email flows are available from one screen"}
+                  ? "Утас, Gmail, guest, и-мэйл бүртгэл бүгд нэг нэвтрэх дэлгэцэнд"
+                  : "Phone, Gmail, guest, and email flows are available from one screen"}
               </span>
             </div>
           </div>
@@ -372,7 +319,6 @@ export default function Login() {
               </div>
             )}
 
-            {notice && <div className="auth-notice">{notice}</div>}
             {error && <div className="auth-error">{error}</div>}
 
             <div className="auth-provider-grid">
@@ -381,7 +327,6 @@ export default function Login() {
                 className="auth-provider-btn"
                 onClick={() =>
                   void runAuthAction("google", async () => {
-                    resetPhoneFlow();
                     await signInWithGoogle();
                     navigate(redirectPath, { replace: true });
                   })
@@ -391,25 +336,6 @@ export default function Login() {
                 <span className="auth-provider-badge">G</span>
                 <span className="auth-provider-copy">
                   <strong>{t.signInWithGoogle}</strong>
-                  <small>{providerActionLabel}</small>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="auth-provider-btn"
-                onClick={() =>
-                  void runAuthAction("facebook", async () => {
-                    resetPhoneFlow();
-                    await signInWithFacebook();
-                    navigate(redirectPath, { replace: true });
-                  })
-                }
-                disabled={isBusy}
-              >
-                <span className="auth-provider-badge">f</span>
-                <span className="auth-provider-copy">
-                  <strong>{t.signInWithFacebook}</strong>
                   <small>{providerActionLabel}</small>
                 </span>
               </button>
@@ -445,229 +371,129 @@ export default function Login() {
               </button>
             </div>
 
-            <form className="auth-form" onSubmit={handleSubmit}>
-              <div className="auth-field">
-                <label htmlFor="email">{t.email}</label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder={t.emailPlaceholder}
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="password">{t.password}</label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  placeholder={t.passwordPlaceholder}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-              </div>
-
-              {mode === "register" && (
-                <div className="auth-field">
-                  <label htmlFor="confirm-password">{t.confirmPassword}</label>
-                  <input
-                    id="confirm-password"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder={t.confirmPasswordPlaceholder}
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    required
-                  />
-                </div>
-              )}
-
-              <button type="submit" className="btn btn-primary" disabled={isBusy}>
-                {pendingAction === "email" ? t.authLoading : mode === "login" ? t.signIn : t.createAccount}
+            <div className="auth-method-tabs" role="tablist" aria-label={language === "MN" ? "Нэвтрэх арга" : "Sign-in method"}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={credentialTab === "email"}
+                className={`auth-method-tab ${credentialTab === "email" ? "active" : ""}`}
+                onClick={() => setCredentialTab("email")}
+              >
+                {emailMethodLabel.tabLabel}
               </button>
-            </form>
-
-            <div className="auth-switch">
-              {mode === "login" ? t.noAccount : t.haveAccount}
-              <button type="button" onClick={() => handleModeChange(mode === "login" ? "register" : "login")}>
-                {mode === "login" ? t.createAccount : t.signIn}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={credentialTab === "phone"}
+                className={`auth-method-tab ${credentialTab === "phone" ? "active" : ""}`}
+                onClick={() => setCredentialTab("phone")}
+              >
+                {phoneMethodLabel.tabLabel}
               </button>
             </div>
 
-            <div className="auth-divider">
-              <span>{t.orContinueWithPhone}</span>
-            </div>
+            <div className="auth-tab-panel">
+              <div className="auth-phone-intro">
+                <p>{credentialTab === "email" ? emailMethodLabel.help : mode === "register" ? phoneMethodLabel.registerHelp : phoneMethodLabel.loginHelp}</p>
+              </div>
 
-            <div className="auth-phone-intro">
-              <p>{mode === "register" ? phoneMethodLabel.registerHelp : phoneMethodLabel.loginHelp}</p>
+              {credentialTab === "email" ? (
+                <form className="auth-form" onSubmit={handleSubmit}>
+                  <div className="auth-field">
+                    <label htmlFor="email">{t.email}</label>
+                    <input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder={t.emailPlaceholder}
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                    />
+                  </div>
 
-              {mode === "login" && (
-                <div className="auth-toggle auth-toggle-compact">
-                  <button
-                    type="button"
-                    className={phoneAccessMode === "code" ? "active" : ""}
-                    onClick={() => {
-                      setPhoneAccessMode("code");
-                      resetPhoneFlow();
-                      setError("");
-                      setNotice("");
-                    }}
-                  >
-                    {phoneMethodLabel.code}
-                  </button>
-                  <button
-                    type="button"
-                    className={phoneAccessMode === "password" ? "active" : ""}
-                    onClick={() => {
-                      setPhoneAccessMode("password");
-                      resetPhoneFlow();
-                      setError("");
-                      setNotice("");
-                    }}
-                  >
-                    {phoneMethodLabel.password}
-                  </button>
-                </div>
-              )}
-            </div>
+                  <div className="auth-field">
+                    <label htmlFor="password">{t.password}</label>
+                    <input
+                      id="password"
+                      type="password"
+                      autoComplete={mode === "login" ? "current-password" : "new-password"}
+                      placeholder={t.passwordPlaceholder}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                  </div>
 
-            {showPhonePasswordLogin ? (
-              <form className="auth-form auth-phone-form" onSubmit={handlePhonePasswordLogin}>
-                <div className="auth-field">
-                  <label htmlFor="phone-password-login">{t.phoneNumber}</label>
-                  <input
-                    id="phone-password-login"
-                    type="tel"
-                    autoComplete="tel"
-                    inputMode="tel"
-                    placeholder={t.phoneNumberPlaceholder}
-                    value={phoneNumber}
-                    onChange={(event) => setPhoneNumber(event.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="auth-field">
-                  <label htmlFor="phone-password">{t.password}</label>
-                  <input
-                    id="phone-password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder={t.passwordPlaceholder}
-                    value={phonePassword}
-                    onChange={(event) => setPhonePassword(event.target.value)}
-                    required
-                  />
-                </div>
-
-                <button type="submit" className="btn btn-primary" disabled={isBusy}>
-                  {pendingAction === "phone-password" ? t.authLoading : t.signIn}
-                </button>
-              </form>
-            ) : (
-              <form className="auth-form auth-phone-form" onSubmit={handlePhoneCodeFlow}>
-                <div className="auth-field">
-                  <label htmlFor="phone-number">{t.phoneNumber}</label>
-                  <input
-                    id="phone-number"
-                    type="tel"
-                    autoComplete="tel"
-                    inputMode="tel"
-                    placeholder={t.phoneNumberPlaceholder}
-                    value={phoneNumber}
-                    onChange={(event) => setPhoneNumber(event.target.value)}
-                    disabled={phoneCodeSent}
-                    required
-                  />
-                </div>
-
-                {mode === "register" && (
-                  <>
+                  {mode === "register" && (
                     <div className="auth-field">
-                      <label htmlFor="register-phone-password">{t.password}</label>
+                      <label htmlFor="confirm-password">{t.confirmPassword}</label>
                       <input
-                        id="register-phone-password"
+                        id="confirm-password"
                         type="password"
                         autoComplete="new-password"
-                        placeholder={t.passwordPlaceholder}
-                        value={phonePassword}
-                        onChange={(event) => setPhonePassword(event.target.value)}
-                        disabled={phoneCodeSent}
+                        placeholder={t.confirmPasswordPlaceholder}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
                         required
                       />
                     </div>
+                  )}
+
+                  <button type="submit" className="btn btn-primary" disabled={isBusy}>
+                    {pendingAction === "email" ? t.authLoading : mode === "login" ? t.signIn : t.createAccount}
+                  </button>
+                </form>
+              ) : (
+                <form className="auth-form auth-phone-form" onSubmit={handlePhoneSubmit}>
+                  <div className="auth-field">
+                    <label htmlFor="phone-number">{t.phoneNumber}</label>
+                    <input
+                      id="phone-number"
+                      type="tel"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      placeholder={t.phoneNumberPlaceholder}
+                      value={phoneNumber}
+                      onChange={(event) => setPhoneNumber(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="auth-field">
+                    <label htmlFor="phone-password">{t.password}</label>
+                    <input
+                      id="phone-password"
+                      type="password"
+                      autoComplete={mode === "login" ? "current-password" : "new-password"}
+                      placeholder={t.passwordPlaceholder}
+                      value={phonePassword}
+                      onChange={(event) => setPhonePassword(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {mode === "register" && (
                     <div className="auth-field">
-                      <label htmlFor="register-phone-password-confirm">{t.confirmPassword}</label>
+                      <label htmlFor="phone-password-confirm">{t.confirmPassword}</label>
                       <input
-                        id="register-phone-password-confirm"
+                        id="phone-password-confirm"
                         type="password"
                         autoComplete="new-password"
                         placeholder={t.confirmPasswordPlaceholder}
                         value={confirmPhonePassword}
                         onChange={(event) => setConfirmPhonePassword(event.target.value)}
-                        disabled={phoneCodeSent}
                         required
                       />
                     </div>
-                  </>
-                )}
-
-                {phoneCodeSent && (
-                  <div className="auth-field">
-                    <label htmlFor="verification-code">{t.verificationCode}</label>
-                    <input
-                      id="verification-code"
-                      type="text"
-                      autoComplete="one-time-code"
-                      inputMode="numeric"
-                      placeholder={t.verificationCodePlaceholder}
-                      value={verificationCode}
-                      onChange={(event) => setVerificationCode(event.target.value)}
-                      required
-                    />
-                  </div>
-                )}
-
-                <div className="auth-inline-actions">
-                  <button type="submit" className="btn btn-primary" disabled={isBusy}>
-                    {pendingAction === "phone-code" || pendingAction === "phone-verify" || pendingAction === "phone-resend"
-                      ? t.authLoading
-                      : phoneCodeSent
-                        ? mode === "register"
-                          ? t.createAccount
-                          : t.verifyCode
-                        : t.sendVerificationCode}
-                  </button>
-
-                  {phoneCodeSent && (
-                    <>
-                      <button type="button" className="btn btn-outline" onClick={handleResendCode} disabled={isBusy}>
-                        {t.resendCode}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => {
-                          resetPhoneFlow();
-                          setError("");
-                          setNotice("");
-                        }}
-                        disabled={isBusy}
-                      >
-                        {t.useDifferentPhone}
-                      </button>
-                    </>
                   )}
-                </div>
 
-                <div ref={recaptchaContainerRef} className="auth-recaptcha" />
-              </form>
-            )}
+                  <button type="submit" className="btn btn-primary" disabled={isBusy}>
+                    {pendingAction === "phone" ? t.authLoading : mode === "login" ? t.signIn : t.createAccount}
+                  </button>
+                </form>
+              )}
+            </div>
 
             <div className="auth-switch">
               <Link to="/collections">{t.continueShopping}</Link>

@@ -221,7 +221,7 @@
 
 .category-tile-name {
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: 0.78rem;
   color: var(--color-heading);
   margin-bottom: 0.25rem;
 }

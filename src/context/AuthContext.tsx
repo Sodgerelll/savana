@@ -1,23 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 import {
-  EmailAuthProvider,
-  FacebookAuthProvider,
   GoogleAuthProvider,
-  RecaptchaVerifier,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
-  linkWithCredential,
   onAuthStateChanged,
   setPersistence,
   signInAnonymously,
   signInWithEmailAndPassword,
-  signInWithPhoneNumber,
   signInWithPopup,
   signOut,
-  type ConfirmationResult,
   type User,
 } from "firebase/auth";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { auth } from "../lib/firebase";
 import {
   createPhoneLoginEmail,
@@ -40,22 +34,16 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithFacebook: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
   signInWithPhonePassword: (phoneNumber: string, password: string) => Promise<void>;
-  requestPhoneCode: (phoneNumber: string, container: HTMLElement) => Promise<void>;
-  confirmPhoneCode: (code: string, options?: { registrationPassword?: string }) => Promise<void>;
-  resetPhoneSignIn: () => void;
+  signUpWithPhonePassword: (phoneNumber: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const googleProvider = new GoogleAuthProvider();
-const facebookProvider = new FacebookAuthProvider();
 
 googleProvider.setCustomParameters({ prompt: "select_account" });
-facebookProvider.addScope("email");
-facebookProvider.setCustomParameters({ display: "popup" });
 
 function createAuthError(code: string, message: string) {
   const error = new Error(message) as Error & { code: string };
@@ -79,9 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const phoneConfirmationRef = useRef<ConfirmationResult | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
-  const recaptchaContainerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -127,25 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  useEffect(
-    () => () => {
-      recaptchaVerifierRef.current?.clear();
-      recaptchaVerifierRef.current = null;
-      recaptchaContainerRef.current = null;
-      phoneConfirmationRef.current = null;
-    },
-    [],
-  );
-
   const enablePersistence = async () => {
     await setPersistence(auth, browserLocalPersistence);
-  };
-
-  const clearPhoneSignIn = () => {
-    phoneConfirmationRef.current = null;
-    recaptchaVerifierRef.current?.clear();
-    recaptchaVerifierRef.current = null;
-    recaptchaContainerRef.current = null;
   };
 
   const syncAndStoreProfile = async (
@@ -155,6 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       registrationMethod?: UserAuthMethod;
       hasPassword?: boolean;
       phoneLoginEmail?: string | null;
+      phoneNumber?: string | null;
+      email?: string | null;
     } = {},
   ) => {
     const syncedProfile = await syncUserProfile(authenticatedUser, options);
@@ -162,22 +132,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return syncedProfile;
   };
 
-  const getRecaptchaVerifier = async (container: HTMLElement) => {
-    if (recaptchaVerifierRef.current && recaptchaContainerRef.current === container) {
-      return recaptchaVerifierRef.current;
+  const getPhoneLoginEmail = (phoneNumber: string) => {
+    try {
+      return createPhoneLoginEmail(phoneNumber);
+    } catch {
+      throw createAuthError("auth/invalid-phone-number", "A valid phone number is required.");
     }
-
-    clearPhoneSignIn();
-
-    const verifier = new RecaptchaVerifier(auth, container, {
-      size: "invisible",
-    });
-
-    recaptchaVerifierRef.current = verifier;
-    recaptchaContainerRef.current = container;
-    await verifier.render();
-
-    return verifier;
   };
 
   const signIn = async (email: string, password: string) => {
@@ -210,16 +170,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const signInWithFacebook = async () => {
-    await enablePersistence();
-    const credential = await signInWithPopup(auth, facebookProvider);
-    await syncAndStoreProfile(credential.user, {
-      currentMethod: "facebook",
-      registrationMethod: "facebook",
-      hasPassword: credential.user.providerData.some((provider) => provider.providerId === "password"),
-    });
-  };
-
   const signInAsGuest = async () => {
     await enablePersistence();
     await signInAnonymously(auth);
@@ -228,80 +178,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithPhonePassword = async (phoneNumber: string, password: string) => {
     await enablePersistence();
-    const credential = await signInWithEmailAndPassword(auth, createPhoneLoginEmail(phoneNumber), password);
+    const phoneLoginEmail = getPhoneLoginEmail(phoneNumber);
+    const credential = await signInWithEmailAndPassword(auth, phoneLoginEmail, password);
     await syncAndStoreProfile(credential.user, {
       currentMethod: "phone",
       registrationMethod: "phone",
       hasPassword: true,
-      phoneLoginEmail: createPhoneLoginEmail(phoneNumber),
+      phoneLoginEmail,
+      phoneNumber,
+      email: null,
     });
   };
 
-  const requestPhoneCode = async (phoneNumber: string, container: HTMLElement) => {
+  const signUpWithPhonePassword = async (phoneNumber: string, password: string) => {
     await enablePersistence();
-    const verifier = await getRecaptchaVerifier(container);
+    const phoneLoginEmail = getPhoneLoginEmail(phoneNumber);
 
     try {
-      phoneConfirmationRef.current = await signInWithPhoneNumber(auth, phoneNumber, verifier);
-    } catch (error) {
-      clearPhoneSignIn();
-      throw error;
-    }
-  };
-
-  const confirmPhoneCode = async (code: string, options: { registrationPassword?: string } = {}) => {
-    if (!phoneConfirmationRef.current) {
-      throw createAuthError("auth/missing-verification-id", "Phone verification session is missing.");
-    }
-
-    const confirmationResult = phoneConfirmationRef.current;
-
-    try {
-      const credential = await confirmationResult.confirm(code);
-      let phoneLoginEmail: string | null = null;
-      let hasPassword = credential.user.providerData.some((provider) => provider.providerId === "password");
-
-      if (options.registrationPassword) {
-        const generatedEmail = createPhoneLoginEmail(credential.user.phoneNumber ?? "");
-
-        try {
-          await linkWithCredential(
-            credential.user,
-            EmailAuthProvider.credential(generatedEmail, options.registrationPassword),
-          );
-        } catch (linkError) {
-          const linkErrorCode =
-            typeof linkError === "object" &&
-            linkError !== null &&
-            "code" in linkError &&
-            typeof linkError.code === "string"
-              ? linkError.code
-              : "";
-
-          if (linkErrorCode !== "auth/provider-already-linked") {
-            throw linkError;
-          }
-        }
-
-        phoneLoginEmail = generatedEmail;
-        hasPassword = true;
-      }
-
-      await syncAndStoreProfile(auth.currentUser ?? credential.user, {
+      const credential = await createUserWithEmailAndPassword(auth, phoneLoginEmail, password);
+      await syncAndStoreProfile(credential.user, {
         currentMethod: "phone",
         registrationMethod: "phone",
-        hasPassword,
+        hasPassword: true,
         phoneLoginEmail,
+        phoneNumber,
+        email: null,
       });
-      clearPhoneSignIn();
     } catch (error) {
-      phoneConfirmationRef.current = confirmationResult;
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "";
+
+      if (errorCode === "auth/email-already-in-use") {
+        throw createAuthError("auth/phone-already-in-use", "This phone number is already registered.");
+      }
+
       throw error;
     }
   };
 
   const logout = async () => {
-    clearPhoneSignIn();
     setProfile(null);
     await signOut(auth);
   };
@@ -326,12 +246,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         signInWithGoogle,
-        signInWithFacebook,
         signInAsGuest,
         signInWithPhonePassword,
-        requestPhoneCode,
-        confirmPhoneCode,
-        resetPhoneSignIn: clearPhoneSignIn,
+        signUpWithPhonePassword,
         logout,
       }}
     >

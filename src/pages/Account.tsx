@@ -15,6 +15,7 @@ import {
   Trash2,
   UserCircle2,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
@@ -31,6 +32,7 @@ import {
   type UserProfile,
   type UserRole,
 } from "../lib/userProfiles";
+import { subscribeToOrders, type OrderRecord, type OrderStatus } from "../lib/orders";
 import {
   DEFAULT_COLLECTION_GRADIENT,
   getActiveHeroBanners,
@@ -47,7 +49,7 @@ import {
 import { uploadStorefrontImage } from "../lib/storageUpload";
 import "./Auth.css";
 
-type AdminSection = "dashboard" | "website" | "categories" | "products" | "users";
+type AdminSection = "dashboard" | "website" | "categories" | "products" | "orders" | "users";
 type ModalMode = "create" | "edit";
 
 interface SettingsModalState {
@@ -123,7 +125,7 @@ function cloneProduct(product: Product): Product {
 }
 
 function getUserIdentity(profile: UserProfile) {
-  return profile.displayName || profile.email || profile.phoneNumber || profile.uid;
+  return profile.displayName || profile.phoneNumber || profile.email || profile.uid;
 }
 
 function getRoleLabel(role: UserRole, language: "MN" | "EN") {
@@ -132,6 +134,8 @@ function getRoleLabel(role: UserRole, language: "MN" | "EN") {
       return "sysadmin";
     case "admin":
       return "admin";
+    case "worker":
+      return language === "MN" ? "ажилтан" : "worker";
     default:
       return language === "MN" ? "хэрэглэгч" : "customer";
   }
@@ -152,6 +156,36 @@ function getAuthMethodLabel(method: UserAuthMethod, language: "MN" | "EN") {
     default:
       return language === "MN" ? "Тодорхойгүй" : "Unknown";
   }
+}
+
+function getOrderStatusLabel(status: OrderStatus, language: "MN" | "EN") {
+  return status === "payment_paid"
+    ? language === "MN"
+      ? "Төлбөр төлөгдсөн"
+      : "Payment Paid"
+    : language === "MN"
+      ? "Хүлээгдэж байна"
+      : "Pending";
+}
+
+function getOrderAddressLabel(order: OrderRecord) {
+  return [order.address.region, order.address.districtOrSoum, order.address.khorooOrBag, order.address.streetAddress]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function formatAdminDateTime(value: string | null, language: "MN" | "EN") {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(language === "MN" ? "mn-MN" : "en-US");
 }
 
 function AdminModal({
@@ -260,6 +294,7 @@ export default function Account() {
           website: "Website",
           categoriesMenu: "Ангилал",
           productsMenu: "Бүтээгдэхүүн",
+          ordersMenu: "Захиалга",
           dashboardTitle: "Админ хянах самбар",
           dashboardText: "Website, Ангилал, Бүтээгдэхүүн хэсгүүдийг modal-based workflow-оор удирдана.",
           websiteTitle: "Вэб контент",
@@ -268,14 +303,18 @@ export default function Account() {
           categoriesText: "Ангилал нэмэх, засах, идэвхжүүлэх, идэвхгүй болгох бүх үйлдэл modal-оор хийгдэнэ.",
           productsTitle: "Бүтээгдэхүүний удирдлага",
           productsText: "Бүх бүтээгдэхүүний статус, үнэ, ангилал, тайлбар, variant-ийг modal-аар удирдана.",
+          ordersTitle: "Захиалгын удирдлага",
+          ordersText: "orders collection дээр хадгалагдсан бүх захиалга, төлбөрийн төлөвийг эндээс харна.",
           products: "Бүтээгдэхүүн",
           collections: "Ангилал",
+          orders: "Захиалга",
           banners: "Баннер",
           markets: "Markets",
           testimonials: "Testimonials",
           settings: "Website Settings",
           totalProducts: "Бүтээгдэхүүн",
           totalCollections: "Ангилал",
+          totalOrders: "Захиалга",
           totalBanners: "Баннер",
           totalMarkets: "Markets",
           totalTestimonials: "Testimonials",
@@ -283,14 +322,19 @@ export default function Account() {
           inactiveCount: "Inactive",
           actions: "Action",
           linkedProducts: "Хамааралтай бүтээгдэхүүн",
+          pendingOrders: "Хүлээгдэж буй",
+          paidOrders: "Төлбөр төлөгдсөн",
+          guestOrders: "Зочин захиалга",
           bestSellerCount: "Best seller",
           compareShort: "Compare",
           image: "Зураг",
           emptyCategories: "Ангилал байхгүй байна.",
           emptyProducts: "Бүтээгдэхүүн байхгүй байна.",
+          emptyOrders: "Захиалга байхгүй байна.",
           openWebsite: "Website",
           openCategories: "Ангилал",
           openProducts: "Бүтээгдэхүүн",
+          openOrders: "Захиалга",
           signedIn: "Нэвтэрсэн хэрэглэгч",
           status: "Status",
           active: "Active",
@@ -363,7 +407,7 @@ export default function Account() {
           bannerAspectTitle: "Зөвлөмжит зургийн стандарт",
           bannerAspectValue: "16:9 харьцаа",
           bannerAspectHelp: "Хамгийн багадаа 1600 x 900, боломжтой бол 1920 x 1080 зураг ашиглаарай.",
-          bannerImportedSource: "Эх сурвалж: Prairie Soap Shack",
+          bannerImportedSource: "Эх сурвалж: SAVANA",
           bannerUploadedSource: "Эх сурвалж: Admin upload",
           quickOverview: "Хурдан тойм",
           livePreview: "Storefront live data",
@@ -411,6 +455,7 @@ export default function Account() {
           website: "Website",
           categoriesMenu: "Categories",
           productsMenu: "Products",
+          ordersMenu: "Orders",
           dashboardTitle: "Admin dashboard",
           dashboardText: "Manage Website, Categories, and Products through modal-based workflows.",
           websiteTitle: "Website content",
@@ -419,14 +464,18 @@ export default function Account() {
           categoriesText: "Create, edit, activate, or deactivate categories through modal forms.",
           productsTitle: "Product management",
           productsText: "Manage product status, pricing, category, descriptions, and variants in modal forms.",
+          ordersTitle: "Order management",
+          ordersText: "Review all orders saved to the orders collection and their payment state.",
           products: "Products",
           collections: "Categories",
+          orders: "Orders",
           banners: "Banners",
           markets: "Markets",
           testimonials: "Testimonials",
           settings: "Website Settings",
           totalProducts: "Products",
           totalCollections: "Categories",
+          totalOrders: "Orders",
           totalBanners: "Banners",
           totalMarkets: "Markets",
           totalTestimonials: "Testimonials",
@@ -434,14 +483,19 @@ export default function Account() {
           inactiveCount: "Inactive",
           actions: "Action",
           linkedProducts: "Linked products",
+          pendingOrders: "Pending",
+          paidOrders: "Paid",
+          guestOrders: "Guest orders",
           bestSellerCount: "Best sellers",
           compareShort: "Compare",
           image: "Image",
           emptyCategories: "No categories found.",
           emptyProducts: "No products found.",
+          emptyOrders: "No orders found.",
           openWebsite: "Website",
           openCategories: "Categories",
           openProducts: "Products",
+          openOrders: "Orders",
           signedIn: "Signed in user",
           status: "Status",
           active: "Active",
@@ -514,7 +568,7 @@ export default function Account() {
           bannerAspectTitle: "Recommended image format",
           bannerAspectValue: "16:9 aspect ratio",
           bannerAspectHelp: "Use at least 1600 x 900, ideally 1920 x 1080 for the homepage hero.",
-          bannerImportedSource: "Source: Prairie Soap Shack",
+          bannerImportedSource: "Source: SAVANA",
           bannerUploadedSource: "Source: Admin upload",
           quickOverview: "Quick overview",
           livePreview: "Storefront live data",
@@ -571,6 +625,8 @@ export default function Account() {
   const [bannerUploading, setBannerUploading] = useState(false);
   const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   const visibleSettings = useMemo(() => getRenderableSettings(settings), [settings]);
   const activeCollections = useMemo(() => getActiveCollections(collections), [collections]);
@@ -612,12 +668,25 @@ export default function Account() {
   const bestSellerCount = useMemo(() => products.filter((product) => product.bestSeller).length, [products]);
   const currentRegistrationMethod = profile?.registrationMethod ?? authMethod;
   const userRoleCounts = useMemo(
-    () => ({
-      sysadmin: directoryUsers.filter((item) => resolveUserRole(item) === "sysadmin").length,
-      admin: directoryUsers.filter((item) => resolveUserRole(item) === "admin").length,
-      customer: directoryUsers.filter((item) => resolveUserRole(item) === "customer").length,
-    }),
+    () =>
+      directoryUsers.reduce(
+        (counts, directoryUser) => {
+          const resolvedRole = resolveUserRole(directoryUser);
+          counts[resolvedRole] += 1;
+          return counts;
+        },
+        { sysadmin: 0, admin: 0, worker: 0, customer: 0 } as Record<UserRole, number>,
+      ),
     [directoryUsers]
+  );
+  const paidOrdersCount = useMemo(
+    () => orders.filter((order) => order.status === "payment_paid").length,
+    [orders]
+  );
+  const pendingOrdersCount = orders.length - paidOrdersCount;
+  const guestOrdersCount = useMemo(
+    () => orders.filter((order) => order.auth.isAnonymous).length,
+    [orders]
   );
 
   useEffect(() => {
@@ -639,7 +708,25 @@ export default function Account() {
   }, [isPrivilegedUser]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && activeSection === "users") {
+    if (!isPrivilegedUser) {
+      setOrders([]);
+      setOrdersError(null);
+      return;
+    }
+
+    return subscribeToOrders({
+      onData: (nextOrders) => {
+        setOrders(nextOrders);
+        setOrdersError(null);
+      },
+      onError: (subscriptionError) => {
+        setOrdersError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders")) {
       setActiveSection("dashboard");
     }
   }, [activeSection, isPrivilegedUser]);
@@ -983,6 +1070,16 @@ export default function Account() {
             {isPrivilegedUser && (
               <button
                 type="button"
+                className={`admin-nav-btn ${activeSection === "orders" ? "active" : ""}`}
+                onClick={() => setActiveSection("orders")}
+              >
+                <WalletCards size={18} />
+                {copy.ordersMenu}
+              </button>
+            )}
+            {isPrivilegedUser && (
+              <button
+                type="button"
                 className={`admin-nav-btn ${activeSection === "users" ? "active" : ""}`}
                 onClick={() => setActiveSection("users")}
               >
@@ -998,7 +1095,7 @@ export default function Account() {
                 <UserCircle2 size={28} />
                 <div>
                   <span>{copy.signedIn}</span>
-                  <strong>{user?.phoneNumber ?? user?.email ?? user?.displayName ?? user?.uid}</strong>
+                  <strong>{profile?.phoneNumber ?? profile?.email ?? user?.phoneNumber ?? user?.email ?? user?.displayName ?? user?.uid}</strong>
                 </div>
               </div>
               <div className="admin-user-status">
@@ -1037,6 +1134,12 @@ export default function Account() {
                     {copy.openCategories}
                   </button>
                   {isPrivilegedUser && (
+                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("orders")}>
+                      <WalletCards size={16} />
+                      {copy.openOrders}
+                    </button>
+                  )}
+                  {isPrivilegedUser && (
                     <button type="button" className="btn btn-outline" onClick={() => setActiveSection("users")}>
                       <Users size={16} />
                       {language === "MN" ? "Хэрэглэгч" : "Users"}
@@ -1055,6 +1158,13 @@ export default function Account() {
                   <strong>{activeProducts.length}/{products.length}</strong>
                   <small>{copy.statusSummary}</small>
                 </div>
+                {isPrivilegedUser && (
+                  <div className="admin-stat-card">
+                    <span>{copy.totalOrders}</span>
+                    <strong>{orders.length}</strong>
+                    <small>{copy.ordersText}</small>
+                  </div>
+                )}
                 <div className="admin-stat-card">
                   <span>{copy.totalCollections}</span>
                   <strong>{activeCollections.length}/{collections.length}</strong>
@@ -1155,6 +1265,7 @@ export default function Account() {
                   <code>{structure.settings}</code>
                   <code>{structure.collections}</code>
                   <code>{structure.products}</code>
+                  <code>{structure.orders}</code>
                   <code>{structure.heroBanners}</code>
                   <code>{structure.markets}</code>
                   <code>{structure.testimonials}</code>
@@ -1443,6 +1554,131 @@ export default function Account() {
                 </div>
               </div>
             </>
+          ) : activeSection === "orders" ? (
+            <>
+              <div className="admin-topbar">
+                <div>
+                  <p className="admin-kicker">{copy.orders}</p>
+                  <h1>{copy.ordersTitle}</h1>
+                  <p>{copy.ordersText}</p>
+                </div>
+              </div>
+
+              {ordersError && <div className="admin-sync-error">{ordersError}</div>}
+
+              <div className="admin-summary-grid">
+                <div className="admin-summary-card">
+                  <span>{copy.totalOrders}</span>
+                  <strong>{orders.length}</strong>
+                  <small>{copy.ordersText}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{copy.pendingOrders}</span>
+                  <strong>{pendingOrdersCount}</strong>
+                  <small>{language === "MN" ? "Төлбөр хүлээгдэж буй захиалга" : "Orders awaiting payment"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{copy.paidOrders}</span>
+                  <strong>{paidOrdersCount}</strong>
+                  <small>{language === "MN" ? "Төлбөр баталгаажсан захиалга" : "Orders marked as paid"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{copy.guestOrders}</span>
+                  <strong>{guestOrdersCount}</strong>
+                  <small>{language === "MN" ? "Anonymous хэрэглэгчийн захиалга" : "Orders created by guest users"}</small>
+                </div>
+              </div>
+
+              <div className="admin-data-card">
+                <div className="admin-data-card-head">
+                  <div>
+                    <h2>{copy.orders}</h2>
+                    <p>
+                      {language === "MN"
+                        ? "Захиалга үүсмэгц энд орж ирнэ. Төлбөр шалгах дарахад статус шинэчлэгдэнэ."
+                        : "Orders appear here immediately after confirmation. Payment check updates their status."}
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-data-table-wrap">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>{language === "MN" ? "Захиалга" : "Order"}</th>
+                        <th>{language === "MN" ? "Хүлээн авагч" : "Customer"}</th>
+                        <th>{language === "MN" ? "Хаяг" : "Address"}</th>
+                        <th>{language === "MN" ? "Бараа" : "Items"}</th>
+                        <th>{language === "MN" ? "Төлбөр" : "Payment"}</th>
+                        <th>{language === "MN" ? "Үүссэн огноо" : "Created"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="admin-table-empty">
+                            {copy.emptyOrders}
+                          </td>
+                        </tr>
+                      ) : (
+                        orders.map((order) => (
+                          <tr key={order.id}>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{order.orderNumber}</strong>
+                                <small>{getOrderStatusLabel(order.status, language)}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{order.customer.fullName || order.customer.phoneNumber}</strong>
+                                <small>
+                                  {order.customer.phoneNumber}
+                                  {order.auth.isAnonymous
+                                    ? ` • ${language === "MN" ? "зочин" : "guest"}`
+                                    : ` • ${getAuthMethodLabel(order.auth.method as UserAuthMethod, language)}`}
+                                </small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{getOrderAddressLabel(order)}</strong>
+                                <small>{order.address.additionalAddress || order.customer.note || "-"}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>
+                                  {order.items.length} {language === "MN" ? "төрөл" : "items"}
+                                </strong>
+                                <small>{order.items.map((item) => item.name).slice(0, 2).join(", ") || "-"}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{formatStorePrice(order.totals.grandTotal)}</strong>
+                                <small>{getOrderStatusLabel(order.status, language)}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{formatAdminDateTime(order.createdAt, language)}</strong>
+                                <small>
+                                  {order.payment.paidAt
+                                    ? `${language === "MN" ? "Төлөгдсөн:" : "Paid:"} ${formatAdminDateTime(order.payment.paidAt, language)}`
+                                    : language === "MN"
+                                      ? "Төлбөр хүлээгдэж байна"
+                                      : "Payment pending"}
+                                </small>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           ) : activeSection === "users" ? (
             <>
               <div className="admin-topbar">
@@ -1474,6 +1710,11 @@ export default function Account() {
                   <span>admin</span>
                   <strong>{userRoleCounts.admin}</strong>
                   <small>{language === "MN" ? "Админ эрхтэй хэрэглэгч" : "Admin operators"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{language === "MN" ? "Ажилтан" : "Workers"}</span>
+                  <strong>{userRoleCounts.worker}</strong>
+                  <small>{language === "MN" ? "Ажилтны эрхтэй хэрэглэгч" : "Worker accounts"}</small>
                 </div>
                 <div className="admin-summary-card">
                   <span>{language === "MN" ? "Хэрэглэгч" : "Customers"}</span>

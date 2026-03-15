@@ -1,5 +1,6 @@
 .app-main {
   min-height: 100vh;
+  padding-top: 108px;
 }
 
 .app-main.no-header {
@@ -7,15 +8,19 @@
 }
 
 .app-main.home-header-offset {
-  padding-top: 112px;
+  padding-top: 0;
 }
 
 @media (max-width: 768px) {
+  .app-main {
+    padding-top: 72px;
+  }
+
   .app-main.no-header {
     padding-top: 0;
   }
 
   .app-main.home-header-offset {
-    padding-top: 60px;
+    padding-top: 0;
   }
 }
