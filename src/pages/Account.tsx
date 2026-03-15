@@ -14,15 +14,23 @@ import {
   Store,
   Trash2,
   UserCircle2,
+  Users,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import type { Collection, EntityStatus, Product } from "../data/products";
 import type { HeroBanner, MarketItem, ShopSettings, Testimonial } from "../data/storefront";
+import {
+  resolveUserRole,
+  subscribeToUserProfiles,
+  type UserAuthMethod,
+  type UserProfile,
+  type UserRole,
+} from "../lib/userProfiles";
 import {
   DEFAULT_COLLECTION_GRADIENT,
   getActiveHeroBanners,
@@ -39,7 +47,7 @@ import {
 import { uploadStorefrontImage } from "../lib/storageUpload";
 import "./Auth.css";
 
-type AdminSection = "dashboard" | "website" | "categories" | "products";
+type AdminSection = "dashboard" | "website" | "categories" | "products" | "users";
 type ModalMode = "create" | "edit";
 
 interface SettingsModalState {
@@ -114,6 +122,38 @@ function cloneProduct(product: Product): Product {
   };
 }
 
+function getUserIdentity(profile: UserProfile) {
+  return profile.displayName || profile.email || profile.phoneNumber || profile.uid;
+}
+
+function getRoleLabel(role: UserRole, language: "MN" | "EN") {
+  switch (role) {
+    case "sysadmin":
+      return "sysadmin";
+    case "admin":
+      return "admin";
+    default:
+      return language === "MN" ? "хэрэглэгч" : "customer";
+  }
+}
+
+function getAuthMethodLabel(method: UserAuthMethod, language: "MN" | "EN") {
+  switch (method) {
+    case "email":
+      return language === "MN" ? "И-мэйл" : "Email";
+    case "google":
+      return "Google";
+    case "facebook":
+      return "Facebook";
+    case "phone":
+      return language === "MN" ? "Утас" : "Phone";
+    case "guest":
+      return language === "MN" ? "Зочин" : "Guest";
+    default:
+      return language === "MN" ? "Тодорхойгүй" : "Unknown";
+  }
+}
+
 function AdminModal({
   title,
   description,
@@ -185,7 +225,7 @@ function StatusBadge({
 
 export default function Account() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, profile, role, authMethod, isPrivilegedUser, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
   const {
     settings,
@@ -529,6 +569,8 @@ export default function Account() {
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
   const [bannerUploading, setBannerUploading] = useState(false);
+  const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
 
   const visibleSettings = useMemo(() => getRenderableSettings(settings), [settings]);
   const activeCollections = useMemo(() => getActiveCollections(collections), [collections]);
@@ -568,6 +610,39 @@ export default function Account() {
     [collections, productCountByCategory]
   );
   const bestSellerCount = useMemo(() => products.filter((product) => product.bestSeller).length, [products]);
+  const currentRegistrationMethod = profile?.registrationMethod ?? authMethod;
+  const userRoleCounts = useMemo(
+    () => ({
+      sysadmin: directoryUsers.filter((item) => resolveUserRole(item) === "sysadmin").length,
+      admin: directoryUsers.filter((item) => resolveUserRole(item) === "admin").length,
+      customer: directoryUsers.filter((item) => resolveUserRole(item) === "customer").length,
+    }),
+    [directoryUsers]
+  );
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setDirectoryUsers([]);
+      setDirectoryError(null);
+      return;
+    }
+
+    return subscribeToUserProfiles({
+      onData: (profiles) => {
+        setDirectoryUsers(profiles);
+        setDirectoryError(null);
+      },
+      onError: (subscriptionError) => {
+        setDirectoryError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser && activeSection === "users") {
+      setActiveSection("dashboard");
+    }
+  }, [activeSection, isPrivilegedUser]);
 
   const openSettingsModal = () => {
     setSettingsModal({ draft: { ...settings } });
@@ -905,6 +980,16 @@ export default function Account() {
               <Package size={18} />
               {copy.productsMenu}
             </button>
+            {isPrivilegedUser && (
+              <button
+                type="button"
+                className={`admin-nav-btn ${activeSection === "users" ? "active" : ""}`}
+                onClick={() => setActiveSection("users")}
+              >
+                <Users size={18} />
+                {language === "MN" ? "Хэрэглэгч" : "Users"}
+              </button>
+            )}
           </nav>
 
           <div className="admin-sidebar-footer">
@@ -913,12 +998,16 @@ export default function Account() {
                 <UserCircle2 size={28} />
                 <div>
                   <span>{copy.signedIn}</span>
-                  <strong>{user?.email}</strong>
+                  <strong>{user?.phoneNumber ?? user?.email ?? user?.displayName ?? user?.uid}</strong>
                 </div>
               </div>
               <div className="admin-user-status">
-                <span>{copy.status}</span>
-                <strong>{copy.live}</strong>
+                <span>{language === "MN" ? "Эрх" : "Role"}</span>
+                <strong>{getRoleLabel(role, language)}</strong>
+              </div>
+              <div className="admin-user-status">
+                <span>{language === "MN" ? "Төрөл" : "Type"}</span>
+                <strong>{getAuthMethodLabel(currentRegistrationMethod, language)}</strong>
               </div>
             </div>
 
@@ -947,6 +1036,12 @@ export default function Account() {
                     <Store size={16} />
                     {copy.openCategories}
                   </button>
+                  {isPrivilegedUser && (
+                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("users")}>
+                      <Users size={16} />
+                      {language === "MN" ? "Хэрэглэгч" : "Users"}
+                    </button>
+                  )}
                   <button type="button" className="btn btn-primary" onClick={() => setActiveSection("products")}>
                     <Package size={16} />
                     {copy.openProducts}
@@ -1345,6 +1440,126 @@ export default function Account() {
                       <small>{testimonial.location || "-"}</small>
                     </div>
                   ))}
+                </div>
+              </div>
+            </>
+          ) : activeSection === "users" ? (
+            <>
+              <div className="admin-topbar">
+                <div>
+                  <p className="admin-kicker">{language === "MN" ? "Хэрэглэгч" : "Users"}</p>
+                  <h1>{language === "MN" ? "Хэрэглэгчийн жагсаалт" : "User Directory"}</h1>
+                  <p>
+                    {language === "MN"
+                      ? "Бүртгүүлсэн хэрэглэгчдийн role, бүртгэлийн төрөл, сүүлийн нэвтрэх аргыг эндээс харна."
+                      : "Review registered users, their roles, registration types, and their latest authentication method."}
+                  </p>
+                </div>
+              </div>
+
+              {directoryError && <div className="admin-sync-error">{directoryError}</div>}
+
+              <div className="admin-summary-grid">
+                <div className="admin-summary-card">
+                  <span>{language === "MN" ? "Нийт хэрэглэгч" : "Total users"}</span>
+                  <strong>{directoryUsers.length}</strong>
+                  <small>{language === "MN" ? "Бүртгэлтэй хэрэглэгчдийн тоо" : "Registered user profiles"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>sysadmin</span>
+                  <strong>{userRoleCounts.sysadmin}</strong>
+                  <small>{language === "MN" ? "Бүрэн эрхтэй хэрэглэгч" : "Full-access operators"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>admin</span>
+                  <strong>{userRoleCounts.admin}</strong>
+                  <small>{language === "MN" ? "Админ эрхтэй хэрэглэгч" : "Admin operators"}</small>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{language === "MN" ? "Хэрэглэгч" : "Customers"}</span>
+                  <strong>{userRoleCounts.customer}</strong>
+                  <small>{language === "MN" ? "Энгийн бүртгэлтэй хэрэглэгч" : "Standard registered users"}</small>
+                </div>
+              </div>
+
+              <div className="admin-data-card">
+                <div className="admin-data-card-head">
+                  <div>
+                    <h2>{language === "MN" ? "Хэрэглэгчид" : "Users"}</h2>
+                    <p>
+                      {language === "MN"
+                        ? "Registration method болон last auth method-оор ялгаж харуулна."
+                        : "Grouped by registration method and latest authentication method."}
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-data-table-wrap">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>{language === "MN" ? "Хэрэглэгч" : "User"}</th>
+                        <th>{language === "MN" ? "Role" : "Role"}</th>
+                        <th>{language === "MN" ? "Бүртгэсэн төрөл" : "Registered Via"}</th>
+                        <th>{language === "MN" ? "Сүүлийн нэвтрэлт" : "Last Auth"}</th>
+                        <th>{language === "MN" ? "Холбоо барих" : "Contact"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {directoryUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="admin-table-empty">
+                            {language === "MN" ? "Хэрэглэгч олдсонгүй." : "No user profiles found."}
+                          </td>
+                        </tr>
+                      ) : (
+                        directoryUsers.map((directoryUser) => (
+                          <tr key={directoryUser.uid}>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{getUserIdentity(directoryUser)}</strong>
+                                <small>{directoryUser.uid}</small>
+                              </div>
+                            </td>
+                            <td>{getRoleLabel(resolveUserRole(directoryUser), language)}</td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{getAuthMethodLabel(directoryUser.registrationMethod, language)}</strong>
+                                <small>
+                                  {directoryUser.registrationMethod === "phone" && directoryUser.hasPassword
+                                    ? language === "MN"
+                                      ? "password-той phone account"
+                                      : "phone account with password"
+                                    : directoryUser.hasPassword
+                                      ? language === "MN"
+                                        ? "password идэвхтэй"
+                                        : "password enabled"
+                                      : language === "MN"
+                                        ? "password ашиглахгүй"
+                                        : "no password"}
+                                </small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{getAuthMethodLabel(directoryUser.lastAuthMethod, language)}</strong>
+                                <small>
+                                  {directoryUser.lastSignInAt
+                                    ? new Date(directoryUser.lastSignInAt).toLocaleString(language === "MN" ? "mn-MN" : "en-US")
+                                    : "-"}
+                                </small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{directoryUser.phoneNumber ?? directoryUser.email ?? "-"}</strong>
+                                <small>{directoryUser.email ?? directoryUser.phoneLoginEmail ?? "-"}</small>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </>

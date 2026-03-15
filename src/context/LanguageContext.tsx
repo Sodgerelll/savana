@@ -117,6 +117,22 @@ export interface Translations {
   loginSubtext: string;
   signIn: string;
   createAccount: string;
+  signInWithGoogle: string;
+  signInWithFacebook: string;
+  continueAsGuest: string;
+  phoneNumber: string;
+  phoneNumberPlaceholder: string;
+  verificationCode: string;
+  verificationCodePlaceholder: string;
+  sendVerificationCode: string;
+  verifyCode: string;
+  resendCode: string;
+  useDifferentPhone: string;
+  orContinueWith: string;
+  orContinueWithPhone: string;
+  phoneCodeSent: string;
+  phoneCodeSentHelp: string;
+  guestSessionActive: string;
   noAccount: string;
   haveAccount: string;
   authLoading: string;
@@ -227,9 +243,25 @@ const en: Translations = {
   passwordPlaceholder: "Enter your password",
   confirmPasswordPlaceholder: "Repeat your password",
   loginHeading: "Login and continue with your Savana session",
-  loginSubtext: "Firebase email/password authentication is now connected for secure sign in and account access.",
+  loginSubtext: "Use phone verification, Gmail, Facebook, guest access, or email/password to continue securely.",
   signIn: "Sign In",
   createAccount: "Create Account",
+  signInWithGoogle: "Continue with Google",
+  signInWithFacebook: "Continue with Facebook",
+  continueAsGuest: "Continue as Guest",
+  phoneNumber: "Phone Number",
+  phoneNumberPlaceholder: "+97699112233",
+  verificationCode: "Verification Code",
+  verificationCodePlaceholder: "Enter the 6-digit code",
+  sendVerificationCode: "Send Code",
+  verifyCode: "Verify and Continue",
+  resendCode: "Resend Code",
+  useDifferentPhone: "Use Different Number",
+  orContinueWith: "or continue with",
+  orContinueWithPhone: "or use phone verification",
+  phoneCodeSent: "Verification code sent.",
+  phoneCodeSentHelp: "Enter the SMS code to finish signing in.",
+  guestSessionActive: "Guest session is active. You can continue shopping or switch to a full account.",
   noAccount: "Don't have an account?",
   haveAccount: "Already have an account?",
   authLoading: "Processing...",
@@ -340,9 +372,25 @@ const mn: Translations = {
   passwordPlaceholder: "Нууц үгээ оруулна уу",
   confirmPasswordPlaceholder: "Нууц үгээ дахин оруулна уу",
   loginHeading: "Savana системд нэвтэрч сешнээ үргэлжлүүлнэ үү",
-  loginSubtext: "Firebase email/password authentication холбогдсон тул аюулгүй нэвтрэлт, account access ашиглах боломжтой боллоо.",
+  loginSubtext: "Утасны баталгаажуулалт, Gmail, Facebook, guest access эсвэл и-мэйл/нууц үгээр аюулгүй нэвтэрч үргэлжлүүлнэ үү.",
   signIn: "Нэвтрэх",
   createAccount: "Бүртгэл үүсгэх",
+  signInWithGoogle: "Google-ээр үргэлжлүүлэх",
+  signInWithFacebook: "Facebook-ээр үргэлжлүүлэх",
+  continueAsGuest: "Зочноор үргэлжлүүлэх",
+  phoneNumber: "Утасны дугаар",
+  phoneNumberPlaceholder: "+97699112233",
+  verificationCode: "Баталгаажуулах код",
+  verificationCodePlaceholder: "6 оронтой кодоо оруулна уу",
+  sendVerificationCode: "Код илгээх",
+  verifyCode: "Баталгаажуулаад үргэлжлүүлэх",
+  resendCode: "Код дахин илгээх",
+  useDifferentPhone: "Өөр дугаар ашиглах",
+  orContinueWith: "эсвэл дараахаар үргэлжлүүлэх",
+  orContinueWithPhone: "эсвэл утасны баталгаажуулалт ашиглах",
+  phoneCodeSent: "Баталгаажуулах код илгээгдлээ.",
+  phoneCodeSentHelp: "SMS-ээр ирсэн кодыг оруулж нэвтрэлтээ дуусгана уу.",
+  guestSessionActive: "Зочин сешн идэвхтэй байна. Та дэлгүүрлэж үргэлжлүүлэх эсвэл бүрэн бүртгэл рүү шилжиж болно.",
   noAccount: "Бүртгэлгүй юу?",
   haveAccount: "Бүртгэлтэй юу?",
   authLoading: "Боловсруулж байна...",

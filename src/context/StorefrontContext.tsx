@@ -84,6 +84,7 @@ function getRegularCollections(collections: Collection[]) {
 
 export function StorefrontProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
+  const canManageStorefront = Boolean(user && !user.isAnonymous);
   const [storefront, setStorefront] = useState<StorefrontData>(createDefaultStorefrontData);
   const [loading, setLoading] = useState(true);
   const [savingCount, setSavingCount] = useState(0);
@@ -113,7 +114,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
       try {
         const initialized = await storefrontExists();
 
-        if (user) {
+        if (canManageStorefront) {
           await ensureStorefrontSeeded(seedData);
 
           if (migrationCandidate) {
@@ -211,7 +212,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
       active = false;
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
-  }, [authLoading, user]);
+  }, [authLoading, canManageStorefront]);
 
   const runWrite = (task: Promise<void>) => {
     setSavingCount((count) => count + 1);

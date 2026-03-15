@@ -81,7 +81,8 @@ export default function Header() {
     .filter(Boolean)
     .join(" ");
 
-  const accountHref = user ? "/account" : "/login";
+  const canOpenAccount = Boolean(user && !user.isAnonymous);
+  const accountHref = canOpenAccount ? "/account" : "/login";
 
   const handleMobileLogout = async () => {
     await logout();
@@ -123,12 +124,12 @@ export default function Header() {
               <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search">
                 <Search size={20} />
               </button>
-              <Link to={accountHref} className="icon-btn account-link-btn" aria-label={user ? t.account : t.login}>
+              <Link to={accountHref} className="icon-btn account-link-btn" aria-label={canOpenAccount ? t.account : t.login}>
                 <span className="account-icon-wrap">
                   <User size={20} />
                   {user && <span className="account-status-dot" />}
                 </span>
-                <span className="account-link-label">{user ? t.account : t.login}</span>
+                <span className="account-link-label">{canOpenAccount ? t.account : t.login}</span>
               </Link>
               <button className="icon-btn cart-icon-btn" onClick={() => setIsCartOpen(true)} aria-label="Cart">
                 <ShoppingBag size={20} />
@@ -210,7 +211,7 @@ export default function Header() {
           <Link to="/contact" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.contact}</Link>
           <div className="mobile-divider" />
           <Link to={accountHref} className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
-            {user ? t.account : t.login}
+            {canOpenAccount ? t.account : t.login}
           </Link>
           {user && (
             <button type="button" className="mobile-link mobile-link-btn" onClick={handleMobileLogout}>

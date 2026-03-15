@@ -6,49 +6,72 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function canWriteStorefront() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider != "anonymous";
+    }
+
+    function isRegisteredUser() {
+      return canWriteStorefront();
+    }
+
+    function isSelf(userId) {
+      return isRegisteredUser() && request.auth.uid == userId;
+    }
+
     match /sites/{siteId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canWriteStorefront();
 
       match /settings/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
 
       match /heroBanners/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
 
       match /collections/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
 
       match /products/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
 
       match /markets/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
 
       match /testimonials/{documentId} {
         allow read: if true;
-        allow create, update, delete: if isSignedIn();
+        allow create, update, delete: if canWriteStorefront();
       }
     }
 
     match /products/{documentId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canWriteStorefront();
     }
 
     match /collections/{documentId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if canWriteStorefront();
+    }
+
+    match /users/{userId} {
+      allow read: if isRegisteredUser();
+      allow create: if isSelf(userId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == "customer";
+      allow update: if isSelf(userId)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.role == resource.data.role;
+      allow delete: if false;
     }
   }
 }

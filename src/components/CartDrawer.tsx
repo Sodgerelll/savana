@@ -13,11 +13,12 @@ export default function CartDrawer() {
   const { items, removeItem, updateQuantity, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { t } = useLanguage();
   const { collections } = useStorefront();
+  const canCheckout = Boolean(user && !user.isAnonymous);
 
   const handleCheckout = () => {
     setIsCartOpen(false);
 
-    if (user) {
+    if (canCheckout) {
       navigate("/account");
       return;
     }
@@ -106,7 +107,7 @@ export default function CartDrawer() {
               </div>
               <p className="cart-note">{t.cartNote}</p>
               <button className="btn btn-primary cart-checkout-btn" onClick={handleCheckout}>
-                {user ? t.checkout : t.loginToCheckout}
+                {canCheckout ? t.checkout : t.loginToCheckout}
               </button>
             </div>
           </>

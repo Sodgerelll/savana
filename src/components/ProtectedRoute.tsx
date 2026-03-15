@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children }: { children: ReactElement })
     );
   }
 
-  if (!user) {
+  if (!user || user.isAnonymous) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
