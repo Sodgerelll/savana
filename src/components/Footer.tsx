@@ -105,12 +105,6 @@ export default function Footer() {
           <div className="footer-bottom-links">
             <Link to="/privacy">{t.footerPolicies}</Link>
             <Link to="/terms">Terms</Link>
-            <div className="payment-icons">
-              <span className="payment-icon">VISA</span>
-              <span className="payment-icon">MC</span>
-              <span className="payment-icon">AMEX</span>
-              <span className="payment-icon">PP</span>
-            </div>
           </div>
         </div>
       </div>

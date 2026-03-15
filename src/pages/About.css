@@ -10,13 +10,13 @@
 .about-hero h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
 
 .about-hero p {
   font-size: 1rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   opacity: 0.85;
 }
 
@@ -112,13 +112,13 @@
 .about-banner-content h2 {
   font-family: var(--font-heading);
   font-size: 2.5rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 1rem;
 }
 
 .about-banner-content p {
   font-size: 1rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   margin-bottom: 1.75rem;
   line-height: 1.65;
   opacity: 0.85;

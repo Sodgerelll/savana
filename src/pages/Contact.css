@@ -10,13 +10,13 @@
 .contact-hero h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
 
 .contact-hero p {
   font-size: 1rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   max-width: 520px;
   opacity: 0.85;
 }

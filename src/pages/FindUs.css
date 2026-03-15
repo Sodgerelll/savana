@@ -10,13 +10,13 @@
 .find-us-hero h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
 
 .find-us-hero p {
   font-size: 1rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   max-width: 520px;
   opacity: 0.85;
 }
@@ -62,13 +62,13 @@
 .map-placeholder-inner p {
   font-family: var(--font-heading);
   font-size: 1.25rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
 }
 
 .map-note {
   font-family: var(--font-body) !important;
   font-size: 0.88rem !important;
-  color: rgb(80, 72, 20) !important;
+  color: var(--color-text) !important;
   max-width: 320px;
   line-height: 1.6;
   opacity: 0.85;
@@ -198,13 +198,13 @@
 .find-us-cta-inner h2 {
   font-family: var(--font-heading);
   font-size: 2.25rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 1rem;
 }
 
 .find-us-cta-inner p {
   font-size: 0.95rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   line-height: 1.75;
   margin-bottom: 2rem;
   opacity: 0.85;

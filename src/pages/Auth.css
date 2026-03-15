@@ -91,6 +91,10 @@
   gap: 0.75rem;
 }
 
+.auth-provider-panel {
+  display: grid;
+}
+
 .auth-provider-btn {
   display: flex;
   align-items: center;
@@ -177,41 +181,26 @@
   text-transform: uppercase;
 }
 
-.auth-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.auth-toggle button {
-  border: 1px solid var(--color-border);
-  background: transparent;
-  color: var(--color-text);
-  padding: 0.8rem 1rem;
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  transition: all 0.22s ease;
-}
-
-.auth-toggle button.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: #fff;
-}
-
-.auth-toggle-compact {
-  margin-bottom: 0;
-}
-
+.auth-mode-tabs,
 .auth-method-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.auth-mode-tabs {
+  margin-bottom: 0.8rem;
+}
+
+.auth-method-tabs {
   margin-bottom: 1rem;
 }
 
+.auth-method-tabs.three-up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.auth-mode-tab,
 .auth-method-tab {
   border: 1px solid rgba(183, 185, 167, 0.85);
   background: rgba(255, 255, 255, 0.68);
@@ -223,10 +212,12 @@
   transition: all 0.2s ease;
 }
 
+.auth-mode-tab:hover,
 .auth-method-tab:hover {
   border-color: rgba(90, 81, 3, 0.3);
 }
 
+.auth-mode-tab.active,
 .auth-method-tab.active {
   background: rgba(90, 81, 3, 0.1);
   border-color: rgba(90, 81, 3, 0.38);
@@ -356,15 +347,6 @@
   font-size: 0.92rem;
 }
 
-.auth-switch button {
-  background: none;
-  border: none;
-  color: var(--color-accent);
-  padding: 0;
-  margin-left: 0.35rem;
-  font-size: inherit;
-}
-
 .account-layout {
   padding: 4.5rem 0;
 }
@@ -475,6 +457,10 @@
 
   .auth-inline-actions {
     flex-direction: column;
+  }
+
+  .auth-method-tabs.three-up {
+    grid-template-columns: 1fr;
   }
 
   .account-layout {

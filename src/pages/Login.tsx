@@ -6,7 +6,7 @@ import { useLanguage, type Language } from "../context/LanguageContext";
 import "./Auth.css";
 
 type AuthMode = "login" | "register";
-type CredentialTab = "email" | "phone";
+type CredentialTab = "google" | "phone" | "guest";
 
 function getAuthErrorMessage(code: string | undefined, language: Language) {
   const messages = {
@@ -97,8 +97,6 @@ export default function Login() {
     user,
     profile,
     loading,
-    signIn,
-    signUp,
     signInWithGoogle,
     signInAsGuest,
     signInWithPhonePassword,
@@ -112,10 +110,7 @@ export default function Login() {
   const redirectPath = locationState?.from ?? "/account";
 
   const [mode, setMode] = useState<AuthMode>("login");
-  const [credentialTab, setCredentialTab] = useState<CredentialTab>("email");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [credentialTab, setCredentialTab] = useState<CredentialTab>("google");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phonePassword, setPhonePassword] = useState("");
   const [confirmPhonePassword, setConfirmPhonePassword] = useState("");
@@ -144,15 +139,27 @@ export default function Login() {
           typeLabel: "Registration Type",
           tabLabel: "Phone",
         };
-  const emailMethodLabel =
+  const googleMethodLabel =
     language === "MN"
       ? {
-          help: "И-мэйл, нууц үгээр нэвтрэх эсвэл бүртгэл үүсгэх.",
-          tabLabel: "И-мэйл",
+          help: mode === "register" ? "Gmail-ээр шууд бүртгэл үүсгэнэ." : "Gmail-ээр байгаа бүртгэлдээ нэвтэрнэ.",
+          tabLabel: "Gmail",
         }
       : {
-          help: "Use your email and password to sign in or create an account.",
-          tabLabel: "Email",
+          help: mode === "register" ? "Create an account directly with Gmail." : "Sign in with your existing Gmail account.",
+          tabLabel: "Gmail",
+        };
+  const guestMethodLabel =
+    language === "MN"
+      ? {
+          help: "Зочин сешнээр шууд үргэлжлүүлнэ.",
+          tabLabel: "Зочин",
+          subtext: "түр сешн эхлүүлнэ",
+        }
+      : {
+          help: "Continue immediately with a guest session.",
+          tabLabel: "Guest",
+          subtext: "starts a temporary session",
         };
 
   const handleAuthFailure = (authError: unknown) => {
@@ -182,26 +189,14 @@ export default function Login() {
 
   const handleModeChange = (nextMode: AuthMode) => {
     setMode(nextMode);
-    setError("");
-  };
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (mode === "register" && password !== confirmPassword) {
-      setError(getAuthErrorMessage("passwordMismatch", language));
-      return;
-    }
-
-    await runAuthAction("email", async () => {
-      if (mode === "login") {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password);
+    setCredentialTab((current) => {
+      if (nextMode === "register") {
+        return current === "phone" ? "phone" : "google";
       }
 
-      navigate(redirectPath, { replace: true });
+      return current;
     });
+    setError("");
   };
 
   const validatePhoneCredentials = () => {
@@ -262,6 +257,8 @@ export default function Login() {
       : language === "MN"
         ? "байгаа аккаунтаар нэвтэрнэ"
         : "uses your existing account";
+  const availableMethods: CredentialTab[] = mode === "login" ? ["google", "phone", "guest"] : ["google", "phone"];
+  const tabAriaLabel = language === "MN" ? "Нэвтрэх арга" : "Sign-in method";
 
   return (
     <div className="auth-page">
@@ -300,6 +297,27 @@ export default function Login() {
 
         <section className="auth-panel">
           <div className="auth-card">
+            <div className="auth-mode-tabs" role="tablist" aria-label={language === "MN" ? "Сешний горим" : "Session mode"}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "login"}
+                className={`auth-mode-tab ${mode === "login" ? "active" : ""}`}
+                onClick={() => handleModeChange("login")}
+              >
+                {t.signIn}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "register"}
+                className={`auth-mode-tab ${mode === "register" ? "active" : ""}`}
+                onClick={() => handleModeChange("register")}
+              >
+                {t.createAccount}
+              </button>
+            </div>
+
             <h2>{mode === "login" ? t.signIn : t.createAccount}</h2>
             <p>{t.accountSubtext}</p>
 
@@ -321,129 +339,73 @@ export default function Login() {
 
             {error && <div className="auth-error">{error}</div>}
 
-            <div className="auth-provider-grid">
-              <button
-                type="button"
-                className="auth-provider-btn"
-                onClick={() =>
-                  void runAuthAction("google", async () => {
-                    await signInWithGoogle();
-                    navigate(redirectPath, { replace: true });
-                  })
-                }
-                disabled={isBusy}
-              >
-                <span className="auth-provider-badge">G</span>
-                <span className="auth-provider-copy">
-                  <strong>{t.signInWithGoogle}</strong>
-                  <small>{providerActionLabel}</small>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="auth-provider-btn auth-provider-btn-guest"
-                onClick={handleGuestSignIn}
-                disabled={isBusy}
-              >
-                <span className="auth-provider-badge">+</span>
-                <span className="auth-provider-copy">
-                  <strong>{pendingAction === "guest" ? t.authLoading : t.continueAsGuest}</strong>
-                  <small>{language === "MN" ? "түр сешн эхлүүлнэ" : "starts a temporary session"}</small>
-                </span>
-              </button>
-            </div>
-
-            <div className="auth-divider">
-              <span>{t.orContinueWith}</span>
-            </div>
-
-            <div className="auth-toggle">
-              <button type="button" className={mode === "login" ? "active" : ""} onClick={() => handleModeChange("login")}>
-                {t.signIn}
-              </button>
-              <button
-                type="button"
-                className={mode === "register" ? "active" : ""}
-                onClick={() => handleModeChange("register")}
-              >
-                {t.createAccount}
-              </button>
-            </div>
-
-            <div className="auth-method-tabs" role="tablist" aria-label={language === "MN" ? "Нэвтрэх арга" : "Sign-in method"}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={credentialTab === "email"}
-                className={`auth-method-tab ${credentialTab === "email" ? "active" : ""}`}
-                onClick={() => setCredentialTab("email")}
-              >
-                {emailMethodLabel.tabLabel}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={credentialTab === "phone"}
-                className={`auth-method-tab ${credentialTab === "phone" ? "active" : ""}`}
-                onClick={() => setCredentialTab("phone")}
-              >
-                {phoneMethodLabel.tabLabel}
-              </button>
+            <div className={`auth-method-tabs ${availableMethods.length === 3 ? "three-up" : ""}`} role="tablist" aria-label={tabAriaLabel}>
+              {availableMethods.map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  role="tab"
+                  aria-selected={credentialTab === method}
+                  className={`auth-method-tab ${credentialTab === method ? "active" : ""}`}
+                  onClick={() => setCredentialTab(method)}
+                >
+                  {method === "google"
+                    ? googleMethodLabel.tabLabel
+                    : method === "phone"
+                      ? phoneMethodLabel.tabLabel
+                      : guestMethodLabel.tabLabel}
+                </button>
+              ))}
             </div>
 
             <div className="auth-tab-panel">
               <div className="auth-phone-intro">
-                <p>{credentialTab === "email" ? emailMethodLabel.help : mode === "register" ? phoneMethodLabel.registerHelp : phoneMethodLabel.loginHelp}</p>
+                <p>
+                  {credentialTab === "google"
+                    ? googleMethodLabel.help
+                    : credentialTab === "guest"
+                      ? guestMethodLabel.help
+                      : mode === "register"
+                        ? phoneMethodLabel.registerHelp
+                        : phoneMethodLabel.loginHelp}
+                </p>
               </div>
 
-              {credentialTab === "email" ? (
-                <form className="auth-form" onSubmit={handleSubmit}>
-                  <div className="auth-field">
-                    <label htmlFor="email">{t.email}</label>
-                    <input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder={t.emailPlaceholder}
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="auth-field">
-                    <label htmlFor="password">{t.password}</label>
-                    <input
-                      id="password"
-                      type="password"
-                      autoComplete={mode === "login" ? "current-password" : "new-password"}
-                      placeholder={t.passwordPlaceholder}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      required
-                    />
-                  </div>
-
-                  {mode === "register" && (
-                    <div className="auth-field">
-                      <label htmlFor="confirm-password">{t.confirmPassword}</label>
-                      <input
-                        id="confirm-password"
-                        type="password"
-                        autoComplete="new-password"
-                        placeholder={t.confirmPasswordPlaceholder}
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                        required
-                      />
-                    </div>
-                  )}
-
-                  <button type="submit" className="btn btn-primary" disabled={isBusy}>
-                    {pendingAction === "email" ? t.authLoading : mode === "login" ? t.signIn : t.createAccount}
+              {credentialTab === "google" ? (
+                <div className="auth-provider-panel">
+                  <button
+                    type="button"
+                    className="auth-provider-btn"
+                    onClick={() =>
+                      void runAuthAction("google", async () => {
+                        await signInWithGoogle();
+                        navigate(redirectPath, { replace: true });
+                      })
+                    }
+                    disabled={isBusy}
+                  >
+                    <span className="auth-provider-badge">G</span>
+                    <span className="auth-provider-copy">
+                      <strong>{t.signInWithGoogle}</strong>
+                      <small>{providerActionLabel}</small>
+                    </span>
                   </button>
-                </form>
+                </div>
+              ) : credentialTab === "guest" ? (
+                <div className="auth-provider-panel">
+                  <button
+                    type="button"
+                    className="auth-provider-btn auth-provider-btn-guest"
+                    onClick={handleGuestSignIn}
+                    disabled={isBusy}
+                  >
+                    <span className="auth-provider-badge">+</span>
+                    <span className="auth-provider-copy">
+                      <strong>{pendingAction === "guest" ? t.authLoading : t.continueAsGuest}</strong>
+                      <small>{guestMethodLabel.subtext}</small>
+                    </span>
+                  </button>
+                </div>
               ) : (
                 <form className="auth-form auth-phone-form" onSubmit={handlePhoneSubmit}>
                   <div className="auth-field">

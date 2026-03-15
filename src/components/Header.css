@@ -147,7 +147,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,25 +155,25 @@
   text-decoration: none;
   transition: color 0.2s;
 }
-.icon-btn:hover { color: rgb(90, 81, 3); }
+.icon-btn:hover { color: var(--color-accent); }
 
 .site-header-wrap.home-transparent .icon-btn {
   color: #fff;
 }
 
 .site-header-wrap.home-transparent:hover .icon-btn {
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
 }
 
 .site-header-wrap.home-transparent:hover .icon-btn:hover {
-  color: rgb(90, 81, 3);
+  color: var(--color-accent);
 }
 
 .cart-icon-btn { position: relative; }
 .cart-badge {
   position: absolute;
   top: -4px; right: -6px;
-  background: rgb(90, 81, 3);
+  background: var(--color-accent);
   color: #fff;
   font-size: 0.58rem;
   font-weight: 700;
@@ -185,8 +185,8 @@
 /* Language toggle */
 .lang-btn {
   background: none;
-  border: 1px solid rgb(183, 185, 167);
-  color: rgb(117, 114, 97);
+  border: 1px solid var(--color-border);
+  color: var(--color-heading);
   font-family: 'Petrona', serif;
   font-size: 0.68rem;
   letter-spacing: 0.08em;
@@ -195,9 +195,9 @@
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s;
 }
-.lang-btn:hover { border-color: rgb(90, 81, 3); color: rgb(90, 81, 3); }
+.lang-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
 .lang-div { opacity: 0.4; }
-.lang-on  { color: rgb(90, 81, 3); font-weight: 600; }
+.lang-on  { color: var(--color-accent); font-weight: 600; }
 
 .site-header-wrap.home-transparent .lang-btn {
   border-color: rgba(255, 255, 255, 0.56);
@@ -205,8 +205,8 @@
 }
 
 .site-header-wrap.home-transparent:hover .lang-btn {
-  border-color: rgb(183, 185, 167);
-  color: rgb(117, 114, 97);
+  border-color: var(--color-border);
+  color: var(--color-heading);
 }
 
 .site-header-wrap.home-transparent .lang-btn:hover {
@@ -215,8 +215,8 @@
 }
 
 .site-header-wrap.home-transparent:hover .lang-btn:hover {
-  border-color: rgb(90, 81, 3);
-  color: rgb(90, 81, 3);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .site-header-wrap.home-transparent .lang-div {
@@ -228,7 +228,7 @@
 }
 
 .site-header-wrap.home-transparent:hover .lang-on {
-  color: rgb(90, 81, 3);
+  color: var(--color-accent);
 }
 
 /* Nav links */
@@ -237,7 +237,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   text-decoration: none;
   background: none;
   border: none;
@@ -256,13 +256,13 @@
 }
 
 .site-header-wrap.home-transparent:hover .nav-link {
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   text-shadow: none;
 }
 
 .site-header-wrap.home-transparent:hover .nav-link:hover,
 .site-header-wrap.home-transparent:hover .nav-has-dropdown:hover .nav-shop-trigger {
-  color: rgb(90, 81, 3);
+  color: var(--color-accent);
 }
 
 .nav-link::after {
@@ -270,7 +270,7 @@
   position: absolute;
   bottom: 0; left: 0;
   width: 0; height: 1px;
-  background: rgb(90, 81, 3);
+  background: var(--color-accent);
   transition: width 0.28s;
 }
 
@@ -279,11 +279,11 @@
 }
 
 .site-header-wrap.home-transparent:hover .nav-link::after {
-  background: rgb(90, 81, 3);
+  background: var(--color-accent);
 }
 .nav-link:hover,
 .nav-has-dropdown:hover .nav-shop-trigger {
-  color: rgb(90, 81, 3);
+  color: var(--color-accent);
 }
 .nav-link:hover::after,
 .nav-has-dropdown:hover .nav-shop-trigger::after {
@@ -319,7 +319,7 @@
   transform: translateX(-50%);
   background: #faf9f6;          /* solid white-cream */
   border: 1px solid #d8d9cd;
-  border-top: 2px solid rgb(90, 81, 3);
+  border-top: 2px solid var(--color-accent);
   min-width: 215px;
   z-index: 9999;
   box-shadow: 0 8px 28px rgba(0,0,0,0.11);
@@ -347,14 +347,14 @@
   font-family: 'Petrona', serif;
   font-size: 0.78rem;
   letter-spacing: 0.06em;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   text-decoration: none;
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
 .nav-dropdown-item:hover {
   background: #f2f0eb;
-  color: rgb(90, 81, 3);
+  color: var(--color-accent);
 }
 
 /* ============================================================
@@ -390,10 +390,10 @@
   background: transparent;
   font-family: 'Petrona', serif;
   font-size: 1rem;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   outline: none;
 }
-.search-field:focus { border-color: rgb(90, 81, 3); }
+.search-field:focus { border-color: var(--color-accent); }
 
 /* ============================================================
    MOBILE DRAWER
@@ -436,21 +436,21 @@
   font-size: 0.62rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   opacity: 0.6;
   margin-bottom: 0.75rem;
 }
 .mobile-link {
   font-family: 'Petrona', serif;
   font-size: 0.92rem;
-  color: rgb(117, 114, 97);
+  color: var(--color-heading);
   text-decoration: none;
   padding: 0.55rem 0;
   border-bottom: 1px solid #d8d9cd;
   transition: color 0.2s;
   display: block;
 }
-.mobile-link:hover { color: rgb(90, 81, 3); }
+.mobile-link:hover { color: var(--color-accent); }
 
 .mobile-divider { height: 1.5rem; }
 
@@ -461,8 +461,8 @@
 }
 .mobile-lang-btn {
   background: none;
-  border: 1px solid rgb(183, 185, 167);
-  color: rgb(117, 114, 97);
+  border: 1px solid var(--color-border);
+  color: var(--color-heading);
   font-family: 'Petrona', serif;
   font-size: 0.8rem;
   padding: 0.4rem 1rem;
@@ -470,8 +470,8 @@
   transition: all 0.2s;
 }
 .mobile-lang-btn.active {
-  background: rgb(90, 81, 3);
-  border-color: rgb(90, 81, 3);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
   color: #fff;
 }
 

@@ -9,12 +9,12 @@
 
 .collections-hero-inner .breadcrumb {
   margin-bottom: 1.25rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   font-size: 0.78rem;
 }
 
 .collections-hero-inner .breadcrumb a {
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   text-decoration: none;
   transition: color 0.2s;
 }
@@ -26,13 +26,13 @@
 .collections-hero-inner h1 {
   font-family: var(--font-heading);
   font-size: 3rem;
-  color: rgb(60, 54, 10);
+  color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
 
 .collections-hero-inner p {
   font-size: 1rem;
-  color: rgb(80, 72, 20);
+  color: var(--color-text);
   max-width: 560px;
   opacity: 0.85;
 }

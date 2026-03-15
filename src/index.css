@@ -3,9 +3,9 @@
 :root {
   --color-bg: rgb(250, 249, 246);
   --color-bg-alt: #F2F0EB;
-  --color-text: rgb(117, 114, 97);
-  --color-text-dark: #4A4737;
-  --color-heading: rgb(117, 114, 97);
+  --color-text: #26211d;
+  --color-text-dark: #171311;
+  --color-heading: #151210;
   --color-accent: rgb(90, 81, 3);
   --color-accent-hover: #6E6304;
   --color-border: rgb(183, 185, 167);
