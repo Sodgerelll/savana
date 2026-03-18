@@ -15,9 +15,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { auth } from "../lib/firebase";
 import {
   createPhoneLoginEmail,
-  getUserProfile,
   isPrivilegedRole,
   resolveUserRole,
+  subscribeToUserProfile,
   syncUserProfile,
   type UserAuthMethod,
   type UserProfile,
@@ -70,10 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    let unsubscribeProfile: (() => void) | null = null;
 
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setLoading(false);
+      unsubscribeProfile?.();
+      unsubscribeProfile = null;
 
       if (!nextUser || nextUser.isAnonymous) {
         if (active) {
@@ -82,32 +85,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      void getUserProfile(nextUser.uid)
-        .then(async (existingProfile) => {
-          if (!active) {
-            return;
-          }
-
-          if (existingProfile) {
-            setProfile(existingProfile);
-            return;
-          }
-
-          const syncedProfile = await syncUserProfile(nextUser);
-
+      unsubscribeProfile = subscribeToUserProfile(nextUser.uid, {
+        onData: (existingProfile) => {
           if (active) {
-            setProfile(syncedProfile);
+            if (existingProfile) {
+              setProfile(existingProfile);
+              return;
+            }
+
+            void syncUserProfile(nextUser)
+              .then((syncedProfile) => {
+                if (active) {
+                  setProfile(syncedProfile);
+                }
+              })
+              .catch(() => {
+                if (active) {
+                  setProfile(null);
+                }
+              });
           }
-        })
-        .catch(() => {
+        },
+        onError: () => {
           if (active) {
             setProfile(null);
           }
-        });
+        },
+      });
     });
 
     return () => {
       active = false;
+      unsubscribeProfile?.();
       unsubscribe();
     };
   }, []);

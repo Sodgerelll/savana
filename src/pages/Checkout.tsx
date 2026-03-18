@@ -93,7 +93,7 @@ export default function Checkout() {
           grandTotal: "Төлөх нийт дүн",
           defaultVariant: "Үндсэн сонголт",
           empty: "Сагсанд бараа алга байна.",
-          continueShopping: "Дэлгүүр рүү буцах",
+          continueShopping: "Дэлгүүрлүү буцах",
           requiredPhone: "Утасны дугаар заавал бөглөнө.",
           requiredItems: "Захиалга үүсгэхийн тулд дор хаяж нэг бараа хэрэгтэй.",
           successTitle: "Төлбөр баталгаажлаа",

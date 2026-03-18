@@ -38,6 +38,7 @@ import {
 import {
   resolveUserRole,
   subscribeToUserProfiles,
+  updateUserProfileByPrivileged,
   type UserAuthMethod,
   type UserProfile,
   type UserRole,
@@ -145,6 +146,10 @@ interface OrderModalState {
   draft: OrderRecord;
 }
 
+interface UserProfileModalState {
+  draft: UserProfile;
+}
+
 interface AdminModuleHighlight {
   label: string;
   value: string;
@@ -223,14 +228,23 @@ function getUserIdentity(profile: UserProfile) {
 function getRoleLabel(role: UserRole, language: "MN" | "EN") {
   switch (role) {
     case "sysadmin":
-      return "sysadmin";
+      return language === "MN" ? "Систем админ" : "System admin";
     case "admin":
-      return "admin";
+      return language === "MN" ? "Админ" : "Admin";
     case "worker":
-      return language === "MN" ? "ажилтан" : "worker";
+      return language === "MN" ? "Ажилтан" : "Employee";
     default:
-      return language === "MN" ? "хэрэглэгч" : "customer";
+      return language === "MN" ? "Хэрэглэгч" : "Customer";
   }
+}
+
+function getManageableRoleOptions(currentRole: UserRole): UserRole[] {
+  const roles: UserRole[] = ["sysadmin", "admin", "worker"];
+  return currentRole === "customer" ? [...roles, "customer" as const] : roles;
+}
+
+function getUserProviderSummary(profile: UserProfile) {
+  return profile.providers.length > 0 ? profile.providers.join(", ") : "-";
 }
 
 function getAuthMethodLabel(method: UserAuthMethod, language: "MN" | "EN") {
@@ -432,6 +446,7 @@ export default function Account() {
           productsMenu: "Бүтээгдэхүүн",
           messagesMenu: "Мессеж",
           ordersMenu: "Захиалга",
+          usersMenu: "Хэрэглэгч",
           dashboardTitle: "Админ хянах самбар",
           dashboardText: "Website, Ангилал, Бүтээгдэхүүн хэсгүүдийг modal-based workflow-оор удирдана.",
           websiteTitle: "Вэб контент",
@@ -494,6 +509,7 @@ export default function Account() {
           openCategories: "Ангилал",
           openProducts: "Бүтээгдэхүүн",
           openOrders: "Захиалга",
+          openUsers: "Хэрэглэгч",
           signedIn: "Нэвтэрсэн хэрэглэгч",
           status: "Төлөв",
           active: "Active",
@@ -582,12 +598,25 @@ export default function Account() {
           excerptMn: "Товч агуулга (MN)",
           excerptEn: "Excerpt (EN)",
           journalImage: "Journal зураг",
-          journalImageHelp: "Blog card дээр харагдах cover image URL. Хоосон байж болно.",
+          journalImageHelp: "Blog card дээр харагдах cover image URL. URL оруулах эсвэл шууд файл upload хийж болно.",
           schedule: "Хуваарь",
           address: "Хаяг",
           season: "Улирал",
           quote: "Сэтгэгдэл",
           author: "Зохиогч",
+          displayName: "Дэлгэцийн нэр",
+          userRole: "Хэрэглэгчийн эрх",
+          userUid: "UID",
+          userProviders: "Provider-ууд",
+          registeredVia: "Бүртгэсэн төрөл",
+          lastAuth: "Сүүлийн нэвтрэлт",
+          registeredAt: "Бүртгүүлсэн огноо",
+          phoneLoginEmail: "Phone login email",
+          editUser: "Хэрэглэгч засах",
+          userModalTitle: "Хэрэглэгчийн мэдээлэл",
+          userModalDescription: "Sysadmin болон admin эрхтэй хэрэглэгч бусад хэрэглэгчийн мэдээлэл, эрхийг эндээс шинэчилнэ.",
+          userUpdateFailed: "Хэрэглэгчийн мэдээллийг хадгалж чадсангүй.",
+          currentUserReadOnly: "Өөрийн профайлыг энэ хэсгээс засахгүй.",
           bannerCollection: "Ангилал",
           bannerImage: "Баннер зураг",
           bannerUpload: "Зураг upload",
@@ -665,6 +694,7 @@ export default function Account() {
           productsMenu: "Products",
           messagesMenu: "Messages",
           ordersMenu: "Orders",
+          usersMenu: "Users",
           dashboardTitle: "Admin dashboard",
           dashboardText: "Manage Website, Categories, and Products through modal-based workflows.",
           websiteTitle: "Website content",
@@ -727,6 +757,7 @@ export default function Account() {
           openCategories: "Categories",
           openProducts: "Products",
           openOrders: "Orders",
+          openUsers: "Users",
           signedIn: "Signed in user",
           status: "Status",
           active: "Active",
@@ -815,12 +846,25 @@ export default function Account() {
           excerptMn: "Excerpt (MN)",
           excerptEn: "Excerpt (EN)",
           journalImage: "Journal image",
-          journalImageHelp: "Optional cover image URL shown on the journal card.",
+          journalImageHelp: "Optional cover image URL shown on the journal card. Paste a URL or upload a file directly.",
           schedule: "Schedule",
           address: "Address",
           season: "Season",
           quote: "Quote",
           author: "Author",
+          displayName: "Display name",
+          userRole: "User role",
+          userUid: "UID",
+          userProviders: "Providers",
+          registeredVia: "Registered via",
+          lastAuth: "Last auth",
+          registeredAt: "Registered at",
+          phoneLoginEmail: "Phone login email",
+          editUser: "Edit user",
+          userModalTitle: "User profile",
+          userModalDescription: "Privileged users can review and update another user's profile and access level here.",
+          userUpdateFailed: "Unable to save the user profile.",
+          currentUserReadOnly: "Your own profile is not edited from this directory.",
           bannerCollection: "Categories",
           bannerImage: "Banner image",
           bannerUpload: "Upload image",
@@ -900,6 +944,7 @@ export default function Account() {
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
   const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
+  const [userProfileModal, setUserProfileModal] = useState<UserProfileModalState | null>(null);
   const [heroBannerModal, setHeroBannerModal] = useState<HeroBannerModalState | null>(null);
   const [marketModal, setMarketModal] = useState<MarketModalState | null>(null);
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
@@ -909,6 +954,10 @@ export default function Account() {
   const [navigationBannerUploading, setNavigationBannerUploading] = useState(false);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
   const [bannerUploading, setBannerUploading] = useState(false);
+  const [journalImageUploadError, setJournalImageUploadError] = useState<string | null>(null);
+  const [journalImageUploading, setJournalImageUploading] = useState(false);
+  const [savingUserProfile, setSavingUserProfile] = useState(false);
+  const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [savingOrderModal, setSavingOrderModal] = useState(false);
   const [orderModalError, setOrderModalError] = useState<string | null>(null);
   const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
@@ -1742,6 +1791,9 @@ export default function Account() {
   };
 
   const openJournalEntryModal = (entry?: JournalEntry) => {
+    setJournalImageUploadError(null);
+    setJournalImageUploading(false);
+
     if (entry) {
       setJournalEntryModal({
         mode: "edit",
@@ -2095,6 +2147,67 @@ export default function Account() {
     setBannerUploading(false);
   };
 
+  const handleJournalEntryFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file || !journalEntryModal) {
+      return;
+    }
+
+    setJournalImageUploadError(null);
+    setJournalImageUploading(true);
+
+    try {
+      const uploadedImageUrl = await uploadStorefrontImage(file, "journal-images");
+      setJournalEntryModal((current) =>
+        current
+          ? {
+              ...current,
+              draft: {
+                ...current.draft,
+                image: uploadedImageUrl,
+              },
+            }
+          : current
+      );
+    } catch {
+      setJournalImageUploadError(copy.bannerUploadFailed);
+    } finally {
+      setJournalImageUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const closeJournalEntryModal = () => {
+    if (journalImageUploading) {
+      return;
+    }
+
+    setJournalEntryModal(null);
+    setJournalImageUploadError(null);
+    setJournalImageUploading(false);
+  };
+
+  const openUserProfileModal = (directoryUser: UserProfile) => {
+    setSavingUserProfile(false);
+    setUserProfileError(null);
+    setUserProfileModal({
+      draft: {
+        ...directoryUser,
+        role: resolveUserRole(directoryUser),
+      },
+    });
+  };
+
+  const closeUserProfileModal = () => {
+    if (savingUserProfile) {
+      return;
+    }
+
+    setUserProfileModal(null);
+    setUserProfileError(null);
+  };
+
   const openOrderModal = (order: OrderRecord) => {
     setOrderModal({ draft: cloneOrderRecord(order) });
     setOrderModalError(null);
@@ -2213,6 +2326,32 @@ export default function Account() {
       setOrderModalError(error instanceof Error ? error.message : copy.orderUpdateFailed);
     } finally {
       setSavingOrderModal(false);
+    }
+  };
+
+  const handleUserProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!userProfileModal) {
+      return;
+    }
+
+    setSavingUserProfile(true);
+    setUserProfileError(null);
+
+    try {
+      await updateUserProfileByPrivileged(userProfileModal.draft.uid, {
+        displayName: userProfileModal.draft.displayName,
+        email: userProfileModal.draft.email,
+        phoneNumber: userProfileModal.draft.phoneNumber,
+        role: userProfileModal.draft.role,
+      });
+      setUserProfileModal(null);
+      setUserProfileError(null);
+    } catch (error) {
+      setUserProfileError(error instanceof Error ? error.message : copy.userUpdateFailed);
+    } finally {
+      setSavingUserProfile(false);
     }
   };
 
@@ -2949,8 +3088,28 @@ export default function Account() {
                     journalPreviewEntries.map((entry) => (
                       <div key={entry.id} className="admin-inline-card">
                         <div className="admin-inline-card-head">
-                          <div className="admin-entity-head">
-                            <strong>{getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}</strong>
+                          <div className="admin-entity-head admin-navigation-entity">
+                            <div className="admin-navigation-thumb">
+                              {entry.image.trim() ? (
+                                <img
+                                  src={entry.image}
+                                  alt={getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}
+                                />
+                              ) : (
+                                <span>
+                                  {(getManagedJournalTitle(entry, language) ||
+                                    getManagedJournalCategory(entry, language) ||
+                                    "J"
+                                  )
+                                    .slice(0, 1)
+                                    .toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                            <div className="admin-navigation-copy">
+                              <strong>{getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}</strong>
+                              <small>{getManagedJournalCategory(entry, language) || `#${entry.id}`}</small>
+                            </div>
                             <StatusBadge
                               status={entry.status}
                               activeLabel={copy.active}
@@ -2976,7 +3135,6 @@ export default function Account() {
                             </button>
                           </div>
                         </div>
-                        <p>{getManagedJournalCategory(entry, language) || "-"}</p>
                         <small>
                           {formatAdminDateTime(entry.publishedAt, language)}
                           {entry.author ? ` • ${entry.author}` : ""}
@@ -3375,22 +3533,22 @@ export default function Account() {
                   <small>{language === "MN" ? "Бүртгэлтэй хэрэглэгчдийн тоо" : "Registered user profiles"}</small>
                 </div>
                 <div className="admin-summary-card">
-                  <span>sysadmin</span>
+                  <span>{getRoleLabel("sysadmin", language)}</span>
                   <strong>{userRoleCounts.sysadmin}</strong>
                   <small>{language === "MN" ? "Бүрэн эрхтэй хэрэглэгч" : "Full-access operators"}</small>
                 </div>
                 <div className="admin-summary-card">
-                  <span>admin</span>
+                  <span>{getRoleLabel("admin", language)}</span>
                   <strong>{userRoleCounts.admin}</strong>
                   <small>{language === "MN" ? "Админ эрхтэй хэрэглэгч" : "Admin operators"}</small>
                 </div>
                 <div className="admin-summary-card">
-                  <span>{language === "MN" ? "Ажилтан" : "Workers"}</span>
+                  <span>{getRoleLabel("worker", language)}</span>
                   <strong>{userRoleCounts.worker}</strong>
-                  <small>{language === "MN" ? "Ажилтны эрхтэй хэрэглэгч" : "Worker accounts"}</small>
+                  <small>{language === "MN" ? "Ажилтны эрхтэй хэрэглэгч" : "Employee accounts"}</small>
                 </div>
                 <div className="admin-summary-card">
-                  <span>{language === "MN" ? "Хэрэглэгч" : "Customers"}</span>
+                  <span>{getRoleLabel("customer", language)}</span>
                   <strong>{userRoleCounts.customer}</strong>
                   <small>{language === "MN" ? "Энгийн бүртгэлтэй хэрэглэгч" : "Standard registered users"}</small>
                 </div>
@@ -3416,61 +3574,79 @@ export default function Account() {
                         <th>{language === "MN" ? "Бүртгэсэн төрөл" : "Registered Via"}</th>
                         <th>{language === "MN" ? "Сүүлийн нэвтрэлт" : "Last Auth"}</th>
                         <th>{language === "MN" ? "Холбоо барих" : "Contact"}</th>
+                        <th className="admin-table-sticky-action">{copy.actions}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {directoryUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="admin-table-empty">
+                          <td colSpan={6} className="admin-table-empty">
                             {language === "MN" ? "Хэрэглэгч олдсонгүй." : "No user profiles found."}
                           </td>
                         </tr>
                       ) : (
-                        directoryUsers.map((directoryUser) => (
-                          <tr key={directoryUser.uid}>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{getUserIdentity(directoryUser)}</strong>
-                                <small>{directoryUser.uid}</small>
-                              </div>
-                            </td>
-                            <td>{getRoleLabel(resolveUserRole(directoryUser), language)}</td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{getAuthMethodLabel(directoryUser.registrationMethod, language)}</strong>
-                                <small>
-                                  {directoryUser.registrationMethod === "phone" && directoryUser.hasPassword
-                                    ? language === "MN"
-                                      ? "password-той phone account"
-                                      : "phone account with password"
-                                    : directoryUser.hasPassword
+                        directoryUsers.map((directoryUser) => {
+                          const resolvedRole = resolveUserRole(directoryUser);
+
+                          return (
+                            <tr key={directoryUser.uid}>
+                              <td>
+                                <div className="admin-table-primary">
+                                  <strong>{getUserIdentity(directoryUser)}</strong>
+                                  <small>{directoryUser.uid}</small>
+                                </div>
+                              </td>
+                              <td>{getRoleLabel(resolvedRole, language)}</td>
+                              <td>
+                                <div className="admin-table-primary">
+                                  <strong>{getAuthMethodLabel(directoryUser.registrationMethod, language)}</strong>
+                                  <small>
+                                    {directoryUser.registrationMethod === "phone" && directoryUser.hasPassword
                                       ? language === "MN"
-                                        ? "password идэвхтэй"
-                                        : "password enabled"
-                                      : language === "MN"
-                                        ? "password ашиглахгүй"
-                                        : "no password"}
-                                </small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{getAuthMethodLabel(directoryUser.lastAuthMethod, language)}</strong>
-                                <small>
-                                  {directoryUser.lastSignInAt
-                                    ? new Date(directoryUser.lastSignInAt).toLocaleString(language === "MN" ? "mn-MN" : "en-US")
-                                    : "-"}
-                                </small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{directoryUser.phoneNumber ?? directoryUser.email ?? "-"}</strong>
-                                <small>{directoryUser.email ?? directoryUser.phoneLoginEmail ?? "-"}</small>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                                        ? "password-той phone account"
+                                        : "phone account with password"
+                                      : directoryUser.hasPassword
+                                        ? language === "MN"
+                                          ? "password идэвхтэй"
+                                          : "password enabled"
+                                        : language === "MN"
+                                          ? "password ашиглахгүй"
+                                          : "no password"}
+                                  </small>
+                                </div>
+                              </td>
+                              <td>
+                                <div className="admin-table-primary">
+                                  <strong>{getAuthMethodLabel(directoryUser.lastAuthMethod, language)}</strong>
+                                  <small>
+                                    {directoryUser.lastSignInAt
+                                      ? new Date(directoryUser.lastSignInAt).toLocaleString(language === "MN" ? "mn-MN" : "en-US")
+                                      : "-"}
+                                  </small>
+                                </div>
+                              </td>
+                              <td>
+                                <div className="admin-table-primary">
+                                  <strong>{directoryUser.phoneNumber ?? directoryUser.email ?? "-"}</strong>
+                                  <small>{directoryUser.email ?? directoryUser.phoneLoginEmail ?? "-"}</small>
+                                </div>
+                              </td>
+                              <td className="admin-table-sticky-action">
+                                <div className="admin-table-actions">
+                                  <button
+                                    type="button"
+                                    className="admin-icon-btn admin-icon-btn-neutral"
+                                    onClick={() => openUserProfileModal(directoryUser)}
+                                    title={copy.editUser}
+                                    aria-label={`${copy.editUser} ${getUserIdentity(directoryUser)}`}
+                                  >
+                                    <Pencil size={15} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -4251,12 +4427,18 @@ export default function Account() {
         <AdminModal
           title={journalEntryModal.mode === "create" ? copy.journalModalCreate : copy.journalModalEdit}
           description={copy.journalSummary}
-          onClose={() => setJournalEntryModal(null)}
+          onClose={closeJournalEntryModal}
+          disableClose={journalImageUploading}
         >
           <form
             className="admin-modal-form"
             onSubmit={(event) => {
               event.preventDefault();
+
+              if (journalImageUploading) {
+                return;
+              }
+
               saveSettingsSection((draft) => ({
                 ...draft,
                 journalEntries:
@@ -4267,6 +4449,8 @@ export default function Account() {
                       ),
               }));
               setJournalEntryModal(null);
+              setJournalImageUploadError(null);
+              setJournalImageUploading(false);
             }}
           >
             <div className="admin-form-grid">
@@ -4310,7 +4494,7 @@ export default function Account() {
                   }
                 />
               </label>
-              <label className="admin-field">
+              <label className="admin-field admin-field-wide">
                 <span>{copy.journalImage}</span>
                 <input
                   type="url"
@@ -4325,6 +4509,37 @@ export default function Account() {
                 />
                 <small>{copy.journalImageHelp}</small>
               </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.bannerUpload}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleJournalEntryFileChange}
+                  disabled={journalImageUploading}
+                />
+                {journalImageUploading && <small>{copy.bannerUploadProgress}</small>}
+                {journalImageUploadError && <small className="admin-field-error">{journalImageUploadError}</small>}
+              </label>
+              <div className="admin-field admin-field-wide">
+                <span>{copy.imagePreview}</span>
+                <div className="admin-collection-preview admin-banner-preview">
+                  {journalEntryModal.draft.image ? (
+                    <img
+                      src={journalEntryModal.draft.image}
+                      alt={getManagedJournalTitle(journalEntryModal.draft, language) || `${copy.journal} preview`}
+                    />
+                  ) : (
+                    <div className="admin-collection-preview-empty">
+                      {(getManagedJournalTitle(journalEntryModal.draft, language) ||
+                        getManagedJournalCategory(journalEntryModal.draft, language) ||
+                        "J"
+                      )
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
               <label className="admin-field">
                 <span>{copy.categoryMn}</span>
                 <input
@@ -4401,10 +4616,15 @@ export default function Account() {
               </label>
             </div>
             <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setJournalEntryModal(null)}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={closeJournalEntryModal}
+                disabled={journalImageUploading}
+              >
                 {copy.cancel}
               </button>
-              <button type="submit" className="btn btn-primary">
+              <button type="submit" className="btn btn-primary" disabled={journalImageUploading}>
                 {copy.save}
               </button>
             </div>
@@ -5024,6 +5244,151 @@ export default function Account() {
               </button>
             </div>
           </div>
+        </AdminModal>
+      )}
+
+      {userProfileModal && (
+        <AdminModal
+          title={copy.userModalTitle}
+          description={copy.userModalDescription}
+          onClose={closeUserProfileModal}
+          disableClose={savingUserProfile}
+        >
+          <form className="admin-modal-form" onSubmit={handleUserProfileSubmit}>
+            {userProfileError && <div className="admin-sync-error">{userProfileError}</div>}
+
+            <div className="admin-form-grid">
+              <label className="admin-field">
+                <span>{copy.displayName}</span>
+                <input
+                  value={userProfileModal.draft.displayName ?? ""}
+                  onChange={(event) =>
+                    setUserProfileModal((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: {
+                              ...current.draft,
+                              displayName: event.target.value,
+                            },
+                          }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.userRole}</span>
+                <select
+                  value={userProfileModal.draft.role}
+                  onChange={(event) =>
+                    setUserProfileModal((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: {
+                              ...current.draft,
+                              role: event.target.value as UserRole,
+                            },
+                          }
+                        : current
+                    )
+                  }
+                >
+                  {getManageableRoleOptions(userProfileModal.draft.role).map((roleOption) => (
+                    <option key={roleOption} value={roleOption}>
+                      {getRoleLabel(roleOption, language)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>{copy.senderEmail}</span>
+                <input
+                  type="email"
+                  value={userProfileModal.draft.email ?? ""}
+                  onChange={(event) =>
+                    setUserProfileModal((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: {
+                              ...current.draft,
+                              email: event.target.value,
+                            },
+                          }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.contactPhone}</span>
+                <input
+                  type="tel"
+                  value={userProfileModal.draft.phoneNumber ?? ""}
+                  onChange={(event) =>
+                    setUserProfileModal((current) =>
+                      current
+                        ? {
+                            ...current,
+                            draft: {
+                              ...current.draft,
+                              phoneNumber: event.target.value,
+                            },
+                          }
+                        : current
+                    )
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.userUid}</span>
+                <input value={userProfileModal.draft.uid} disabled />
+              </label>
+            </div>
+
+            <div className="admin-inline-card">
+              <div className="admin-inline-card-head">
+                <strong>{language === "MN" ? "Нэвтрэлтийн мэдээлэл" : "Authentication details"}</strong>
+              </div>
+              <div className="admin-form-grid">
+                <label className="admin-field">
+                  <span>{copy.registeredVia}</span>
+                  <input value={getAuthMethodLabel(userProfileModal.draft.registrationMethod, language)} disabled />
+                </label>
+                <label className="admin-field">
+                  <span>{copy.lastAuth}</span>
+                  <input value={getAuthMethodLabel(userProfileModal.draft.lastAuthMethod, language)} disabled />
+                </label>
+                <label className="admin-field">
+                  <span>{copy.registeredAt}</span>
+                  <input value={formatAdminDateTime(userProfileModal.draft.registeredAt, language)} disabled />
+                </label>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Сүүлд нэвтэрсэн огноо" : "Last sign-in at"}</span>
+                  <input value={formatAdminDateTime(userProfileModal.draft.lastSignInAt, language)} disabled />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{copy.userProviders}</span>
+                  <input value={getUserProviderSummary(userProfileModal.draft)} disabled />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{copy.phoneLoginEmail}</span>
+                  <input value={userProfileModal.draft.phoneLoginEmail ?? "-"} disabled />
+                </label>
+              </div>
+            </div>
+
+            <div className="admin-modal-footer">
+              <button type="button" className="btn btn-outline" onClick={closeUserProfileModal} disabled={savingUserProfile}>
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={savingUserProfile}>
+                {savingUserProfile ? "..." : copy.save}
+              </button>
+            </div>
+          </form>
         </AdminModal>
       )}
 

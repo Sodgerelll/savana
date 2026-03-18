@@ -27,6 +27,13 @@ service cloud.firestore {
         );
     }
 
+    function isValidUserRole(role) {
+      return role == "customer"
+        || role == "worker"
+        || role == "admin"
+        || role == "sysadmin";
+    }
+
     function isOrderOwner() {
       return isSignedIn() && request.auth.uid == resource.data.auth.uid;
     }
@@ -199,13 +206,26 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isRegisteredUser();
+      allow read: if isSelf(userId) || hasPrivilegedProfileRole();
       allow create: if isSelf(userId)
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.role == "customer";
       allow update: if isSelf(userId)
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.role == resource.data.role;
+      allow update: if hasPrivilegedProfileRole()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "displayName",
+          "email",
+          "phoneNumber",
+          "role",
+          "updatedAt",
+        ])
+        && isValidUserRole(request.resource.data.role)
+        && (request.resource.data.displayName == null || request.resource.data.displayName is string)
+        && (request.resource.data.email == null || request.resource.data.email is string)
+        && (request.resource.data.phoneNumber == null || request.resource.data.phoneNumber is string);
       allow delete: if false;
     }
   }

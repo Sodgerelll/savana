@@ -1,4 +1,5 @@
 import { Leaf, Heart, Sun, Sprout } from "lucide-react";
+import aboutSavanaSoapImage from "../assets/about-savana-soap.jpg";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
@@ -131,16 +132,12 @@ export default function About() {
         <div className="container">
           <div className="about-intro-grid">
             <div className="about-intro-image">
-              <div
-                className="about-image-placeholder"
-                style={{ background: "linear-gradient(135deg, #e8e0d0 0%, #c8bfa8 100%)" }}
-              >
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none">
-                  <ellipse cx="50" cy="60" rx="32" ry="22" fill="rgba(255,255,255,0.2)" />
-                  <rect x="20" y="32" width="60" height="38" rx="19" fill="rgba(255,255,255,0.28)" />
-                  <path d="M34 32 Q50 14 66 32" stroke="rgba(255,255,255,0.45)" strokeWidth="3" fill="none" />
-                </svg>
-              </div>
+              <img
+                src={aboutSavanaSoapImage}
+                alt={visibleSettings.aboutIntroTitle}
+                className="about-image-photo"
+                loading="lazy"
+              />
             </div>
             <div className="about-intro-content">
               <h2>{visibleSettings.aboutIntroTitle}</h2>

@@ -17,6 +17,7 @@ import {
   getRenderableSettings,
   SYSTEM_COLLECTION_SLUG,
 } from "../lib/storefrontHelpers";
+import brandStorySoapImage from "../assets/brand-story-soap.jpg";
 import "./Home.css";
 
 const HERO_ROTATION_INTERVAL = 5000;
@@ -313,19 +314,8 @@ export default function Home() {
 
       <section className="brand-story-section">
         <div className="brand-story-image">
-          <div
-            className="brand-story-image-bg"
-            style={{ background: "linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 50%, #c8bfa8 100%)" }}
-          >
-            <div className="brand-story-overlay-decor">
-              <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-                <circle cx="60" cy="60" r="50" fill="rgba(255,255,255,0.08)" />
-                <circle cx="60" cy="60" r="35" fill="rgba(255,255,255,0.1)" />
-                <ellipse cx="60" cy="70" rx="30" ry="20" fill="rgba(255,255,255,0.15)" />
-                <rect x="35" y="42" width="50" height="34" rx="17" fill="rgba(255,255,255,0.2)" />
-                <path d="M48 42 Q60 28 72 42" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" fill="none" />
-              </svg>
-            </div>
+          <div className="brand-story-image-bg">
+            <img src={brandStorySoapImage} alt={t.brandStoryHeading} className="brand-story-photo" loading="lazy" />
           </div>
         </div>
         <div className="brand-story-content">

@@ -149,6 +149,11 @@ function deserializeUserProfile(snapshot: QueryDocumentSnapshot<DocumentData> | 
   } satisfies UserProfile;
 }
 
+function normalizeOptionalString(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function createPhoneLoginEmail(phoneNumber: string) {
   const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
 
@@ -271,6 +276,67 @@ export async function syncUserProfile(
   );
 
   return nextProfile;
+}
+
+export async function updateUserProfileByPrivileged(
+  uid: string,
+  updates: {
+    displayName: string | null;
+    email: string | null;
+    phoneNumber: string | null;
+    role: UserRole;
+  },
+) {
+  const ref = doc(usersRef, uid);
+  const snapshot = await getDoc(ref);
+  const existingProfile = deserializeUserProfile(snapshot);
+
+  if (!existingProfile) {
+    throw new Error("User profile not found.");
+  }
+
+  const nextProfile: UserProfile = {
+    ...existingProfile,
+    displayName: normalizeOptionalString(updates.displayName),
+    email: normalizeOptionalString(updates.email),
+    phoneNumber: normalizePhoneNumber(updates.phoneNumber),
+    role: updates.role,
+  };
+
+  await setDoc(
+    ref,
+    {
+      displayName: nextProfile.displayName,
+      email: nextProfile.email,
+      phoneNumber: nextProfile.phoneNumber,
+      role: nextProfile.role,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  return nextProfile;
+}
+
+export function subscribeToUserProfile(
+  uid: string,
+  {
+    onData,
+    onError,
+  }: {
+    onData: (profile: UserProfile | null) => void;
+    onError?: (error: FirestoreError) => void;
+  },
+) {
+  return onSnapshot(
+    doc(usersRef, uid),
+    (snapshot) => {
+      onData(deserializeUserProfile(snapshot));
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export function subscribeToUserProfiles({
