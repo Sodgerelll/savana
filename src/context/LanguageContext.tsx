@@ -15,10 +15,13 @@ export interface Translations {
   bodyCare: string;
   hair: string;
   lipCare: string;
+  featured: string;
   bestSellers: string;
   aboutUs: string;
+  locationNav: string;
   findUs: string;
   contact: string;
+  journal: string;
   // Hero
   handcraftedIn: string;
   heroHeading: string;
@@ -98,6 +101,10 @@ export interface Translations {
   subjectPlaceholder: string;
   messagePlaceholder: string;
   sendBtn: string;
+  sendingMessage: string;
+  messageSentSuccess: string;
+  messageSendFailed: string;
+  messageFormValidationError: string;
   // Find Us
   ourLocation: string;
   visitUs: string;
@@ -155,10 +162,13 @@ const en: Translations = {
   bodyCare: "Body Care",
   hair: "Hair",
   lipCare: "Lip Care",
+  featured: "Featured",
   bestSellers: "Best Sellers",
   aboutUs: "About Us",
+  locationNav: "Location",
   findUs: "Find Us",
   contact: "Contact",
+  journal: "Journal",
   handcraftedIn: "HANDCRAFTED IN ALBERTA",
   heroHeading: "Natural Soap & Skincare for the Prairie Soul",
   heroSubtext: "Small-batch, handcrafted with wildcrafted botanicals and essential oils",
@@ -229,6 +239,10 @@ const en: Translations = {
   subjectPlaceholder: "What's this about?",
   messagePlaceholder: "Your message...",
   sendBtn: "Send Message",
+  sendingMessage: "Sending...",
+  messageSentSuccess: "Your message has been sent. We'll get back to you soon.",
+  messageSendFailed: "Unable to send your message right now. Please try again.",
+  messageFormValidationError: "Please complete all fields before sending your message.",
   ourLocation: "Our Location",
   visitUs: "Visit Us",
   marketSchedule: "Market Schedule",
@@ -283,10 +297,13 @@ const mn: Translations = {
   bodyCare: "Биеийн тусламж",
   hair: "Үс",
   lipCare: "Уруулын тусламж",
-  bestSellers: "Шилдэг бараанууд",
+  featured: "Эрэлттэй",
+  bestSellers: "Шилдэг бүтээгдэхүүн",
   aboutUs: "Бидний тухай",
+  locationNav: "Байршил",
   findUs: "Бидний байршил",
   contact: "Холбоо барих",
+  journal: "Сэтгүүл",
   handcraftedIn: "АЛЬБЕРТА ДАХ ГАРААР ХИЙСЭН",
   heroHeading: "Прэйри сэтгэлийн байгалийн саван ба арьс халамж",
   heroSubtext: "Жижиг хэмжээний, гараар хийсэн, зэрлэг ургамал, эфирийн тосоор",
@@ -341,12 +358,12 @@ const mn: Translations = {
   productsCount: "бүтээгдэхүүн",
   noProducts: "Энэ цуглуулгад бүтээгдэхүүн олдсонгүй.",
   viewAllProducts: "Бүх бүтээгдэхүүнийг харах",
-  aboutHeroHeading: "Манай түүх",
-  aboutHeroSub: "Канадын тал нутгийн зүрхнээс таны гэрт.",
+  aboutHeroHeading: "Бидний түүх",
+  aboutHeroSub: "Монголын тал нутгийн зүрхнээс таны гэрт.",
   contactHeading: "Холбоо барих",
   contactSub: "Бид тантай харилцахдаа баяртай байна. Асуулт, санал хүсэлтээ илгээнэ үү.",
   findUsHeading: "Бидний байршил",
-  findUsSub: "Альберта даяарх нутгийн зах зээл, арга хэмжээнд биднийг олоорой.",
+  findUsSub: "",
   sendMessage: "Бидэнд мессеж илгээх",
   name: "Нэр",
   email: "И-мэйл",
@@ -357,6 +374,10 @@ const mn: Translations = {
   subjectPlaceholder: "Юуны тухай?",
   messagePlaceholder: "Таны мессеж...",
   sendBtn: "Мессеж илгээх",
+  sendingMessage: "Илгээж байна...",
+  messageSentSuccess: "Таны мессеж амжилттай илгээгдлээ. Баярлалаа.",
+  messageSendFailed: "Одоогоор мессеж илгээж чадсангүй. Дахин оролдоно уу.",
+  messageFormValidationError: "Мессеж илгээхээс өмнө бүх талбарыг бөглөнө үү.",
   ourLocation: "Манай байршил",
   visitUs: "Биднийг зочлоорой",
   marketSchedule: "Зах зээлийн хуваарь",

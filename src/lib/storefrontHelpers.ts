@@ -1,9 +1,13 @@
+import type { CSSProperties } from "react";
 import type { Collection, EntityStatus, Product } from "../data/products";
 import {
   createDefaultStorefrontData,
   type HeroBanner,
+  type JournalEntry,
   type MarketItem,
   type ShopSettings,
+  type SiteNavigationId,
+  type SiteNavigationItem,
   type Testimonial,
 } from "../data/storefront";
 
@@ -92,6 +96,103 @@ export function getActiveMarkets(markets: MarketItem[]) {
 
 export function getActiveTestimonials(testimonials: Testimonial[]) {
   return testimonials.filter((testimonial) => isActiveStatus(testimonial.status));
+}
+
+export function getActiveSiteNavigation(items: SiteNavigationItem[]) {
+  return items
+    .filter((item) => isActiveStatus(item.status))
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+}
+
+export function getActiveJournalEntries(entries: JournalEntry[]) {
+  return entries
+    .filter((entry) => isActiveStatus(entry.status))
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.publishedAt);
+      const rightTime = Date.parse(right.publishedAt);
+
+      if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+        return right.id - left.id;
+      }
+
+      return rightTime - leftTime;
+    });
+}
+
+export function getSiteNavigationPath(id: SiteNavigationId) {
+  switch (id) {
+    case "shop":
+      return "/collections";
+    case "featured":
+      return `/collections/${SYSTEM_COLLECTION_SLUG}`;
+    case "location":
+      return "/partnerships";
+    case "about":
+      return "/about";
+    case "contact":
+      return "/contact";
+    case "journal":
+      return "/journal";
+    default:
+      return "/";
+  }
+}
+
+export function getSiteNavigationIdForPath(pathname: string): SiteNavigationId | null {
+  const normalizedPathname = pathname !== "/" ? pathname.replace(/\/+$/, "") || "/" : pathname;
+
+  if (normalizedPathname === "/collections/best-sellers") {
+    return "featured";
+  }
+
+  if (normalizedPathname === "/collections" || normalizedPathname.startsWith("/collections/")) {
+    return "shop";
+  }
+
+  if (normalizedPathname === "/about") {
+    return "about";
+  }
+
+  if (normalizedPathname === "/contact") {
+    return "contact";
+  }
+
+  if (normalizedPathname === "/partnerships" || normalizedPathname === "/find-us") {
+    return "location";
+  }
+
+  if (normalizedPathname === "/journal") {
+    return "journal";
+  }
+
+  return null;
+}
+
+export function getPageBannerNavigationItem(items: SiteNavigationItem[], pathname: string) {
+  const navigationId = getSiteNavigationIdForPath(pathname);
+
+  if (!navigationId) {
+    return null;
+  }
+
+  return items.find((item) => item.id === navigationId) ?? null;
+}
+
+export function getPageBannerStyle(imageUrl?: string | null): CSSProperties | undefined {
+  const trimmedUrl = imageUrl?.trim();
+
+  if (!trimmedUrl) {
+    return undefined;
+  }
+
+  return {
+    backgroundImage: `url("${trimmedUrl.replace(/["\\\n\r\f]/g, "\\$&")}")`,
+  };
+}
+
+export function hasPageBanner(items: SiteNavigationItem[], pathname: string) {
+  const navigationItem = getPageBannerNavigationItem(items, pathname);
+  return Boolean(navigationItem?.pageBannerImage.trim());
 }
 
 export function getRenderableSettings(settings: ShopSettings) {

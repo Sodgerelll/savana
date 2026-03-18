@@ -1,4 +1,3 @@
-import { ShieldCheck, ShoppingBag, Sparkles } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -263,38 +262,6 @@ export default function Login() {
   return (
     <div className="auth-page">
       <div className="auth-shell">
-        <section className="auth-visual">
-          <span className="auth-kicker">Savana Access</span>
-          <h1>{t.loginHeading}</h1>
-          <p>{t.loginSubtext}</p>
-          <div className="auth-benefits">
-            <div className="auth-benefit">
-              <ShieldCheck size={18} />
-              <span>
-                {language === "MN"
-                  ? "Firebase Auth-аар хамгаалагдсан олон сувгийн нэвтрэлт"
-                  : "Secure multi-provider authentication powered by Firebase"}
-              </span>
-            </div>
-            <div className="auth-benefit">
-              <ShoppingBag size={18} />
-              <span>
-                {language === "MN"
-                  ? "Сагсаа үргэлжлүүлэхийн тулд guest эсвэл бүрэн бүртгэлээр нэвтрэх боломжтой"
-                  : "Use guest access or a full account to keep moving through the storefront"}
-              </span>
-            </div>
-            <div className="auth-benefit">
-              <Sparkles size={18} />
-              <span>
-                {language === "MN"
-                  ? "Утас, Gmail, guest, и-мэйл бүртгэл бүгд нэг нэвтрэх дэлгэцэнд"
-                  : "Phone, Gmail, guest, and email flows are available from one screen"}
-              </span>
-            </div>
-          </div>
-        </section>
-
         <section className="auth-panel">
           <div className="auth-card">
             <div className="auth-mode-tabs" role="tablist" aria-label={language === "MN" ? "Сешний горим" : "Session mode"}>

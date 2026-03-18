@@ -1,6 +1,5 @@
 import { X, Minus, Plus, ShoppingBag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
@@ -9,21 +8,13 @@ import "./CartDrawer.css";
 
 export default function CartDrawer() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { items, removeItem, updateQuantity, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { t } = useLanguage();
   const { collections } = useStorefront();
-  const canCheckout = Boolean(user);
 
   const handleCheckout = () => {
     setIsCartOpen(false);
-
-    if (canCheckout) {
-      navigate("/checkout");
-      return;
-    }
-
-    navigate("/login", { state: { from: "/checkout" } });
+    navigate("/checkout");
   };
 
   return (
@@ -107,7 +98,7 @@ export default function CartDrawer() {
               </div>
               <p className="cart-note">{t.cartNote}</p>
               <button className="btn btn-primary cart-checkout-btn" onClick={handleCheckout}>
-                {canCheckout ? t.checkout : t.loginToCheckout}
+                {t.checkout}
               </button>
             </div>
           </>

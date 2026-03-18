@@ -27,6 +27,8 @@ Fields:
 - brand and website settings
 - hero content
 - about/contact/find-us/wholesale content
+- header navigation configuration
+- journal page heading, intro copy, and journal entries
 
 `collections/{collectionId}`
 

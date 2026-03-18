@@ -348,12 +348,43 @@
 .checkout-summary {
   position: sticky;
   top: 1.5rem;
+  display: grid;
+  gap: 1rem;
 }
 
 .checkout-summary-card {
   padding: 1.5rem;
   display: grid;
   gap: 1rem;
+}
+
+.checkout-summary-note-card {
+  padding: 1.35rem 1.5rem;
+  display: grid;
+  gap: 0.85rem;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(183, 185, 167, 0.7);
+  box-shadow: 0 24px 50px rgba(58, 52, 18, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.checkout-summary-note-card h3 {
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.checkout-summary-note-copy {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.checkout-summary-note-copy p {
+  margin: 0;
+  color: rgba(74, 71, 55, 0.82);
+  line-height: 1.65;
+  font-size: 0.95rem;
 }
 
 .checkout-summary-card h2 {

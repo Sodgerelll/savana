@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, BadgeCheck, BriefcaseBusiness, Palette } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
 import { useStorefront } from "../context/StorefrontContext";
@@ -160,6 +160,36 @@ export default function Home() {
 
   const heroEyebrow = language === "MN" ? "Онцлох төрөл" : "Featured collection";
   const heroSecondaryAction = language === "MN" ? "Бүх бүтээгдэхүүн" : "All products";
+  const partnershipCopy =
+    language === "MN"
+      ? {
+          kicker: "Brand Collaboration",
+          title: "Хамтрал",
+          body:
+            "Байгууллага, хувь хүн, event, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
+          pointOneTitle: "Private label",
+          pointOneBody: "Өөрийн брэндийн нэр, лого, шошготой бүтээгдэхүүн.",
+          pointTwoTitle: "Visual direction",
+          pointTwoBody: "Өнгө, савлагаа, бэлгийн presentation-ийг брэндэд тань нийцүүлнэ.",
+          pointThreeTitle: "Flexible volume",
+          pointThreeBody: "Жижиг batch-аас байгууллагын захиалга хүртэл уян хатан ажиллана.",
+          primaryCta: "Хамтралын дэлгэрэнгүй",
+          secondaryCta: "Холбоо барих",
+        }
+      : {
+          kicker: "Brand Collaboration",
+          title: "Partnerships",
+          body:
+            "Order products tailored to your own name, logo, and color direction for organizations, personal brands, events, and custom gifting.",
+          pointOneTitle: "Private label",
+          pointOneBody: "Products developed with your own brand name, logo, and labeling.",
+          pointTwoTitle: "Visual direction",
+          pointTwoBody: "Packaging palette, presentation, and gifting direction aligned to your brand.",
+          pointThreeTitle: "Flexible volume",
+          pointThreeBody: "From smaller pilot batches to larger branded orders.",
+          primaryCta: "Explore Partnerships",
+          secondaryCta: "Contact Us",
+        };
 
   return (
     <div className="home">
@@ -354,6 +384,50 @@ export default function Home() {
                 </Link>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      <section className="home-partnership-section section">
+        <div className="container">
+          <div className="home-partnership-shell">
+            <div className="home-partnership-copy">
+              <span>{partnershipCopy.kicker}</span>
+              <h2>{partnershipCopy.title}</h2>
+              <p>{partnershipCopy.body}</p>
+              <div className="home-partnership-actions">
+                <Link to="/partnerships" className="btn btn-primary">
+                  {partnershipCopy.primaryCta}
+                </Link>
+                <Link to="/contact" className="btn btn-outline">
+                  {partnershipCopy.secondaryCta}
+                </Link>
+              </div>
+            </div>
+
+            <div className="home-partnership-grid">
+              <article className="home-partnership-card">
+                <div className="home-partnership-icon">
+                  <BadgeCheck size={20} strokeWidth={1.5} />
+                </div>
+                <strong>{partnershipCopy.pointOneTitle}</strong>
+                <p>{partnershipCopy.pointOneBody}</p>
+              </article>
+              <article className="home-partnership-card">
+                <div className="home-partnership-icon">
+                  <Palette size={20} strokeWidth={1.5} />
+                </div>
+                <strong>{partnershipCopy.pointTwoTitle}</strong>
+                <p>{partnershipCopy.pointTwoBody}</p>
+              </article>
+              <article className="home-partnership-card">
+                <div className="home-partnership-icon">
+                  <BriefcaseBusiness size={20} strokeWidth={1.5} />
+                </div>
+                <strong>{partnershipCopy.pointThreeTitle}</strong>
+                <p>{partnershipCopy.pointThreeBody}</p>
+              </article>
+            </div>
           </div>
         </div>
       </section>

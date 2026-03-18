@@ -1,119 +1,87 @@
-import { MapPin, Clock, Calendar, Facebook, Instagram } from "lucide-react";
+import { MapPin, Facebook, Instagram } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
-import { getActiveMarkets, getRenderableSettings } from "../lib/storefrontHelpers";
+import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./FindUs.css";
 
 export default function FindUs() {
   const { language, t } = useLanguage();
-  const { markets, settings } = useStorefront();
+  const { settings } = useStorefront();
   const visibleSettings = getRenderableSettings(settings);
-  const activeMarkets = getActiveMarkets(markets);
-  const hasMapLink = /^https?:\/\//i.test(visibleSettings.mapNote);
+  const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, "/find-us");
+  const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
+  const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
+  const mapLink =
+    "https://www.google.com/maps/place/SAVANA+BRAND/@47.9167711,106.939625,584m/data=!3m2!1e3!4b1!4m6!3m5!1s0x5d96930061a87f33:0xeea1567f36e7cd41!8m2!3d47.9167711!4d106.939625!16s%2Fg%2F11wjpf89k5?entry=ttu&g_ep=EgoyMDI2MDMxMS4wIKXMDSoASAFQAw%3D%3D";
+  const mapEmbedSrc = "https://maps.google.com/maps?q=47.9167711,106.939625&z=17&output=embed";
 
   return (
     <div className="find-us-page">
-      <div className="find-us-hero">
+      <div
+        className={`find-us-hero${hasPageBanner ? " has-banner" : ""}`}
+        style={pageBannerStyle}
+      >
         <div className="container">
           <h1>{t.findUsHeading}</h1>
-          <p>{t.findUsSub}</p>
+          {t.findUsSub.trim() ? <p>{t.findUsSub}</p> : null}
         </div>
       </div>
 
       <section className="section">
         <div className="container">
           <div className="find-us-grid">
-            {/* Map placeholder */}
             <div className="map-section">
-              <h2>{t.ourLocation}</h2>
-              <div className="map-placeholder">
-                <div className="map-placeholder-inner">
-                  <MapPin size={48} strokeWidth={1} />
-                  <p>{visibleSettings.location}</p>
-                  {hasMapLink ? (
+              <div className="find-us-layout">
+                <div className="map-placeholder">
+                  <iframe
+                    title={visibleSettings.location || "Map"}
+                    src={mapEmbedSrc}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    className="map-frame"
+                  />
+                </div>
+                <div className="find-us-side">
+                  <div className="find-us-side-card">
+                    <div className="find-us-side-icon">
+                      <MapPin size={20} strokeWidth={1.5} />
+                    </div>
+                    <p className="find-us-location">{visibleSettings.location}</p>
                     <a
-                      href={visibleSettings.mapNote}
+                      href={mapLink}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="map-note map-note-link"
                     >
                       {language === "MN" ? "Google Maps дээр харах" : "View on Google Maps"}
                     </a>
-                  ) : (
-                    <p className="map-note">{visibleSettings.mapNote}</p>
-                  )}
-                  <a
-                    href={visibleSettings.facebookUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-outline map-ig-btn"
-                  >
-                    <Facebook size={16} />
-                    Facebook
-                  </a>
-                  <a
-                    href={visibleSettings.instagramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-outline map-ig-btn"
-                  >
-                    <Instagram size={16} />
-                    {visibleSettings.instagramHandle}
-                  </a>
+                  </div>
+                  <div className="find-us-side-card social-card">
+                    <a href="tel:77770081" className="find-us-phone">
+                      77770081
+                    </a>
+                    <a
+                      href={visibleSettings.facebookUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-outline map-ig-btn"
+                    >
+                      <Facebook size={16} />
+                      Facebook
+                    </a>
+                    <a
+                      href={visibleSettings.instagramUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-outline map-ig-btn"
+                    >
+                      <Instagram size={16} />
+                      {visibleSettings.instagramHandle}
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Info section */}
-            <div className="find-us-info">
-              <div className="find-us-card">
-                <div className="find-us-card-icon">
-                  <Calendar size={22} strokeWidth={1.2} />
-                </div>
-                <h3>{t.marketSchedule}</h3>
-                <p>{visibleSettings.marketIntro}</p>
-              </div>
-
-              <div className="find-us-card">
-                <div className="find-us-card-icon">
-                  <Clock size={22} strokeWidth={1.2} />
-                </div>
-                <h3>{t.storeHours}</h3>
-                <p>{visibleSettings.storeHoursText}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Markets list */}
-      <section className="markets-section section">
-        <div className="container">
-          <div className="section-header">
-            <h2>{language === "MN" ? "Биднийг эндээс олоорой" : "Where to Find Us"}</h2>
-            <p>{language === "MN" ? "Жилийн турш оролцдог зах, эвентүүдийн мэдээлэл." : "Markets and seasonal events currently configured in the shop admin."}</p>
-          </div>
-          <div className="markets-grid">
-            {activeMarkets.map((market) => (
-              <div key={market.id} className="market-card">
-                <div className="market-card-header">
-                  <MapPin size={18} className="market-icon" />
-                  <h3>{market.name}</h3>
-                </div>
-                <div className="market-detail">
-                  <Clock size={14} />
-                  <span>{market.schedule}</span>
-                </div>
-                <div className="market-detail">
-                  <MapPin size={14} />
-                  <span>{market.address}</span>
-                </div>
-                <div className="market-season">
-                  <Calendar size={14} />
-                  <span>{market.season}</span>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>

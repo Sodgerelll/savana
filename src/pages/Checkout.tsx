@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { CheckCircle2, ChevronLeft, PackageCheck, QrCode, RefreshCcw, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
-import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions, DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
+import { getDistrictOrSoumOptions, getKhorooOrBagOptions, DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
 import {
   createOrder,
   markOrderAsPaid,
@@ -19,8 +19,6 @@ import "./Checkout.css";
 interface CheckoutFormState {
   fullName: string;
   phoneNumber: string;
-  email: string;
-  region: string;
   districtOrSoum: string;
   khorooOrBag: string;
   streetAddress: string;
@@ -45,12 +43,13 @@ interface CheckoutOrderState {
 type CheckoutStep = "delivery" | "payment";
 
 export default function Checkout() {
-  const navigate = useNavigate();
-  const { user, profile, authMethod, loading } = useAuth();
+  const { user, profile, authMethod, loading, signInAsGuest } = useAuth();
   const { items, totalPrice, clearCart, setIsCartOpen } = useCart();
   const { language } = useLanguage();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [guestSessionPending, setGuestSessionPending] = useState(false);
+  const [guestSessionError, setGuestSessionError] = useState("");
   const [activeStep, setActiveStep] = useState<CheckoutStep>("delivery");
   const [pendingOrder, setPendingOrder] = useState<CheckoutOrderState | null>(null);
   const [paymentQrUrl, setPaymentQrUrl] = useState("");
@@ -59,8 +58,6 @@ export default function Checkout() {
   const [formState, setFormState] = useState<CheckoutFormState>({
     fullName: "",
     phoneNumber: "",
-    email: "",
-    region: DEFAULT_ADDRESS_REGION,
     districtOrSoum: "",
     khorooOrBag: "",
     streetAddress: "",
@@ -83,11 +80,8 @@ export default function Checkout() {
           addressInfo: "Хүргэлтийн хаяг",
           fullName: "Хүлээн авагчийн нэр",
           phoneNumber: "Утасны дугаар",
-          email: "И-мэйл",
-          emailHelp: "Сонголттой. Захиалгын мэдээлэл илгээхэд ашиглаж болно.",
-          region: "Аймаг / Хот",
-          districtOrSoum: "Дүүрэг / Сум",
-          khorooOrBag: "Хороо / Баг",
+          districtOrSoum: "Дүүрэг",
+          khorooOrBag: "Хороо",
           streetAddress: "Байр, орц, давхар, тоот",
           additionalAddress: "Нэмэлт хаяг",
           note: "Хүргэлтийн тайлбар",
@@ -106,7 +100,16 @@ export default function Checkout() {
           successText: "Таны QPay төлбөр шалгагдаж, захиалга боловсруулагдаж эхэллээ.",
           orderNumber: "Захиалгын дугаар",
           keepShopping: "Дахин дэлгүүрлэх",
-          authRequired: "Checkout хийхийн өмнө нэвтэрнэ үү.",
+          preparingGuestCheckout: "Зочин checkout бэлдэж байна...",
+          guestSessionFailed: "Зочин эрх нээж чадсангүй. Дахин оролдоно уу.",
+          retryGuestCheckout: "Дахин оролдох",
+          sessionNotReady: "Checkout session хараахан бэлэн болоогүй байна. Түр хүлээгээд дахин оролдоно уу.",
+          orderNotesHeading: "Захиалгын нөхцөл",
+          orderNotes: [
+            "Та захиалсан барааны төлбөрөө 100% урьдчилан шилжүүлснээр захиалга баталгаажна. Төлбөр дутуу хийгдсэн тохиолдолд хүргэлт хийгдэх боломжгүй болохыг анхаарна уу.",
+            "Төлбөр баталгаажсанаас хойш 24-48 цагийн дотор хүргэнэ. Үнийн дүн 40,000₮-өөс дээш худалдан авалтад хүргэлт гарна. Хүргэлтийн төлбөр 5,000₮. Бүх нийтийн амралтын өдрүүдэд хүргэлт хийгдэхгүй болохыг анхаарна уу. 80,000₮-өөс дээш хүргэлт үнэгүй.",
+            "Хүргэлттэй холбоотой лавлах утас: 77770081.",
+          ],
           stepsLabel: "Checkout алхмууд",
           deliveryTab: "Хаяг, хүргэлт",
           deliveryTabHint: "Хүлээн авагч ба хаяг",
@@ -147,11 +150,8 @@ export default function Checkout() {
           addressInfo: "Delivery address",
           fullName: "Recipient name",
           phoneNumber: "Phone number",
-          email: "Email",
-          emailHelp: "Optional. Used for sending order details.",
-          region: "Province / City",
-          districtOrSoum: "District / Soum",
-          khorooOrBag: "Khoroo / Bag",
+          districtOrSoum: "District",
+          khorooOrBag: "Khoroo",
           streetAddress: "Building, entrance, floor, unit",
           additionalAddress: "Additional address",
           note: "Delivery note",
@@ -170,7 +170,16 @@ export default function Checkout() {
           successText: "Your QPay payment has been verified and the order is now being processed.",
           orderNumber: "Order number",
           keepShopping: "Keep shopping",
-          authRequired: "Please sign in before opening checkout.",
+          preparingGuestCheckout: "Preparing guest checkout...",
+          guestSessionFailed: "Unable to start a guest session. Please try again.",
+          retryGuestCheckout: "Try again",
+          sessionNotReady: "Checkout session is still being prepared. Please wait a moment and try again.",
+          orderNotesHeading: "Order notes",
+          orderNotes: [
+            "Your order is confirmed only after the full 100% prepayment is received. Please note that delivery cannot be completed if the payment is incomplete.",
+            "Delivery is completed within 24-48 hours after payment confirmation. Delivery is available for purchases above 40,000₮. The delivery fee is 5,000₮. Please note that deliveries are not made on public holidays. Delivery is free for orders above 80,000₮.",
+            "Delivery hotline: 77770081.",
+          ],
           stepsLabel: "Checkout steps",
           deliveryTab: "Address",
           deliveryTabHint: "Recipient and address",
@@ -199,11 +208,10 @@ export default function Checkout() {
           submitting: "Creating order...",
         };
 
-  const regionOptions = useMemo(() => getRegionOptions(), []);
-  const districtOptions = useMemo(() => getDistrictOrSoumOptions(formState.region), [formState.region]);
+  const districtOptions = useMemo(() => getDistrictOrSoumOptions(DEFAULT_ADDRESS_REGION), []);
   const khorooOptions = useMemo(
-    () => getKhorooOrBagOptions(formState.region, formState.districtOrSoum),
-    [formState.region, formState.districtOrSoum],
+    () => getKhorooOrBagOptions(DEFAULT_ADDRESS_REGION, formState.districtOrSoum),
+    [formState.districtOrSoum],
   );
   const shippingFee = SHIPPING_FEE;
   const liveTotals = useMemo<CheckoutTotals>(
@@ -233,12 +241,43 @@ export default function Checkout() {
   const isOrderLocked = Boolean(pendingOrder);
   const isPaymentStep = activeStep === "payment";
   const isPaid = pendingOrder?.payment.status === "paid";
+  const isGuestCheckout = !user || user.isAnonymous;
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login", { replace: true, state: { from: "/checkout" } });
+    if (loading || user || guestSessionPending || guestSessionError) {
+      return;
     }
-  }, [loading, navigate, user]);
+
+    let active = true;
+    setGuestSessionPending(true);
+    setSubmitError("");
+
+    void signInAsGuest()
+      .then(() => {
+        if (active) {
+          setGuestSessionError("");
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setGuestSessionError(error instanceof Error ? error.message : copy.guestSessionFailed);
+          setGuestSessionPending(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [copy.guestSessionFailed, guestSessionError, guestSessionPending, loading, signInAsGuest, user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setGuestSessionPending(false);
+    setGuestSessionError("");
+  }, [user]);
 
   useEffect(() => {
     setIsCartOpen(false);
@@ -261,15 +300,6 @@ export default function Checkout() {
       }));
     }
   }, [formState.phoneNumber, profile?.phoneNumber]);
-
-  useEffect(() => {
-    if (!formState.email.trim() && (profile?.email || user?.email)) {
-      setFormState((current) => ({
-        ...current,
-        email: profile?.email ?? user?.email ?? "",
-      }));
-    }
-  }, [formState.email, profile?.email, user?.email]);
 
   useEffect(() => {
     if (!districtOptions.includes(formState.districtOrSoum)) {
@@ -336,7 +366,7 @@ export default function Checkout() {
     event.preventDefault();
 
     if (!user) {
-      setSubmitError(copy.authRequired);
+      setSubmitError(copy.sessionNotReady);
       return;
     }
 
@@ -380,11 +410,11 @@ export default function Checkout() {
         customer: {
           fullName: formState.fullName.trim(),
           phoneNumber: formState.phoneNumber.trim(),
-          email: formState.email.trim() || null,
+          email: profile?.email ?? user.email ?? null,
           note: formState.note.trim(),
         },
         address: {
-          region: formState.region,
+          region: DEFAULT_ADDRESS_REGION,
           districtOrSoum: formState.districtOrSoum,
           khorooOrBag: formState.khorooOrBag,
           streetAddress: formState.streetAddress.trim(),
@@ -431,10 +461,26 @@ export default function Checkout() {
     }
   };
 
-  if (loading || !user) {
+  const handleRetryGuestSession = () => {
+    setGuestSessionError("");
+    setSubmitError("");
+  };
+
+  if (loading || guestSessionPending || (!user && !guestSessionError)) {
     return (
       <div className="container section" style={{ textAlign: "center" }}>
-        <p>{copy.authRequired}</p>
+        <p>{copy.preparingGuestCheckout}</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container section" style={{ textAlign: "center" }}>
+        <p>{guestSessionError}</p>
+        <button type="button" className="btn btn-primary" onClick={handleRetryGuestSession}>
+          {copy.retryGuestCheckout}
+        </button>
       </div>
     );
   }
@@ -494,7 +540,7 @@ export default function Checkout() {
               <ChevronLeft size={16} />
               {copy.backToCart}
             </Link>
-            <span className="checkout-badge">{user.isAnonymous ? copy.guestBadge : copy.memberBadge}</span>
+            <span className="checkout-badge">{isGuestCheckout ? copy.guestBadge : copy.memberBadge}</span>
             <h1>{isPaymentStep ? copy.paymentHeading : copy.deliveryHeading}</h1>
             <p>{isPaymentStep ? copy.paymentSubheading : copy.deliverySubheading}</p>
           </div>
@@ -567,16 +613,6 @@ export default function Checkout() {
                       disabled={isOrderLocked}
                     />
                   </label>
-                  <label className="checkout-field checkout-field-wide">
-                    <span>{copy.email}</span>
-                    <input
-                      type="email"
-                      value={formState.email}
-                      onChange={handleFieldChange("email")}
-                      disabled={isOrderLocked}
-                    />
-                    <small>{copy.emailHelp}</small>
-                  </label>
                 </div>
               </section>
 
@@ -587,21 +623,6 @@ export default function Checkout() {
                 </div>
 
                 <div className="checkout-grid">
-                  <label className="checkout-field">
-                    <span>{copy.region}</span>
-                    <select
-                      value={formState.region}
-                      onChange={handleFieldChange("region")}
-                      required
-                      disabled={isOrderLocked}
-                    >
-                      {regionOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                   <label className="checkout-field">
                     <span>{copy.districtOrSoum}</span>
                     <select
@@ -772,6 +793,15 @@ export default function Checkout() {
             <div className="checkout-summary-row total">
               <span>{copy.grandTotal}</span>
               <strong>{formatStorePrice(summaryTotals.grandTotal)}</strong>
+            </div>
+          </div>
+
+          <div className="checkout-summary-note-card">
+            <h3>{copy.orderNotesHeading}</h3>
+            <div className="checkout-summary-note-copy">
+              {copy.orderNotes.map((note) => (
+                <p key={note}>{note}</p>
+              ))}
             </div>
           </div>
         </aside>

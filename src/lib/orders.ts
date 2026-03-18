@@ -19,7 +19,8 @@ export const ORDER_SCHEMA_VERSION = 1;
 export const SHIPPING_FEE = 8000;
 export type OrderPaymentMethod = "qpay";
 export type OrderPaymentStatus = "pending" | "paid" | "failed" | "cancelled";
-export type OrderStatus = "pending" | "payment_paid";
+export type OrderStatus = "new" | "paid" | "delivering" | "delivered";
+export const ORDER_STATUS_VALUES = ["new", "paid", "delivering", "delivered"] as const;
 
 export interface OrderItemPayload {
   productId: number;
@@ -93,6 +94,13 @@ export interface OrderRecord {
   updatedAt: string | null;
 }
 
+export interface UpdateOrderAdminInput {
+  status: OrderStatus;
+  customer: OrderCustomerPayload;
+  address: OrderAddressPayload;
+  payment: OrderPaymentPayload;
+}
+
 function createOrderNumber(id: string) {
   const dateParts = new Intl.DateTimeFormat("en", {
     timeZone: "Asia/Ulaanbaatar",
@@ -134,7 +142,31 @@ function normalizePaymentStatus(value: unknown): OrderPaymentStatus {
 }
 
 function normalizeOrderStatus(value: unknown): OrderStatus {
-  return value === "payment_paid" ? "payment_paid" : "pending";
+  if (value === "paid" || value === "delivering" || value === "delivered") {
+    return value;
+  }
+
+  if (value === "payment_paid") {
+    return "paid";
+  }
+
+  return "new";
+}
+
+function buildPaymentForOrderStatus(status: OrderStatus, currentPayment: OrderPaymentPayload): OrderPaymentPayload {
+  if (status === "new") {
+    return {
+      ...currentPayment,
+      status: "pending",
+      paidAt: null,
+    };
+  }
+
+  return {
+    ...currentPayment,
+    status: "paid",
+    paidAt: currentPayment.paidAt ?? new Date().toISOString(),
+  };
 }
 
 function parseTimestamp(value: unknown) {
@@ -248,7 +280,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
   await setDoc(orderRef, {
     orderNumber,
     schemaVersion: ORDER_SCHEMA_VERSION,
-    status: "pending",
+    status: "new",
     currency: "MNT",
     auth: input.auth,
     customer: input.customer,
@@ -291,16 +323,30 @@ export async function getOrderPaymentSnapshot(orderId: string) {
 }
 
 export async function markOrderAsPaid(orderId: string) {
-  const paidAt = new Date().toISOString();
+  const currentPayment = await getOrderPaymentSnapshot(orderId);
+  const nextPayment = buildPaymentForOrderStatus("paid", currentPayment);
 
   await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
-    status: "payment_paid",
-    "payment.status": "paid",
-    "payment.paidAt": paidAt,
+    status: "paid",
+    payment: nextPayment,
     updatedAt: serverTimestamp(),
   });
 
-  return getOrderPaymentSnapshot(orderId);
+  return nextPayment;
+}
+
+export async function updateOrderByAdmin(orderId: string, input: UpdateOrderAdminInput) {
+  const nextPayment = buildPaymentForOrderStatus(input.status, input.payment);
+
+  await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
+    status: input.status,
+    customer: input.customer,
+    address: input.address,
+    payment: nextPayment,
+    updatedAt: serverTimestamp(),
+  });
+
+  return nextPayment;
 }
 
 export function subscribeToOrders({

@@ -1,9 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { CartProvider } from "./context/CartContext";
 import { AuthProvider } from "./context/AuthContext";
 import { StorefrontProvider } from "./context/StorefrontContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import { useStorefront } from "./context/StorefrontContext";
 import "./App.css";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Header from "./components/Header";
@@ -14,10 +15,12 @@ import Collections from "./pages/Collections";
 import ProductDetail from "./pages/ProductDetail";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
-import FindUs from "./pages/FindUs";
+import Journal from "./pages/Journal";
 import Login from "./pages/Login";
 import Account from "./pages/Account";
 import Checkout from "./pages/Checkout";
+import Partnerships from "./pages/Partnerships";
+import { getPageBannerNavigationItem, getRenderableSettings } from "./lib/storefrontHelpers";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -29,13 +32,16 @@ function ScrollToTop() {
 
 function AppShell() {
   const { pathname } = useLocation();
-  const hideHeader = pathname === "/account" || pathname === "/checkout";
+  const { settings } = useStorefront();
+  const hideHeader = pathname === "/account";
   const hideFooter = pathname === "/account" || pathname === "/checkout";
-  const isHome = pathname === "/";
+  const visibleSettings = getRenderableSettings(settings);
+  const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, pathname);
+  const hasHeroHeaderOffset = pathname === "/" || Boolean(pageBanner?.pageBannerImage.trim());
   const mainClasses = [
     "app-main",
     hideHeader ? "no-header" : "",
-    !hideHeader && isHome ? "home-header-offset" : "",
+    !hideHeader && hasHeroHeaderOffset ? "home-header-offset" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -52,7 +58,9 @@ function AppShell() {
           <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
-          <Route path="/find-us" element={<FindUs />} />
+          <Route path="/partnerships" element={<Partnerships />} />
+          <Route path="/find-us" element={<Navigate to="/contact" replace />} />
+          <Route path="/journal" element={<Journal />} />
           <Route path="/login" element={<Login />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route

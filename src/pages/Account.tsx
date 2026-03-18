@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Globe,
   Images,
   LayoutDashboard,
@@ -18,13 +20,21 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import type { Collection, EntityStatus, Product } from "../data/products";
-import type { HeroBanner, MarketItem, ShopSettings, Testimonial } from "../data/storefront";
+import {
+  cloneShopSettings,
+  type HeroBanner,
+  type JournalEntry,
+  type MarketItem,
+  type ShopSettings,
+  type SiteNavigationItem,
+  type Testimonial,
+} from "../data/storefront";
 import {
   resolveUserRole,
   subscribeToUserProfiles,
@@ -32,14 +42,17 @@ import {
   type UserProfile,
   type UserRole,
 } from "../lib/userProfiles";
-import { subscribeToOrders, type OrderRecord, type OrderStatus } from "../lib/orders";
+import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
+import { subscribeToOrders, updateOrderByAdmin, type OrderRecord, type OrderStatus } from "../lib/orders";
 import {
   DEFAULT_COLLECTION_GRADIENT,
   getActiveHeroBanners,
+  getActiveJournalEntries,
   formatStorePrice,
   getActiveCollections,
   getActiveMarkets,
   getActiveProducts,
+  getActiveSiteNavigation,
   getActiveTestimonials,
   getCollectionPrimaryImage,
   getProductPrimaryImage,
@@ -47,9 +60,30 @@ import {
   isSystemCollection,
 } from "../lib/storefrontHelpers";
 import { uploadStorefrontImage } from "../lib/storageUpload";
+import logoBlack from "../assets/logoBlack.png";
 import "./Auth.css";
 
-type AdminSection = "dashboard" | "website" | "categories" | "products" | "orders" | "users";
+type AdminSection =
+  | "dashboard"
+  | "website"
+  | "categories"
+  | "products"
+  | "messages"
+  | "orders"
+  | "users"
+  | "commonSettings"
+  | "activityLog"
+  | "crmOverview"
+  | "crmCustomers"
+  | "crmService"
+  | "financeOverview"
+  | "financePayments"
+  | "financeReconciliation"
+  | "financeReports"
+  | "factoryOverview"
+  | "factoryProduction"
+  | "factoryInventory"
+  | "factoryDispatch";
 type ModalMode = "create" | "edit";
 
 interface SettingsModalState {
@@ -72,6 +106,23 @@ interface HeroBannerModalState {
   draft: HeroBanner;
 }
 
+interface NavigationModalState {
+  mode: ModalMode;
+  draft: SiteNavigationItem;
+}
+
+interface JournalSettingsModalState {
+  journalHeadingMn: string;
+  journalHeadingEn: string;
+  journalSubtextMn: string;
+  journalSubtextEn: string;
+}
+
+interface JournalEntryModalState {
+  mode: ModalMode;
+  draft: JournalEntry;
+}
+
 interface MarketModalState {
   mode: ModalMode;
   draft: MarketItem;
@@ -88,6 +139,35 @@ interface ConfirmModalState {
   confirmLabel: string;
   destructive?: boolean;
   onConfirm: () => void;
+}
+
+interface OrderModalState {
+  draft: OrderRecord;
+}
+
+interface AdminModuleHighlight {
+  label: string;
+  value: string;
+  note: string;
+}
+
+interface AdminMenuItem {
+  id: AdminSection;
+  label: string;
+  description: string;
+  icon: ReactNode;
+  implemented?: boolean;
+  requiresPrivilege?: boolean;
+}
+
+interface AdminMenuGroup {
+  key: "common" | "website" | "crm" | "finance" | "factory";
+  label: string;
+  description: string;
+  icon: ReactNode;
+  highlights: AdminModuleHighlight[];
+  architectureNotes: string[];
+  items: AdminMenuItem[];
 }
 
 function formatVariants(variants?: Product["variants"]) {
@@ -121,6 +201,18 @@ function cloneProduct(product: Product): Product {
     ...product,
     images: [...product.images],
     variants: product.variants?.map((variant) => ({ ...variant })),
+  };
+}
+
+function cloneOrderRecord(order: OrderRecord): OrderRecord {
+  return {
+    ...order,
+    auth: { ...order.auth },
+    customer: { ...order.customer },
+    address: { ...order.address },
+    items: order.items.map((item) => ({ ...item })),
+    totals: { ...order.totals },
+    payment: { ...order.payment },
   };
 }
 
@@ -159,19 +251,46 @@ function getAuthMethodLabel(method: UserAuthMethod, language: "MN" | "EN") {
 }
 
 function getOrderStatusLabel(status: OrderStatus, language: "MN" | "EN") {
-  return status === "payment_paid"
-    ? language === "MN"
-      ? "Төлбөр төлөгдсөн"
-      : "Payment Paid"
-    : language === "MN"
-      ? "Хүлээгдэж байна"
-      : "Pending";
+  switch (status) {
+    case "paid":
+      return language === "MN" ? "Төлбөр төлөгдсөн" : "Payment paid";
+    case "delivering":
+      return language === "MN" ? "Хүргэлт хийгдэж байгаа" : "Delivering";
+    case "delivered":
+      return language === "MN" ? "Хүргэгдсэн" : "Delivered";
+    default:
+      return language === "MN" ? "Шинэ" : "New";
+  }
 }
 
-function getOrderAddressLabel(order: OrderRecord) {
-  return [order.address.region, order.address.districtOrSoum, order.address.khorooOrBag, order.address.streetAddress]
-    .filter(Boolean)
-    .join(", ");
+function getOrderStatusClassName(status: OrderStatus) {
+  switch (status) {
+    case "paid":
+      return "admin-order-status-badge paid";
+    case "delivering":
+      return "admin-order-status-badge delivering";
+    case "delivered":
+      return "admin-order-status-badge delivered";
+    default:
+      return "admin-order-status-badge new";
+  }
+}
+
+function getOrderTotalQuantity(order: OrderRecord) {
+  return order.items.reduce((total, item) => total + item.quantity, 0);
+}
+
+function getOrderPaymentStatusLabel(status: OrderRecord["payment"]["status"], language: "MN" | "EN") {
+  switch (status) {
+    case "paid":
+      return language === "MN" ? "Төлөгдсөн" : "Paid";
+    case "failed":
+      return language === "MN" ? "Амжилтгүй" : "Failed";
+    case "cancelled":
+      return language === "MN" ? "Цуцлагдсан" : "Cancelled";
+    default:
+      return language === "MN" ? "Хүлээгдэж буй" : "Pending";
+  }
 }
 
 function formatAdminDateTime(value: string | null, language: "MN" | "EN") {
@@ -186,6 +305,24 @@ function formatAdminDateTime(value: string | null, language: "MN" | "EN") {
   }
 
   return date.toLocaleString(language === "MN" ? "mn-MN" : "en-US");
+}
+
+function getLocalizedManagedText(language: "MN" | "EN", english: string, mongolian: string) {
+  const primary = language === "MN" ? mongolian : english;
+  const fallback = language === "MN" ? english : mongolian;
+  return primary.trim() || fallback.trim();
+}
+
+function getManagedNavigationLabel(item: SiteNavigationItem, language: "MN" | "EN") {
+  return getLocalizedManagedText(language, item.labelEn, item.labelMn);
+}
+
+function getManagedJournalTitle(entry: JournalEntry, language: "MN" | "EN") {
+  return getLocalizedManagedText(language, entry.titleEn, entry.titleMn);
+}
+
+function getManagedJournalCategory(entry: JournalEntry, language: "MN" | "EN") {
+  return getLocalizedManagedText(language, entry.categoryEn, entry.categoryMn);
 }
 
 function AdminModal({
@@ -284,7 +421,6 @@ export default function Account() {
     deleteMarket,
     saveTestimonialDraft,
     deleteTestimonial,
-    resetStorefront,
   } = useStorefront();
 
   const copy =
@@ -294,6 +430,7 @@ export default function Account() {
           website: "Website",
           categoriesMenu: "Ангилал",
           productsMenu: "Бүтээгдэхүүн",
+          messagesMenu: "Мессеж",
           ordersMenu: "Захиалга",
           dashboardTitle: "Админ хянах самбар",
           dashboardText: "Website, Ангилал, Бүтээгдэхүүн хэсгүүдийг modal-based workflow-оор удирдана.",
@@ -303,17 +440,38 @@ export default function Account() {
           categoriesText: "Ангилал нэмэх, засах, идэвхжүүлэх, идэвхгүй болгох бүх үйлдэл modal-оор хийгдэнэ.",
           productsTitle: "Бүтээгдэхүүний удирдлага",
           productsText: "Бүх бүтээгдэхүүний статус, үнэ, ангилал, тайлбар, variant-ийг modal-аар удирдана.",
+          messagesTitle: "Ирсэн мессежүүд",
+          messagesText: "Contact page-ийн form-оор илгээсэн мессежүүдийг эндээс харна.",
           ordersTitle: "Захиалгын удирдлага",
-          ordersText: "orders collection дээр хадгалагдсан бүх захиалга, төлбөрийн төлөвийг эндээс харна.",
+          ordersText: "Захиалгын төлөв, төлбөр, хүргэлтийн явц болон хүлээн авагчийн мэдээллийг эндээс удирдана.",
+          newOrders: "Шинэ",
+          deliveringOrders: "Хүргэлтэнд гарсан",
+          deliveredOrders: "Хүргэгдсэн",
+          paymentLabel: "Төлбөр",
+          createdLabel: "Үүссэн огноо",
+          editOrder: "Захиалга засах",
+          orderDetailsTitle: "Захиалгын мэдээлэл засах",
+          orderDetailsText: "Төлөв, хүлээн авагчийн мэдээлэл, хүргэлтийн хаягийг админаас шинэчилнэ.",
+          orderInfo: "Захиалгын ерөнхий мэдээлэл",
+          orderItemsLabel: "Захиалсан бараа",
+          orderPaymentLabel: "Төлбөрийн төлөв",
+          paymentStateLabel: "Төлбөрийн төлөв",
+          paidAtLabel: "Төлбөр төлөгдсөн огноо",
+          orderStatusHelp: "Төлөв өөрчлөхөд payment state автоматаар уялдан шинэчлэгдэнэ.",
+          orderReadonlyItemsNote: "Барааны мөрүүдийг энэ хувилбарт зөвхөн харах боломжтой.",
+          orderUpdateFailed: "Захиалгын мэдээллийг хадгалж чадсангүй.",
           products: "Бүтээгдэхүүн",
           collections: "Ангилал",
           orders: "Захиалга",
           banners: "Баннер",
+          navigation: "Header navigation",
           markets: "Markets",
+          journal: "Сэтгүүл",
           testimonials: "Testimonials",
           settings: "Website Settings",
           totalProducts: "Бүтээгдэхүүн",
           totalCollections: "Ангилал",
+          totalMessages: "Мессеж",
           totalOrders: "Захиалга",
           totalBanners: "Баннер",
           totalMarkets: "Markets",
@@ -330,13 +488,14 @@ export default function Account() {
           image: "Зураг",
           emptyCategories: "Ангилал байхгүй байна.",
           emptyProducts: "Бүтээгдэхүүн байхгүй байна.",
+          emptyMessages: "Одоогоор мессеж ирээгүй байна.",
           emptyOrders: "Захиалга байхгүй байна.",
           openWebsite: "Website",
           openCategories: "Ангилал",
           openProducts: "Бүтээгдэхүүн",
           openOrders: "Захиалга",
           signedIn: "Нэвтэрсэн хэрэглэгч",
-          status: "Status",
+          status: "Төлөв",
           active: "Active",
           inactive: "Inactive",
           live: "Active session",
@@ -350,6 +509,11 @@ export default function Account() {
           createCollection: "Ангилал нэмэх",
           createProduct: "Бүтээгдэхүүн нэмэх",
           createBanner: "Баннер нэмэх",
+          editNavigation: "Header navigation засах",
+          editJournalSection: "Journal хэсэг засах",
+          createJournal: "Journal нийтлэл нэмэх",
+          editJournal: "Journal нийтлэл засах",
+          createJournalEntry: "Нийтлэл нэмэх",
           createMarket: "Market нэмэх",
           createTestimonial: "Testimonial нэмэх",
           editWebsite: "Website тохиргоо засах",
@@ -372,10 +536,24 @@ export default function Account() {
           category: "Ангилал",
           brandName: "Brand нэр",
           brandDescription: "Brand description",
+          labelMn: "Монгол гарчиг",
+          labelEn: "English label",
+          pageBanner: "Page banner",
+          pageBannerHelp: "Тухайн menu route-ийн hero background дээр харагдах зургийн URL.",
+          group: "Байршил",
+          customerInfo: "Хүлээн авагчийн мэдээлэл",
+          addressInfo: "Хүргэлтийн хаяг",
+          note: "Тэмдэглэл",
+          receivedAt: "Ирсэн хугацаа",
+          senderName: "Илгээгч",
+          senderEmail: "И-мэйл",
+          messageSubject: "Сэдэв",
+          messageBody: "Мессеж",
           heroHeading: "Hero heading",
           heroSubtext: "Hero subtext",
           aboutTitle: "About title",
           aboutBody: "About body",
+          contactPhone: "Утасны дугаар",
           contactEmail: "Contact email",
           location: "Байршил",
           responseTime: "Response time",
@@ -388,6 +566,23 @@ export default function Account() {
           wholesaleHeading: "Wholesale heading",
           wholesaleText: "Wholesale text",
           wholesaleEmail: "Wholesale email",
+          leftGroup: "Зүүн тал",
+          rightGroup: "Баруун тал",
+          sortOrder: "Дараалал",
+          journalHeadingMn: "Journal гарчиг (MN)",
+          journalHeadingEn: "Journal heading (EN)",
+          journalSubtextMn: "Journal тайлбар (MN)",
+          journalSubtextEn: "Journal subtext (EN)",
+          journalEntries: "Journal нийтлэлүүд",
+          publishedAt: "Нийтэлсэн огноо",
+          categoryMn: "Ангилал (MN)",
+          categoryEn: "Category (EN)",
+          titleMn: "Гарчиг (MN)",
+          titleEn: "Title (EN)",
+          excerptMn: "Товч агуулга (MN)",
+          excerptEn: "Excerpt (EN)",
+          journalImage: "Journal зураг",
+          journalImageHelp: "Blog card дээр харагдах cover image URL. Хоосон байж болно.",
           schedule: "Хуваарь",
           address: "Хаяг",
           season: "Улирал",
@@ -399,6 +594,9 @@ export default function Account() {
           bannerUploadProgress: "Зураг upload хийж байна...",
           bannerUploadFailed: "Зураг upload амжилтгүй боллоо.",
           bannerSummary: "Home hero slideshow дээрх баннерууд.",
+          messagesLast7Days: "Сүүлийн 7 хоног",
+          latestReceived: "Сүүлд ирсэн",
+          messagesListHelp: "Contact form-оос ирсэн мессежүүд newest эхэндээ харагдана.",
           bannerModalCreate: "Баннер нэмэх",
           bannerModalEdit: "Баннер засах",
           deleteBannerDescription: "Энэ баннерыг устгах уу?",
@@ -432,6 +630,13 @@ export default function Account() {
           testimonialModalEdit: "Testimonial засах",
           confirmDeleteTitle: "Устгах баталгаажуулалт",
           deleteProductDescription: "Энэ бүтээгдэхүүнийг устгах уу?",
+          deleteNavigationDescription: "Энэ navigation item-ийг header-ээс нуух уу?",
+          navigationModalCreate: "Navigation item идэвхжүүлэх",
+          navigationModalEdit: "Navigation item засах",
+          journalSettingsModalTitle: "Journal хэсгийн тохиргоо",
+          journalModalCreate: "Journal нийтлэл нэмэх",
+          journalModalEdit: "Journal нийтлэл засах",
+          deleteJournalEntryDescription: "Энэ journal нийтлэлийг устгах уу?",
           deleteMarketDescription: "Энэ market мэдээллийг устгах уу?",
           deleteTestimonialDescription: "Энэ testimonial-ийг устгах уу?",
           deleteCollectionDescription: "Энэ ангиллыг устгах уу?",
@@ -444,6 +649,9 @@ export default function Account() {
           activeOnWebsite: "Active үед вэб дээр харагдана.",
           settingsInactiveNote: "Website settings inactive үед public site default контентийг ашиглана.",
           systemProtected: "System protected",
+          navigationSummary: "Header menu дээр харагдах page-үүдийн дараалал, хэл, статус.",
+          messagesSummary: "Contact page-ээс илгээсэн хэрэглэгчийн хүсэлтүүд.",
+          journalSummary: "Сэтгүүл page дээрх гарчиг, тайлбар, нийтлэлүүд.",
           marketSummary: "Find Us page дээрх мэдээлэл.",
           testimonialSummary: "Home page дээрх customer review.",
           categorySummary: "Header, filter, storefront cards дээр ашиглагдана.",
@@ -455,6 +663,7 @@ export default function Account() {
           website: "Website",
           categoriesMenu: "Categories",
           productsMenu: "Products",
+          messagesMenu: "Messages",
           ordersMenu: "Orders",
           dashboardTitle: "Admin dashboard",
           dashboardText: "Manage Website, Categories, and Products through modal-based workflows.",
@@ -464,17 +673,38 @@ export default function Account() {
           categoriesText: "Create, edit, activate, or deactivate categories through modal forms.",
           productsTitle: "Product management",
           productsText: "Manage product status, pricing, category, descriptions, and variants in modal forms.",
+          messagesTitle: "Incoming messages",
+          messagesText: "Review messages submitted from the contact page form.",
           ordersTitle: "Order management",
-          ordersText: "Review all orders saved to the orders collection and their payment state.",
+          ordersText: "Manage order status, payment state, delivery progress, and recipient details from one place.",
+          newOrders: "New",
+          deliveringOrders: "Delivering",
+          deliveredOrders: "Delivered",
+          paymentLabel: "Payment",
+          createdLabel: "Created",
+          editOrder: "Edit order",
+          orderDetailsTitle: "Edit order details",
+          orderDetailsText: "Update the order status, recipient details, and delivery address from admin.",
+          orderInfo: "Order information",
+          orderItemsLabel: "Ordered items",
+          orderPaymentLabel: "Payment details",
+          paymentStateLabel: "Payment state",
+          paidAtLabel: "Paid at",
+          orderStatusHelp: "Changing the status automatically syncs the payment state.",
+          orderReadonlyItemsNote: "Line items are read-only in this version.",
+          orderUpdateFailed: "Unable to save the order details.",
           products: "Products",
           collections: "Categories",
           orders: "Orders",
           banners: "Banners",
+          navigation: "Header navigation",
           markets: "Markets",
+          journal: "Journal",
           testimonials: "Testimonials",
           settings: "Website Settings",
           totalProducts: "Products",
           totalCollections: "Categories",
+          totalMessages: "Messages",
           totalOrders: "Orders",
           totalBanners: "Banners",
           totalMarkets: "Markets",
@@ -491,6 +721,7 @@ export default function Account() {
           image: "Image",
           emptyCategories: "No categories found.",
           emptyProducts: "No products found.",
+          emptyMessages: "No messages have been submitted yet.",
           emptyOrders: "No orders found.",
           openWebsite: "Website",
           openCategories: "Categories",
@@ -511,6 +742,11 @@ export default function Account() {
           createCollection: "Create category",
           createProduct: "Create product",
           createBanner: "Create banner",
+          editNavigation: "Edit header navigation",
+          editJournalSection: "Edit journal section",
+          createJournal: "Create journal entry",
+          editJournal: "Edit journal entry",
+          createJournalEntry: "Create journal entry",
           createMarket: "Create market",
           createTestimonial: "Create testimonial",
           editWebsite: "Edit website settings",
@@ -533,10 +769,24 @@ export default function Account() {
           category: "Category",
           brandName: "Brand name",
           brandDescription: "Brand description",
+          labelMn: "Mongolian label",
+          labelEn: "English label",
+          pageBanner: "Page banner",
+          pageBannerHelp: "Image URL used as the hero background for that menu page.",
+          group: "Placement",
+          customerInfo: "Recipient details",
+          addressInfo: "Delivery address",
+          note: "Note",
+          receivedAt: "Received",
+          senderName: "Sender",
+          senderEmail: "Email",
+          messageSubject: "Subject",
+          messageBody: "Message",
           heroHeading: "Hero heading",
           heroSubtext: "Hero subtext",
           aboutTitle: "About title",
           aboutBody: "About body",
+          contactPhone: "Phone number",
           contactEmail: "Contact email",
           location: "Location",
           responseTime: "Response time",
@@ -549,6 +799,23 @@ export default function Account() {
           wholesaleHeading: "Wholesale heading",
           wholesaleText: "Wholesale text",
           wholesaleEmail: "Wholesale email",
+          leftGroup: "Left side",
+          rightGroup: "Right side",
+          sortOrder: "Sort order",
+          journalHeadingMn: "Journal heading (MN)",
+          journalHeadingEn: "Journal heading (EN)",
+          journalSubtextMn: "Journal subtext (MN)",
+          journalSubtextEn: "Journal subtext (EN)",
+          journalEntries: "Journal entries",
+          publishedAt: "Published date",
+          categoryMn: "Category (MN)",
+          categoryEn: "Category (EN)",
+          titleMn: "Title (MN)",
+          titleEn: "Title (EN)",
+          excerptMn: "Excerpt (MN)",
+          excerptEn: "Excerpt (EN)",
+          journalImage: "Journal image",
+          journalImageHelp: "Optional cover image URL shown on the journal card.",
           schedule: "Schedule",
           address: "Address",
           season: "Season",
@@ -560,6 +827,9 @@ export default function Account() {
           bannerUploadProgress: "Uploading image...",
           bannerUploadFailed: "Image upload failed.",
           bannerSummary: "Displayed inside the homepage hero slideshow.",
+          messagesLast7Days: "Last 7 days",
+          latestReceived: "Latest",
+          messagesListHelp: "Messages submitted from the contact form appear here with the newest first.",
           bannerModalCreate: "Create banner",
           bannerModalEdit: "Edit banner",
           deleteBannerDescription: "Delete this banner?",
@@ -593,6 +863,13 @@ export default function Account() {
           testimonialModalEdit: "Edit testimonial",
           confirmDeleteTitle: "Delete confirmation",
           deleteProductDescription: "Delete this product?",
+          deleteNavigationDescription: "Hide this navigation item from the header?",
+          navigationModalCreate: "Activate navigation item",
+          navigationModalEdit: "Edit navigation item",
+          journalSettingsModalTitle: "Journal section settings",
+          journalModalCreate: "Create journal entry",
+          journalModalEdit: "Edit journal entry",
+          deleteJournalEntryDescription: "Delete this journal entry?",
           deleteMarketDescription: "Delete this market entry?",
           deleteTestimonialDescription: "Delete this testimonial?",
           deleteCollectionDescription: "Delete this category?",
@@ -605,6 +882,9 @@ export default function Account() {
           activeOnWebsite: "Visible on selections and website when active.",
           settingsInactiveNote: "When website settings are inactive, the public site falls back to default copy.",
           systemProtected: "System protected",
+          navigationSummary: "Controls the page labels, placement, and visibility in the header menu.",
+          messagesSummary: "Customer inquiries submitted from the contact page.",
+          journalSummary: "Controls the journal page heading, subtext, and editorial entries.",
           marketSummary: "Displayed on the Find Us page.",
           testimonialSummary: "Displayed on the homepage.",
           categorySummary: "Used in header navigation, filters, and storefront cards.",
@@ -617,23 +897,77 @@ export default function Account() {
   const [settingsModal, setSettingsModal] = useState<SettingsModalState | null>(null);
   const [collectionModal, setCollectionModal] = useState<CollectionModalState | null>(null);
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
+  const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
+  const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
+  const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
   const [heroBannerModal, setHeroBannerModal] = useState<HeroBannerModalState | null>(null);
   const [marketModal, setMarketModal] = useState<MarketModalState | null>(null);
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
+  const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+  const [navigationBannerUploadError, setNavigationBannerUploadError] = useState<string | null>(null);
+  const [navigationBannerUploading, setNavigationBannerUploading] = useState(false);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
   const [bannerUploading, setBannerUploading] = useState(false);
+  const [savingOrderModal, setSavingOrderModal] = useState(false);
+  const [orderModalError, setOrderModalError] = useState<string | null>(null);
   const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [contactMessages, setContactMessages] = useState<ContactMessageRecord[]>([]);
+  const [contactMessagesError, setContactMessagesError] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [openNavGroups, setOpenNavGroups] = useState<Record<AdminMenuGroup["key"], boolean>>({
+    common: true,
+    website: true,
+    crm: false,
+    finance: false,
+    factory: false,
+  });
 
   const visibleSettings = useMemo(() => getRenderableSettings(settings), [settings]);
+  const activeNavigationItems = useMemo(
+    () => getActiveSiteNavigation(settings.navigationItems),
+    [settings.navigationItems]
+  );
+  const activeJournalEntries = useMemo(
+    () => getActiveJournalEntries(settings.journalEntries),
+    [settings.journalEntries]
+  );
   const activeCollections = useMemo(() => getActiveCollections(collections), [collections]);
   const activeProducts = useMemo(() => getActiveProducts(products, collections), [products, collections]);
   const activeHeroBanners = useMemo(() => getActiveHeroBanners(heroBanners, collections), [heroBanners, collections]);
   const activeMarkets = useMemo(() => getActiveMarkets(markets), [markets]);
   const activeTestimonials = useMemo(() => getActiveTestimonials(testimonials), [testimonials]);
+  const navigationPreviewItems = useMemo(
+    () =>
+      [...settings.navigationItems].sort((left, right) => {
+        if (left.group !== right.group) {
+          return left.group === "left" ? -1 : 1;
+        }
+
+        return left.sortOrder - right.sortOrder;
+      }),
+    [settings.navigationItems]
+  );
+  const journalPreviewEntries = useMemo(
+    () =>
+      [...settings.journalEntries].sort((left, right) => {
+        const leftTime = Date.parse(left.publishedAt);
+        const rightTime = Date.parse(right.publishedAt);
+
+        if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+          return right.id - left.id;
+        }
+
+        return rightTime - leftTime;
+      }),
+    [settings.journalEntries]
+  );
+  const inactiveNavigationItems = useMemo(
+    () => settings.navigationItems.filter((item) => item.status === "inactive"),
+    [settings.navigationItems]
+  );
   const selectableCategories = useMemo(
     () => activeCollections.filter((collection) => !isSystemCollection(collection)),
     [activeCollections]
@@ -679,15 +1013,627 @@ export default function Account() {
       ),
     [directoryUsers]
   );
-  const paidOrdersCount = useMemo(
-    () => orders.filter((order) => order.status === "payment_paid").length,
+  const newOrdersCount = useMemo(() => orders.filter((order) => order.status === "new").length, [orders]);
+  const paidOrdersCount = useMemo(() => orders.filter((order) => order.status === "paid").length, [orders]);
+  const deliveringOrdersCount = useMemo(
+    () => orders.filter((order) => order.status === "delivering").length,
     [orders]
   );
-  const pendingOrdersCount = orders.length - paidOrdersCount;
+  const deliveredOrdersCount = useMemo(
+    () => orders.filter((order) => order.status === "delivered").length,
+    [orders]
+  );
   const guestOrdersCount = useMemo(
     () => orders.filter((order) => order.auth.isAnonymous).length,
     [orders]
   );
+  const contactMessagesLast7DaysCount = useMemo(() => {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    return contactMessages.filter((contactMessage) => {
+      if (!contactMessage.createdAt) {
+        return false;
+      }
+
+      const createdAt = Date.parse(contactMessage.createdAt);
+      return !Number.isNaN(createdAt) && createdAt >= cutoff;
+    }).length;
+  }, [contactMessages]);
+  const latestContactMessageAt = contactMessages[0]?.createdAt ?? null;
+  const orderStatusOptions = useMemo(
+    () => [
+      { value: "new" as const, label: getOrderStatusLabel("new", language) },
+      { value: "paid" as const, label: getOrderStatusLabel("paid", language) },
+      { value: "delivering" as const, label: getOrderStatusLabel("delivering", language) },
+      { value: "delivered" as const, label: getOrderStatusLabel("delivered", language) },
+    ],
+    [language]
+  );
+  const implementedSections = new Set<AdminSection>([
+    "dashboard",
+    "website",
+    "categories",
+    "products",
+    "messages",
+    "orders",
+    "users",
+  ]);
+  const adminMenuGroups: AdminMenuGroup[] =
+    language === "MN"
+      ? [
+          {
+            key: "common",
+            label: "Нийтлэг",
+            description: "Нэгдсэн нэвтрэлт, эрх, системийн тохиргоо, audit layer.",
+            icon: <LayoutDashboard size={20} />,
+            highlights: [
+              {
+                label: "Access model",
+                value: "RBAC",
+                note: "Нэг хэрэглэгчийн сангаас Website, CRM, Finance, Factory эрхийг удирдана.",
+              },
+              {
+                label: "Ops layer",
+                value: "Shared",
+                note: "Системийн тохиргоо, интеграц, activity log нийтлэг түвшинд байрлана.",
+              },
+              {
+                label: "Current role",
+                value: getRoleLabel(role, language),
+                note: "Нэвтэрсэн хэрэглэгчийн одоогийн системийн түвшин.",
+              },
+            ],
+            architectureNotes: [
+              "Identity, roles, permissions, environment settings нийтлэг цөмд байрлана.",
+              "Cross-module report, audit trail, notifications нь module бүрээс тусдаа удирдагдана.",
+              "Future tenant, branch, warehouse тохиргоонууд энэ түвшинд төвлөрнө.",
+            ],
+            items: [
+              {
+                id: "dashboard",
+                label: copy.dashboard,
+                description: "Бүх модуль дээрх ерөнхий төлөв, KPI, live sync.",
+                icon: <LayoutDashboard size={18} />,
+                implemented: true,
+              },
+              {
+                id: "users",
+                label: "Хэрэглэгч ба эрх",
+                description: "Хэрэглэгч, role, access policy удирдлага.",
+                icon: <Users size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "commonSettings",
+                label: "Системийн тохиргоо",
+                description: "Environment, tenant, integrations, global policy.",
+                icon: <Pencil size={18} />,
+              },
+              {
+                id: "activityLog",
+                label: "Тайлан ба лог",
+                description: "Audit trail, activity feed, cross-module reports.",
+                icon: <CheckCircle2 size={18} />,
+              },
+            ],
+          },
+          {
+            key: "website",
+            label: "Website",
+            description: "Паблик storefront, контент, каталог, merchandising.",
+            icon: <Globe size={20} />,
+            highlights: [
+              {
+                label: copy.totalCollections,
+                value: `${activeCollections.length}/${collections.length}`,
+                note: "Навигаци, collection landing, storefront taxonomy.",
+              },
+              {
+                label: copy.totalProducts,
+                value: `${activeProducts.length}/${products.length}`,
+                note: "Каталог, үнэ, media, merchandising dataset.",
+              },
+              {
+                label: copy.totalBanners,
+                value: `${activeHeroBanners.length}/${heroBanners.length}`,
+                note: "Hero, campaign, editorial surface-ууд.",
+              },
+            ],
+            architectureNotes: [
+              "Website модуль нь public content, каталог, merchandising flow-г дангаар нь удирдана.",
+              "Categories, Products, Content hub нь нэг catalog domain-д хамаарна.",
+              "Public storefront болон admin content lifecycle салангид боловч нэг өгөгдлийн эх үүсвэртэй байна.",
+            ],
+            items: [
+              {
+                id: "website",
+                label: "Контент төв",
+                description: "Website settings, banners, markets, testimonials.",
+                icon: <Globe size={18} />,
+                implemented: true,
+              },
+              {
+                id: "messages",
+                label: copy.messagesMenu,
+                description: "Contact form-оор ирсэн хэрэглэгчийн мессежүүд.",
+                icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "categories",
+                label: "Ангилал",
+                description: "Catalog taxonomy, collection structure.",
+                icon: <Store size={18} />,
+                implemented: true,
+              },
+              {
+                id: "products",
+                label: "Бүтээгдэхүүн",
+                description: "SKU, pricing, copy, assets, status management.",
+                icon: <Package size={18} />,
+                implemented: true,
+              },
+            ],
+          },
+          {
+            key: "crm",
+            label: "CRM",
+            description: "Customer 360, захиалга, service, retention workflow.",
+            icon: <Users size={20} />,
+            highlights: [
+              {
+                label: "Customer view",
+                value: "360",
+                note: "Customer profile, segment, communication history нэг дор харагдана.",
+              },
+              {
+                label: "Orders",
+                value: isPrivilegedUser ? String(orders.length) : "Secured",
+                note: "Захиалгын pipeline, service handling, lifecycle mapping.",
+              },
+              {
+                label: "Retention",
+                value: "Lifecycle",
+                note: "Lead → customer → repeat order урсгалыг дэмжинэ.",
+              },
+            ],
+            architectureNotes: [
+              "CRM нь customer identity, order relationship, communication history-г нэгтгэнэ.",
+              "Order pipeline нь Website checkout-оос орж ирэх ч CRM дээр service context-оор үргэлжилнэ.",
+              "Support inbox, note timeline, customer segmentation дараагийн шатанд энэ модульд орно.",
+            ],
+            items: [
+              {
+                id: "crmOverview",
+                label: "CRM overview",
+                description: "Pipeline, segmentation, customer operating model.",
+                icon: <Users size={18} />,
+              },
+              {
+                id: "crmCustomers",
+                label: "Харилцагч",
+                description: "Customer profile, segment, account health.",
+                icon: <UserCircle2 size={18} />,
+              },
+              {
+                id: "orders",
+                label: "Захиалга",
+                description: "Order review, payment state, fulfillment handoff.",
+                icon: <WalletCards size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "crmService",
+                label: "Service inbox",
+                description: "Inquiry, issue, comment, escalation handling.",
+                icon: <MessageSquareQuote size={18} />,
+              },
+            ],
+          },
+          {
+            key: "finance",
+            label: "Finance",
+            description: "Payment control, reconciliation, finance reporting.",
+            icon: <WalletCards size={20} />,
+            highlights: [
+              {
+                label: "Ledger model",
+                value: "AR/AP",
+                note: "Орлого, төлбөр, settlement flow салангид бүртгэгдэнэ.",
+              },
+              {
+                label: "Payments",
+                value: "QPAY+",
+                note: "Website болон CRM order-оос орж ирэх payment event-үүдийг нэгтгэнэ.",
+              },
+              {
+                label: "Close cycle",
+                value: "Monthly",
+                note: "Reconciliation, payout, tax-ready report pipeline.",
+              },
+            ],
+            architectureNotes: [
+              "Finance модуль нь order payment event-ийг accounting-friendly ledger рүү хувиргана.",
+              "Reconciliation нь payment provider, bank statement, order total гуравыг тулгана.",
+              "Financial reports нь module бүрийн transaction layer-ийг нэгтгэнэ.",
+            ],
+            items: [
+              {
+                id: "financeOverview",
+                label: "Finance overview",
+                description: "Cashflow, payable, receivable, finance control tower.",
+                icon: <WalletCards size={18} />,
+              },
+              {
+                id: "financePayments",
+                label: "Төлбөр",
+                description: "Payment queue, settlement, exception handling.",
+                icon: <CheckCircle2 size={18} />,
+              },
+              {
+                id: "financeReconciliation",
+                label: "Reconciliation",
+                description: "Provider vs order vs bank statement matching.",
+                icon: <RotateCcw size={18} />,
+              },
+              {
+                id: "financeReports",
+                label: "Санхүүгийн тайлан",
+                description: "Daily, monthly, tax-ready finance reporting.",
+                icon: <LayoutDashboard size={18} />,
+              },
+            ],
+          },
+          {
+            key: "factory",
+            label: "Factory",
+            description: "Үйлдвэрлэл, нөөц, dispatch, operational execution.",
+            icon: <Package size={20} />,
+            highlights: [
+              {
+                label: "Work orders",
+                value: "Batch",
+                note: "Production batch, BOM, work order lifecycle.",
+              },
+              {
+                label: "Inventory",
+                value: "Raw + FG",
+                note: "Түүхий эд, сав баглаа, бэлэн бүтээгдэхүүн тусдаа удирдагдана.",
+              },
+              {
+                label: "Dispatch",
+                value: "24-48h",
+                note: "Warehouse handoff, packing, courier dispatch flow.",
+              },
+            ],
+            architectureNotes: [
+              "Factory модуль нь үйлдвэрлэл, inventory, dispatch-г нэг operational domain болгон удирдана.",
+              "Order confirmed болмогц CRM/Finance-ээс Factory руу fulfillment signal дамжина.",
+              "Production planning, stock reservation, QC checkpoints дараагийн шатанд энд төвлөрнө.",
+            ],
+            items: [
+              {
+                id: "factoryOverview",
+                label: "Factory overview",
+                description: "Plant control tower, capacity, throughput, risk view.",
+                icon: <Package size={18} />,
+              },
+              {
+                id: "factoryProduction",
+                label: "Үйлдвэрлэл",
+                description: "Batch planning, work order, BOM execution.",
+                icon: <RotateCcw size={18} />,
+              },
+              {
+                id: "factoryInventory",
+                label: "Нөөц ба агуулах",
+                description: "Raw material, packaging, finished goods inventory.",
+                icon: <Store size={18} />,
+              },
+              {
+                id: "factoryDispatch",
+                label: "Dispatch",
+                description: "Packing, courier handoff, delivery coordination.",
+                icon: <MapPin size={18} />,
+              },
+            ],
+          },
+        ]
+      : [
+          {
+            key: "common",
+            label: "Common",
+            description: "Shared identity, permissions, system settings, and audit controls.",
+            icon: <LayoutDashboard size={20} />,
+            highlights: [
+              {
+                label: "Access model",
+                value: "RBAC",
+                note: "One identity layer governs Website, CRM, Finance, and Factory access.",
+              },
+              {
+                label: "Ops layer",
+                value: "Shared",
+                note: "System settings, integrations, and activity logs live outside product modules.",
+              },
+              {
+                label: "Current role",
+                value: getRoleLabel(role, language),
+                note: "Current access level of the signed-in operator.",
+              },
+            ],
+            architectureNotes: [
+              "Identity, roles, permissions, and environment settings belong to the shared system core.",
+              "Cross-module reports, audit trails, and notifications should stay independent from business modules.",
+              "Future tenant, branch, and warehouse policies should be centralized here.",
+            ],
+            items: [
+              {
+                id: "dashboard",
+                label: copy.dashboard,
+                description: "Global health, KPIs, and live system sync.",
+                icon: <LayoutDashboard size={18} />,
+                implemented: true,
+              },
+              {
+                id: "users",
+                label: "Users & roles",
+                description: "Identity, roles, and access policy control.",
+                icon: <Users size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "commonSettings",
+                label: "System settings",
+                description: "Environment, tenant, integrations, and global policy.",
+                icon: <Pencil size={18} />,
+              },
+              {
+                id: "activityLog",
+                label: "Reports & logs",
+                description: "Audit trail, activity feed, and cross-module reports.",
+                icon: <CheckCircle2 size={18} />,
+              },
+            ],
+          },
+          {
+            key: "website",
+            label: "Website",
+            description: "Public storefront, content, catalog, and merchandising.",
+            icon: <Globe size={20} />,
+            highlights: [
+              {
+                label: copy.totalCollections,
+                value: `${activeCollections.length}/${collections.length}`,
+                note: "Navigation, landing pages, and storefront taxonomy.",
+              },
+              {
+                label: copy.totalProducts,
+                value: `${activeProducts.length}/${products.length}`,
+                note: "Catalog, pricing, media, and merchandising dataset.",
+              },
+              {
+                label: copy.totalBanners,
+                value: `${activeHeroBanners.length}/${heroBanners.length}`,
+                note: "Hero, campaign, and editorial surfaces.",
+              },
+            ],
+            architectureNotes: [
+              "The Website module owns public content, catalog, and merchandising workflows.",
+              "Categories, products, and content hub live under one catalog domain.",
+              "Public storefront rendering and admin content lifecycle stay separate but share one source of truth.",
+            ],
+            items: [
+              {
+                id: "website",
+                label: "Content hub",
+                description: "Website settings, banners, markets, and testimonials.",
+                icon: <Globe size={18} />,
+                implemented: true,
+              },
+              {
+                id: "messages",
+                label: copy.messagesMenu,
+                description: "Customer messages submitted from the contact form.",
+                icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "categories",
+                label: "Categories",
+                description: "Catalog taxonomy and collection structure.",
+                icon: <Store size={18} />,
+                implemented: true,
+              },
+              {
+                id: "products",
+                label: "Products",
+                description: "SKU, pricing, copy, assets, and status management.",
+                icon: <Package size={18} />,
+                implemented: true,
+              },
+            ],
+          },
+          {
+            key: "crm",
+            label: "CRM",
+            description: "Customer 360, order operations, service, and retention workflows.",
+            icon: <Users size={20} />,
+            highlights: [
+              {
+                label: "Customer view",
+                value: "360",
+                note: "Profile, segment, and communication history in one place.",
+              },
+              {
+                label: "Orders",
+                value: isPrivilegedUser ? String(orders.length) : "Secured",
+                note: "Order pipeline, service handling, and lifecycle mapping.",
+              },
+              {
+                label: "Retention",
+                value: "Lifecycle",
+                note: "Supports lead → customer → repeat purchase flows.",
+              },
+            ],
+            architectureNotes: [
+              "CRM unifies customer identity, order relationships, and communication history.",
+              "Website checkout feeds orders into CRM where service operations continue.",
+              "Support inbox, note timeline, and segmentation belong in this module next.",
+            ],
+            items: [
+              {
+                id: "crmOverview",
+                label: "CRM overview",
+                description: "Pipeline, segmentation, and customer operating model.",
+                icon: <Users size={18} />,
+              },
+              {
+                id: "crmCustomers",
+                label: "Customers",
+                description: "Customer profile, segment, and account health.",
+                icon: <UserCircle2 size={18} />,
+              },
+              {
+                id: "orders",
+                label: "Orders",
+                description: "Order review, payment state, and fulfillment handoff.",
+                icon: <WalletCards size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "crmService",
+                label: "Service inbox",
+                description: "Inquiry, issue, comment, and escalation handling.",
+                icon: <MessageSquareQuote size={18} />,
+              },
+            ],
+          },
+          {
+            key: "finance",
+            label: "Finance",
+            description: "Payment control, reconciliation, and financial reporting.",
+            icon: <WalletCards size={20} />,
+            highlights: [
+              {
+                label: "Ledger model",
+                value: "AR/AP",
+                note: "Receivables, payouts, and settlements are managed independently.",
+              },
+              {
+                label: "Payments",
+                value: "QPAY+",
+                note: "Unifies payment events arriving from Website and CRM orders.",
+              },
+              {
+                label: "Close cycle",
+                value: "Monthly",
+                note: "Supports reconciliation, payouts, and tax-ready finance reporting.",
+              },
+            ],
+            architectureNotes: [
+              "Finance converts order payment events into an accounting-ready ledger.",
+              "Reconciliation matches provider data, bank statements, and order totals.",
+              "Financial reports aggregate the transaction layers from every module.",
+            ],
+            items: [
+              {
+                id: "financeOverview",
+                label: "Finance overview",
+                description: "Cashflow, payable, receivable, and finance control tower.",
+                icon: <WalletCards size={18} />,
+              },
+              {
+                id: "financePayments",
+                label: "Payments",
+                description: "Payment queue, settlement, and exception handling.",
+                icon: <CheckCircle2 size={18} />,
+              },
+              {
+                id: "financeReconciliation",
+                label: "Reconciliation",
+                description: "Provider vs order vs bank statement matching.",
+                icon: <RotateCcw size={18} />,
+              },
+              {
+                id: "financeReports",
+                label: "Financial reports",
+                description: "Daily, monthly, and tax-ready finance reporting.",
+                icon: <LayoutDashboard size={18} />,
+              },
+            ],
+          },
+          {
+            key: "factory",
+            label: "Factory",
+            description: "Production, inventory, dispatch, and execution operations.",
+            icon: <Package size={20} />,
+            highlights: [
+              {
+                label: "Work orders",
+                value: "Batch",
+                note: "Production batches, BOMs, and work order lifecycle.",
+              },
+              {
+                label: "Inventory",
+                value: "Raw + FG",
+                note: "Raw materials, packaging, and finished goods stay separated.",
+              },
+              {
+                label: "Dispatch",
+                value: "24-48h",
+                note: "Warehouse handoff, packing, and courier dispatch flow.",
+              },
+            ],
+            architectureNotes: [
+              "Factory owns production, inventory, and dispatch as one operational domain.",
+              "Confirmed orders should hand off from CRM and Finance into Factory fulfillment.",
+              "Production planning, stock reservation, and QC checkpoints belong here next.",
+            ],
+            items: [
+              {
+                id: "factoryOverview",
+                label: "Factory overview",
+                description: "Plant control tower, capacity, throughput, and risk view.",
+                icon: <Package size={18} />,
+              },
+              {
+                id: "factoryProduction",
+                label: "Production",
+                description: "Batch planning, work orders, and BOM execution.",
+                icon: <RotateCcw size={18} />,
+              },
+              {
+                id: "factoryInventory",
+                label: "Inventory",
+                description: "Raw material, packaging, and finished goods stock.",
+                icon: <Store size={18} />,
+              },
+              {
+                id: "factoryDispatch",
+                label: "Dispatch",
+                description: "Packing, courier handoff, and delivery coordination.",
+                icon: <MapPin size={18} />,
+              },
+            ],
+          },
+        ];
+  const activeMenuGroup = adminMenuGroups.find((group) => group.items.some((item) => item.id === activeSection));
+  const activeMenuItem = activeMenuGroup?.items.find((item) => item.id === activeSection) ?? null;
+  const architectureSection = activeMenuItem && !implementedSections.has(activeMenuItem.id) ? activeMenuItem : null;
+
+  const toggleNavGroup = (groupKey: AdminMenuGroup["key"]) => {
+    setOpenNavGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey],
+    }));
+  };
 
   useEffect(() => {
     if (!isPrivilegedUser) {
@@ -726,13 +1672,126 @@ export default function Account() {
   }, [isPrivilegedUser]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders")) {
+    if (!isPrivilegedUser) {
+      setContactMessages([]);
+      setContactMessagesError(null);
+      return;
+    }
+
+    return subscribeToContactMessages({
+      onData: (nextMessages) => {
+        setContactMessages(nextMessages);
+        setContactMessagesError(null);
+      },
+      onError: (subscriptionError) => {
+        setContactMessagesError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "messages")) {
       setActiveSection("dashboard");
     }
   }, [activeSection, isPrivilegedUser]);
 
+  useEffect(() => {
+    if (!activeMenuGroup || openNavGroups[activeMenuGroup.key]) {
+      return;
+    }
+
+    setOpenNavGroups((current) => ({
+      ...current,
+      [activeMenuGroup.key]: true,
+    }));
+  }, [activeMenuGroup, openNavGroups]);
+
   const openSettingsModal = () => {
-    setSettingsModal({ draft: { ...settings } });
+    setSettingsModal({ draft: cloneShopSettings(settings) });
+  };
+
+  const saveSettingsSection = (updater: (draft: ShopSettings) => ShopSettings) => {
+    saveSettingsDraft(updater(cloneShopSettings(settings)));
+  };
+
+  const openNavigationModal = (item: SiteNavigationItem) => {
+    setNavigationBannerUploadError(null);
+    setNavigationBannerUploading(false);
+    setNavigationModal({
+      mode: item.status === "inactive" ? "create" : "edit",
+      draft: { ...item },
+    });
+  };
+
+  const handleNavigationDeleteRequest = (item: SiteNavigationItem) => {
+    setConfirmModal({
+      title: copy.confirmDeleteTitle,
+      description: copy.deleteNavigationDescription,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: () => {
+        saveSettingsSection((draft) => ({
+          ...draft,
+          navigationItems: draft.navigationItems.map((navigationItem) =>
+            navigationItem.id === item.id ? { ...navigationItem, status: "inactive" } : navigationItem
+          ),
+        }));
+        setConfirmModal(null);
+      },
+    });
+  };
+
+  const openJournalEntryModal = (entry?: JournalEntry) => {
+    if (entry) {
+      setJournalEntryModal({
+        mode: "edit",
+        draft: { ...entry },
+      });
+      return;
+    }
+
+    const nextId = Math.max(0, ...settings.journalEntries.map((item) => item.id)) + 1;
+    setJournalEntryModal({
+      mode: "create",
+      draft: {
+        id: nextId,
+        titleEn: "",
+        titleMn: "",
+        excerptEn: "",
+        excerptMn: "",
+        categoryEn: "",
+        categoryMn: "",
+        author: "",
+        publishedAt: new Date().toISOString().slice(0, 10),
+        image: "",
+        status: "active",
+      },
+    });
+  };
+
+  const openJournalSettingsModal = () => {
+    setJournalSettingsModal({
+      journalHeadingMn: settings.journalHeadingMn,
+      journalHeadingEn: settings.journalHeadingEn,
+      journalSubtextMn: settings.journalSubtextMn,
+      journalSubtextEn: settings.journalSubtextEn,
+    });
+  };
+
+  const handleJournalEntryDeleteRequest = (entry: JournalEntry) => {
+    setConfirmModal({
+      title: copy.confirmDeleteTitle,
+      description: copy.deleteJournalEntryDescription,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: () => {
+        saveSettingsSection((draft) => ({
+          ...draft,
+          journalEntries: draft.journalEntries.filter((journalEntry) => journalEntry.id !== entry.id),
+        }));
+        setConfirmModal(null);
+      },
+    });
   };
 
   const openCollectionModal = (collection?: Collection) => {
@@ -953,14 +2012,45 @@ export default function Account() {
     });
   };
 
-  const handleResetStorefront = () => {
-    openConfirmModal({
-      title: copy.resetConfirmTitle,
-      description: copy.resetConfirmDescription,
-      confirmLabel: copy.reset,
-      destructive: true,
-      onConfirm: () => resetStorefront(),
-    });
+  const handleNavigationBannerFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file || !navigationModal) {
+      return;
+    }
+
+    setNavigationBannerUploadError(null);
+    setNavigationBannerUploading(true);
+
+    try {
+      const uploadedImageUrl = await uploadStorefrontImage(file, "navigation-banners");
+      setNavigationModal((current) =>
+        current
+          ? {
+              ...current,
+              draft: {
+                ...current.draft,
+                pageBannerImage: uploadedImageUrl,
+              },
+            }
+          : current
+      );
+    } catch {
+      setNavigationBannerUploadError(copy.bannerUploadFailed);
+    } finally {
+      setNavigationBannerUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const closeNavigationModal = () => {
+    if (navigationBannerUploading) {
+      return;
+    }
+
+    setNavigationModal(null);
+    setNavigationBannerUploadError(null);
+    setNavigationBannerUploading(false);
   };
 
   const handleHeroBannerFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1005,88 +2095,176 @@ export default function Account() {
     setBannerUploading(false);
   };
 
+  const openOrderModal = (order: OrderRecord) => {
+    setOrderModal({ draft: cloneOrderRecord(order) });
+    setOrderModalError(null);
+  };
+
+  const closeOrderModal = () => {
+    if (savingOrderModal) {
+      return;
+    }
+
+    setOrderModal(null);
+    setOrderModalError(null);
+  };
+
+  const handleOrderCustomerChange =
+    (field: keyof OrderRecord["customer"]) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue = event.target.value;
+      setOrderModal((current) =>
+        current
+          ? {
+              ...current,
+              draft: {
+                ...current.draft,
+                customer: {
+                  ...current.draft.customer,
+                  [field]: nextValue,
+                },
+              },
+            }
+          : current
+      );
+    };
+
+  const handleOrderAddressChange =
+    (field: keyof OrderRecord["address"]) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue = event.target.value;
+      setOrderModal((current) =>
+        current
+          ? {
+              ...current,
+              draft: {
+                ...current.draft,
+                address: {
+                  ...current.draft.address,
+                  [field]: nextValue,
+                },
+              },
+            }
+          : current
+      );
+    };
+
+  const handleOrderStatusChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextStatus = event.target.value as OrderStatus;
+    setOrderModal((current) =>
+      current
+        ? {
+            ...current,
+            draft: {
+              ...current.draft,
+              status: nextStatus,
+            },
+          }
+        : current
+    );
+  };
+
+  const handleOrderModalSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!orderModal) {
+      return;
+    }
+
+    const nextCustomer = {
+      fullName: orderModal.draft.customer.fullName.trim(),
+      phoneNumber: orderModal.draft.customer.phoneNumber.trim(),
+      email: orderModal.draft.customer.email?.trim() ? orderModal.draft.customer.email.trim() : null,
+      note: orderModal.draft.customer.note.trim(),
+    };
+    const nextAddress = {
+      region: orderModal.draft.address.region.trim(),
+      districtOrSoum: orderModal.draft.address.districtOrSoum.trim(),
+      khorooOrBag: orderModal.draft.address.khorooOrBag.trim(),
+      streetAddress: orderModal.draft.address.streetAddress.trim(),
+      additionalAddress: orderModal.draft.address.additionalAddress.trim(),
+    };
+
+    if (
+      !nextCustomer.fullName ||
+      !nextCustomer.phoneNumber ||
+      !nextAddress.region ||
+      !nextAddress.districtOrSoum ||
+      !nextAddress.khorooOrBag ||
+      !nextAddress.streetAddress
+    ) {
+      setOrderModalError(copy.orderUpdateFailed);
+      return;
+    }
+
+    setSavingOrderModal(true);
+    setOrderModalError(null);
+
+    try {
+      await updateOrderByAdmin(orderModal.draft.id, {
+        status: orderModal.draft.status,
+        customer: nextCustomer,
+        address: nextAddress,
+        payment: orderModal.draft.payment,
+      });
+      setOrderModal(null);
+      setOrderModalError(null);
+    } catch (error) {
+      setOrderModalError(error instanceof Error ? error.message : copy.orderUpdateFailed);
+    } finally {
+      setSavingOrderModal(false);
+    }
+  };
+
   return (
     <div className="admin-page">
       <div className="admin-shell">
         <aside className="admin-sidebar">
           <div className="admin-sidebar-brand">
-            <span className="admin-brand-mark">Savana</span>
+            <img src={logoBlack} alt="Savana" className="admin-sidebar-logo" />
             <strong>{visibleSettings.brandName}</strong>
           </div>
 
-          <div className="admin-language-switch">
-            <span>{copy.language}</span>
-            <div className="admin-language-actions">
-              <button
-                type="button"
-                className={`admin-language-btn ${language === "MN" ? "active" : ""}`}
-                onClick={() => setLanguage("MN")}
-              >
-                {copy.mongolian}
-              </button>
-              <button
-                type="button"
-                className={`admin-language-btn ${language === "EN" ? "active" : ""}`}
-                onClick={() => setLanguage("EN")}
-              >
-                {copy.english}
-              </button>
-            </div>
-          </div>
-
           <nav className="admin-nav">
-            <button
-              type="button"
-              className={`admin-nav-btn ${activeSection === "dashboard" ? "active" : ""}`}
-              onClick={() => setActiveSection("dashboard")}
-            >
-              <LayoutDashboard size={18} />
-              {copy.dashboard}
-            </button>
-            <button
-              type="button"
-              className={`admin-nav-btn ${activeSection === "website" ? "active" : ""}`}
-              onClick={() => setActiveSection("website")}
-            >
-              <Globe size={18} />
-              {copy.website}
-            </button>
-            <button
-              type="button"
-              className={`admin-nav-btn ${activeSection === "categories" ? "active" : ""}`}
-              onClick={() => setActiveSection("categories")}
-            >
-              <Store size={18} />
-              {copy.categoriesMenu}
-            </button>
-            <button
-              type="button"
-              className={`admin-nav-btn ${activeSection === "products" ? "active" : ""}`}
-              onClick={() => setActiveSection("products")}
-            >
-              <Package size={18} />
-              {copy.productsMenu}
-            </button>
-            {isPrivilegedUser && (
-              <button
-                type="button"
-                className={`admin-nav-btn ${activeSection === "orders" ? "active" : ""}`}
-                onClick={() => setActiveSection("orders")}
-              >
-                <WalletCards size={18} />
-                {copy.ordersMenu}
-              </button>
-            )}
-            {isPrivilegedUser && (
-              <button
-                type="button"
-                className={`admin-nav-btn ${activeSection === "users" ? "active" : ""}`}
-                onClick={() => setActiveSection("users")}
-              >
-                <Users size={18} />
-                {language === "MN" ? "Хэрэглэгч" : "Users"}
-              </button>
-            )}
+            {adminMenuGroups.map((group) => {
+              const visibleItems = group.items.filter((item) => !item.requiresPrivilege || isPrivilegedUser);
+              const isOpen = openNavGroups[group.key];
+              const isGroupActive = activeMenuGroup?.key === group.key;
+
+              return (
+                <div key={group.key} className={`admin-nav-group ${isOpen ? "open" : ""}`} data-module={group.key}>
+                  <button
+                    type="button"
+                    className={`admin-nav-parent ${isGroupActive ? "active" : ""}`}
+                    onClick={() => toggleNavGroup(group.key)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="admin-nav-parent-main">
+                      <span className="admin-nav-parent-icon">{group.icon}</span>
+                      <span className="admin-nav-parent-label">{group.label}</span>
+                    </span>
+                    <span className="admin-nav-parent-toggle">
+                      {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="admin-nav-children">
+                      {visibleItems.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`admin-nav-child ${activeSection === item.id ? "active" : ""}`}
+                          onClick={() => setActiveSection(item.id)}
+                        >
+                          <span className="admin-nav-child-dot" />
+                          <span className="admin-nav-child-label">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </nav>
 
           <div className="admin-sidebar-footer">
@@ -1108,6 +2286,26 @@ export default function Account() {
               </div>
             </div>
 
+            <div className="admin-language-switch">
+              <span>{copy.language}</span>
+              <div className="admin-language-actions">
+                <button
+                  type="button"
+                  className={`admin-language-btn ${language === "MN" ? "active" : ""}`}
+                  onClick={() => setLanguage("MN")}
+                >
+                  {copy.mongolian}
+                </button>
+                <button
+                  type="button"
+                  className={`admin-language-btn ${language === "EN" ? "active" : ""}`}
+                  onClick={() => setLanguage("EN")}
+                >
+                  {copy.english}
+                </button>
+              </div>
+            </div>
+
             <button type="button" className="btn btn-outline admin-logout-btn" onClick={handleLogout}>
               <LogOut size={16} />
               {loggingOut ? "..." : copy.logout}
@@ -1124,68 +2322,84 @@ export default function Account() {
                   <h1>{copy.dashboardTitle}</h1>
                   <p>{copy.dashboardText}</p>
                 </div>
-                <div className="admin-topbar-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setActiveSection("website")}>
-                    <Globe size={16} />
-                    {copy.openWebsite}
-                  </button>
-                  <button type="button" className="btn btn-outline" onClick={() => setActiveSection("categories")}>
-                    <Store size={16} />
-                    {copy.openCategories}
-                  </button>
-                  {isPrivilegedUser && (
-                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("orders")}>
-                      <WalletCards size={16} />
-                      {copy.openOrders}
-                    </button>
-                  )}
-                  {isPrivilegedUser && (
-                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("users")}>
-                      <Users size={16} />
-                      {language === "MN" ? "Хэрэглэгч" : "Users"}
-                    </button>
-                  )}
-                  <button type="button" className="btn btn-primary" onClick={() => setActiveSection("products")}>
-                    <Package size={16} />
-                    {copy.openProducts}
-                  </button>
-                </div>
               </div>
 
               <div className="admin-stat-grid">
-                <div className="admin-stat-card">
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="website"
+                  onClick={() => setActiveSection("products")}
+                  aria-label={copy.openProducts}
+                >
                   <span>{copy.totalProducts}</span>
                   <strong>{activeProducts.length}/{products.length}</strong>
                   <small>{copy.statusSummary}</small>
-                </div>
+                </button>
                 {isPrivilegedUser && (
-                  <div className="admin-stat-card">
+                  <button
+                    type="button"
+                    className="admin-stat-card admin-stat-card-link admin-module-card"
+                    data-module="crm"
+                    onClick={() => setActiveSection("orders")}
+                    aria-label={copy.openOrders}
+                  >
                     <span>{copy.totalOrders}</span>
                     <strong>{orders.length}</strong>
                     <small>{copy.ordersText}</small>
-                  </div>
+                  </button>
                 )}
-                <div className="admin-stat-card">
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="website"
+                  onClick={() => setActiveSection("categories")}
+                  aria-label={copy.openCategories}
+                >
                   <span>{copy.totalCollections}</span>
                   <strong>{activeCollections.length}/{collections.length}</strong>
                   <small>{copy.statusSummary}</small>
-                </div>
-                <div className="admin-stat-card">
+                </button>
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="website"
+                  onClick={() => setActiveSection("website")}
+                  aria-label={copy.openWebsite}
+                >
                   <span>{copy.totalBanners}</span>
                   <strong>{activeHeroBanners.length}/{heroBanners.length}</strong>
                   <small>{copy.bannerSummary}</small>
-                </div>
-                <div className="admin-stat-card">
+                </button>
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="website"
+                  onClick={() => setActiveSection("website")}
+                  aria-label={copy.openWebsite}
+                >
                   <span>{copy.totalMarkets}</span>
                   <strong>{activeMarkets.length}/{markets.length}</strong>
                   <small>{copy.statusSummary}</small>
-                </div>
-                <div className="admin-stat-card">
+                </button>
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="website"
+                  onClick={() => setActiveSection("website")}
+                  aria-label={copy.openWebsite}
+                >
                   <span>{copy.totalTestimonials}</span>
                   <strong>{activeTestimonials.length}/{testimonials.length}</strong>
                   <small>{copy.statusSummary}</small>
-                </div>
-                <div className="admin-stat-card">
+                </button>
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="common"
+                  onClick={() => setActiveSection("website")}
+                  aria-label={language === "MN" ? "Вэб контент руу очих" : "Open website content"}
+                >
                   <span>{copy.firebaseSync}</span>
                   <strong>
                     {error
@@ -1196,10 +2410,47 @@ export default function Account() {
                           ? copy.syncSaving
                           : copy.syncLive}
                   </strong>
-                </div>
-                <div className="admin-stat-card">
+                </button>
+                <button
+                  type="button"
+                  className="admin-stat-card admin-stat-card-link admin-module-card"
+                  data-module="common"
+                  onClick={() => setActiveSection("website")}
+                  aria-label={language === "MN" ? "Вэб контент руу очих" : "Open website content"}
+                >
                   <span>{copy.firestoreStructure}</span>
                   <strong>{backend}</strong>
+                </button>
+              </div>
+
+              <div className="admin-section-card">
+                <div className="admin-section-head">
+                  <div>
+                    <h2>{language === "MN" ? "Системийн модуль архитектур" : "System module architecture"}</h2>
+                    <p>
+                      {language === "MN"
+                        ? "Нийтлэг цэсүүд болон Website, CRM, Finance, Factory module-ууд нэг sidebar navigation дээр төвлөрсөн бүтэц."
+                        : "A unified sidebar architecture for shared menus plus the Website, CRM, Finance, and Factory modules."}
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-architecture-grid">
+                  {adminMenuGroups.map((group) => {
+                    const visibleItems = group.items.filter((item) => !item.requiresPrivilege || isPrivilegedUser);
+
+                    return (
+                      <div key={group.key} className="admin-architecture-card admin-module-card" data-module={group.key}>
+                        <span>{group.label}</span>
+                        <strong>{visibleItems.length}</strong>
+                        <p>{group.description}</p>
+                        <div className="admin-architecture-list">
+                          {visibleItems.map((item) => (
+                            <small key={item.id}>{item.label}</small>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1266,11 +2517,105 @@ export default function Account() {
                   <code>{structure.collections}</code>
                   <code>{structure.products}</code>
                   <code>{structure.orders}</code>
+                  <code>{structure.contactMessages}</code>
                   <code>{structure.heroBanners}</code>
                   <code>{structure.markets}</code>
                   <code>{structure.testimonials}</code>
                 </div>
                 {error && <div className="admin-sync-error">{error}</div>}
+              </div>
+            </>
+          ) : architectureSection && activeMenuGroup ? (
+            <>
+              <div className="admin-topbar">
+                <div>
+                  <p className="admin-kicker">{activeMenuGroup.label}</p>
+                  <h1>{architectureSection.label}</h1>
+                  <p>{architectureSection.description}</p>
+                </div>
+                <div className="admin-topbar-actions">
+                  {activeMenuGroup.items
+                    .filter((item) => implementedSections.has(item.id) && (!item.requiresPrivilege || isPrivilegedUser))
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => setActiveSection(item.id)}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+                <div className="admin-summary-grid">
+                  {activeMenuGroup.highlights.map((highlight) => (
+                    <div
+                      key={highlight.label}
+                      className="admin-summary-card admin-module-card"
+                      data-module={activeMenuGroup.key}
+                    >
+                      <span>{highlight.label}</span>
+                      <strong>{highlight.value}</strong>
+                      <small>{highlight.note}</small>
+                    </div>
+                  ))}
+                </div>
+
+              <div className="admin-section-card">
+                <div className="admin-section-head">
+                  <div>
+                    <h2>{language === "MN" ? "Module submenu зураглал" : "Module submenu map"}</h2>
+                    <p>
+                      {language === "MN"
+                        ? "Энэ модуль дотор ямар operational block-ууд багтахыг sidebar structure-аар харуулж байна."
+                        : "This sidebar structure maps the operational blocks that belong inside the module."}
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-architecture-grid">
+                  {activeMenuGroup.items
+                    .filter((item) => !item.requiresPrivilege || isPrivilegedUser)
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className={`admin-architecture-card admin-module-card ${item.id === activeSection ? "active" : ""}`}
+                        data-module={activeMenuGroup.key}
+                      >
+                        <span>
+                          {item.implemented
+                            ? language === "MN"
+                              ? "Ажиллаж буй хэсэг"
+                              : "Live section"
+                            : language === "MN"
+                              ? "Архитектурын blueprint"
+                              : "Architecture blueprint"}
+                        </span>
+                        <strong>{item.label}</strong>
+                        <p>{item.description}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="admin-section-card">
+                <div className="admin-section-head">
+                  <div>
+                    <h2>{language === "MN" ? "Архитектурын зарчим" : "Architecture principles"}</h2>
+                    <p>
+                      {language === "MN"
+                        ? "Дараагийн хөгжүүлэлтүүдийг энэ module boundary болон data ownership дагуу салгаж өргөжүүлнэ."
+                        : "Future development should expand along these module boundaries and data ownership rules."}
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-structure-list">
+                  {activeMenuGroup.architectureNotes.map((note) => (
+                    <code key={note}>{note}</code>
+                  ))}
+                </div>
               </div>
             </>
           ) : activeSection === "website" ? (
@@ -1291,13 +2636,13 @@ export default function Account() {
                     <Images size={16} />
                     {copy.createBanner}
                   </button>
-                  <button type="button" className="btn btn-outline" onClick={handleResetStorefront}>
-                    <RotateCcw size={16} />
-                    {copy.reset}
-                  </button>
-                  <button type="button" className="btn btn-primary" onClick={openSettingsModal}>
+                  <button
+                    type="button"
+                    className="admin-icon-btn admin-icon-btn-neutral"
+                    onClick={openSettingsModal}
+                    aria-label={copy.editWebsite}
+                  >
                     <Pencil size={16} />
-                    {copy.editWebsite}
                   </button>
                 </div>
               </div>
@@ -1317,11 +2662,24 @@ export default function Account() {
                 </div>
                 <div className="admin-summary-card">
                   <div className="admin-inline-card-head">
+                    <strong>{copy.navigation}</strong>
+                    <span>{activeNavigationItems.length}/{settings.navigationItems.length}</span>
+                  </div>
+                  <p>{copy.navigationSummary}</p>
+                </div>
+                <div className="admin-summary-card">
+                  <div className="admin-inline-card-head">
+                    <strong>{copy.journal}</strong>
+                    <span>{activeJournalEntries.length}/{settings.journalEntries.length}</span>
+                  </div>
+                  <p>{copy.journalSummary}</p>
+                </div>
+                <div className="admin-summary-card">
+                  <div className="admin-inline-card-head">
                     <strong>{copy.banners}</strong>
                     <span>{activeHeroBanners.length}/{heroBanners.length}</span>
                   </div>
                   <p>{copy.bannerSummary}</p>
-                  <small>{copy.statusSummary}</small>
                 </div>
                 <div className="admin-summary-card">
                   <div className="admin-inline-card-head">
@@ -1329,7 +2687,6 @@ export default function Account() {
                     <span>{activeMarkets.length}/{markets.length}</span>
                   </div>
                   <p>{copy.marketSummary}</p>
-                  <small>{copy.statusSummary}</small>
                 </div>
                 <div className="admin-summary-card">
                   <div className="admin-inline-card-head">
@@ -1337,8 +2694,16 @@ export default function Account() {
                     <span>{activeTestimonials.length}/{testimonials.length}</span>
                   </div>
                   <p>{copy.testimonialSummary}</p>
-                  <small>{copy.statusSummary}</small>
                 </div>
+                {isPrivilegedUser ? (
+                  <div className="admin-summary-card">
+                    <div className="admin-inline-card-head">
+                      <strong>{copy.messagesMenu}</strong>
+                      <span>{contactMessages.length}</span>
+                    </div>
+                    <p>{copy.messagesSummary}</p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="admin-data-card">
@@ -1406,11 +2771,11 @@ export default function Account() {
                               <div className="admin-table-actions">
                                 <button
                                   type="button"
-                                  className="btn btn-outline admin-table-action"
+                                  className="admin-icon-btn admin-icon-btn-neutral"
                                   onClick={() => openHeroBannerModal(heroBanner)}
+                                  aria-label={`${copy.edit} ${heroBanner.id}`}
                                 >
                                   <Pencil size={15} />
-                                  {copy.edit}
                                 </button>
                                 <button
                                   type="button"
@@ -1437,9 +2802,13 @@ export default function Account() {
                     <h2>{copy.settings}</h2>
                     <p>{copy.settingsInactiveNote}</p>
                   </div>
-                  <button type="button" className="btn btn-outline" onClick={openSettingsModal}>
+                  <button
+                    type="button"
+                    className="admin-icon-btn admin-icon-btn-neutral"
+                    onClick={openSettingsModal}
+                    aria-label={copy.edit}
+                  >
                     <Pencil size={16} />
-                    {copy.edit}
                   </button>
                 </div>
                 <div className="admin-preview-grid">
@@ -1458,19 +2827,163 @@ export default function Account() {
                     </div>
                   </div>
                   <div className="admin-preview-item">
-                    <MapPin size={18} />
+                    <Globe size={18} />
                     <div>
-                      <span>{copy.contactEmail}</span>
-                      <strong>{settings.contactEmail}</strong>
+                      <span>{copy.navigation}</span>
+                      <strong>{activeNavigationItems.length} active</strong>
                     </div>
                   </div>
                   <div className="admin-preview-item">
                     <MessageSquareQuote size={18} />
                     <div>
-                      <span>{copy.wholesaleHeading}</span>
-                      <strong>{settings.wholesaleHeading}</strong>
+                      <span>{copy.journal}</span>
+                      <strong>{getLocalizedManagedText(language, settings.journalHeadingEn, settings.journalHeadingMn)}</strong>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="admin-section-card">
+                <div className="admin-section-head">
+                  <div>
+                    <h2>{copy.navigation}</h2>
+                    <p>{copy.navigationSummary}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => inactiveNavigationItems[0] && openNavigationModal(inactiveNavigationItems[0])}
+                    disabled={inactiveNavigationItems.length === 0}
+                  >
+                    <Plus size={16} />
+                    {copy.add}
+                  </button>
+                </div>
+                <div className="admin-stack">
+                  {navigationPreviewItems.map((item) => {
+                    const navigationLabel = getManagedNavigationLabel(item, language);
+                    const hasPageBannerImage = Boolean(item.pageBannerImage.trim());
+
+                    return (
+                      <div key={item.id} className="admin-inline-card">
+                        <div className="admin-inline-card-head">
+                          <div className="admin-entity-head admin-navigation-entity">
+                            <div className="admin-navigation-thumb">
+                              {hasPageBannerImage ? (
+                                <img src={item.pageBannerImage} alt={navigationLabel} />
+                              ) : (
+                                <span>{navigationLabel.slice(0, 1) || item.id.slice(0, 1).toUpperCase()}</span>
+                              )}
+                            </div>
+                            <div className="admin-navigation-copy">
+                              <strong>{navigationLabel}</strong>
+                              <small>{item.id}</small>
+                            </div>
+                            <StatusBadge
+                              status={item.status}
+                              activeLabel={copy.active}
+                              inactiveLabel={copy.inactive}
+                            />
+                          </div>
+                          <div className="admin-entity-actions">
+                            <button
+                              type="button"
+                              className="admin-icon-btn admin-icon-btn-neutral"
+                              onClick={() => openNavigationModal(item)}
+                              aria-label={`${copy.edit} ${item.id}`}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            {item.status === "active" ? (
+                              <button
+                                type="button"
+                                className="admin-icon-btn"
+                                onClick={() => handleNavigationDeleteRequest(item)}
+                                aria-label={`${copy.delete} ${item.id}`}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <small>
+                          {item.group === "left" ? copy.leftGroup : copy.rightGroup}
+                          {" • "}
+                          {copy.sortOrder} #{item.sortOrder}
+                        </small>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="admin-section-card">
+                <div className="admin-section-head">
+                  <div>
+                    <h2>{copy.journal}</h2>
+                    <p>{copy.journalSummary}</p>
+                  </div>
+                  <div className="admin-topbar-actions">
+                    <button type="button" className="btn btn-outline" onClick={openJournalSettingsModal}>
+                      <Pencil size={16} />
+                      {copy.editJournalSection}
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={() => openJournalEntryModal()}>
+                      <Plus size={16} />
+                      {copy.createJournal}
+                    </button>
+                  </div>
+                </div>
+                <div className="admin-stack">
+                  <div className="admin-inline-card">
+                    <strong>{getLocalizedManagedText(language, settings.journalHeadingEn, settings.journalHeadingMn)}</strong>
+                    <small>
+                      {getLocalizedManagedText(language, settings.journalSubtextEn, settings.journalSubtextMn)}
+                    </small>
+                  </div>
+                  {journalPreviewEntries.length === 0 ? (
+                    <div className="admin-inline-card">
+                      <p>{copy.journalSummary}</p>
+                    </div>
+                  ) : (
+                    journalPreviewEntries.map((entry) => (
+                      <div key={entry.id} className="admin-inline-card">
+                        <div className="admin-inline-card-head">
+                          <div className="admin-entity-head">
+                            <strong>{getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}</strong>
+                            <StatusBadge
+                              status={entry.status}
+                              activeLabel={copy.active}
+                              inactiveLabel={copy.inactive}
+                            />
+                          </div>
+                          <div className="admin-entity-actions">
+                            <button
+                              type="button"
+                              className="admin-icon-btn admin-icon-btn-neutral"
+                              onClick={() => openJournalEntryModal(entry)}
+                              aria-label={`${copy.edit} ${entry.id}`}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-icon-btn"
+                              onClick={() => handleJournalEntryDeleteRequest(entry)}
+                              aria-label={`${copy.delete} ${entry.id}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <p>{getManagedJournalCategory(entry, language) || "-"}</p>
+                        <small>
+                          {formatAdminDateTime(entry.publishedAt, language)}
+                          {entry.author ? ` • ${entry.author}` : ""}
+                        </small>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -1494,9 +3007,13 @@ export default function Account() {
                           <StatusBadge status={market.status} activeLabel={copy.active} inactiveLabel={copy.inactive} />
                         </div>
                         <div className="admin-entity-actions">
-                          <button type="button" className="btn btn-outline" onClick={() => openMarketModal(market)}>
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-icon-btn-neutral"
+                            onClick={() => openMarketModal(market)}
+                            aria-label={`${copy.edit} ${market.name || "market"}`}
+                          >
                             <Pencil size={16} />
-                            {copy.edit}
                           </button>
                           <button type="button" className="admin-icon-btn" onClick={() => handleMarketDeleteRequest(market)}>
                             <Trash2 size={16} />
@@ -1534,9 +3051,13 @@ export default function Account() {
                           />
                         </div>
                         <div className="admin-entity-actions">
-                          <button type="button" className="btn btn-outline" onClick={() => openTestimonialModal(testimonial)}>
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-icon-btn-neutral"
+                            onClick={() => openTestimonialModal(testimonial)}
+                            aria-label={`${copy.edit} ${testimonial.author || "testimonial"}`}
+                          >
                             <Pencil size={16} />
-                            {copy.edit}
                           </button>
                           <button
                             type="button"
@@ -1554,6 +3075,97 @@ export default function Account() {
                 </div>
               </div>
             </>
+          ) : activeSection === "messages" ? (
+            <>
+              <div className="admin-topbar">
+                <div>
+                  <p className="admin-kicker">{copy.messagesMenu}</p>
+                  <h1>{copy.messagesTitle}</h1>
+                  <p>{copy.messagesText}</p>
+                </div>
+              </div>
+
+              {contactMessagesError && <div className="admin-sync-error">{contactMessagesError}</div>}
+
+              <div className="admin-summary-grid">
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.totalMessages}</span>
+                  <strong>{contactMessages.length}</strong>
+                </div>
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.messagesLast7Days}</span>
+                  <strong>{contactMessagesLast7DaysCount}</strong>
+                </div>
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.latestReceived}</span>
+                  <strong>{formatAdminDateTime(latestContactMessageAt, language)}</strong>
+                </div>
+              </div>
+
+              <div className="admin-data-card">
+                <div className="admin-data-card-head">
+                  <div>
+                    <h2>{copy.messagesMenu}</h2>
+                    <p>{copy.messagesListHelp}</p>
+                  </div>
+                </div>
+                <div className="admin-data-table-wrap">
+                  <table className="admin-data-table admin-messages-table">
+                    <thead>
+                      <tr>
+                        <th>{copy.receivedAt}</th>
+                        <th>{copy.senderName}</th>
+                        <th>{copy.senderEmail}</th>
+                        <th>{copy.messageSubject}</th>
+                        <th>{copy.messageBody}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contactMessages.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="admin-table-empty">
+                            {copy.emptyMessages}
+                          </td>
+                        </tr>
+                      ) : (
+                        contactMessages.map((contactMessage) => (
+                          <tr key={contactMessage.id}>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{formatAdminDateTime(contactMessage.createdAt, language)}</strong>
+                                <small>#{contactMessage.id.slice(0, 6).toUpperCase()}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{contactMessage.name}</strong>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <a className="admin-contact-email-link" href={`mailto:${contactMessage.email}`}>
+                                  {contactMessage.email}
+                                </a>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary admin-table-cell-wrap">
+                                <strong>{contactMessage.subject}</strong>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary admin-table-cell-wrap admin-contact-message-cell">
+                                <p className="admin-contact-message-text">{contactMessage.message}</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           ) : activeSection === "orders" ? (
             <>
               <div className="admin-topbar">
@@ -1567,25 +3179,29 @@ export default function Account() {
               {ordersError && <div className="admin-sync-error">{ordersError}</div>}
 
               <div className="admin-summary-grid">
-                <div className="admin-summary-card">
+                <div className="admin-summary-card admin-summary-card-compact">
                   <span>{copy.totalOrders}</span>
                   <strong>{orders.length}</strong>
-                  <small>{copy.ordersText}</small>
                 </div>
-                <div className="admin-summary-card">
-                  <span>{copy.pendingOrders}</span>
-                  <strong>{pendingOrdersCount}</strong>
-                  <small>{language === "MN" ? "Төлбөр хүлээгдэж буй захиалга" : "Orders awaiting payment"}</small>
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.newOrders}</span>
+                  <strong>{newOrdersCount}</strong>
                 </div>
-                <div className="admin-summary-card">
+                <div className="admin-summary-card admin-summary-card-compact">
                   <span>{copy.paidOrders}</span>
                   <strong>{paidOrdersCount}</strong>
-                  <small>{language === "MN" ? "Төлбөр баталгаажсан захиалга" : "Orders marked as paid"}</small>
                 </div>
-                <div className="admin-summary-card">
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.deliveringOrders}</span>
+                  <strong>{deliveringOrdersCount}</strong>
+                </div>
+                <div className="admin-summary-card admin-summary-card-compact">
+                  <span>{copy.deliveredOrders}</span>
+                  <strong>{deliveredOrdersCount}</strong>
+                </div>
+                <div className="admin-summary-card admin-summary-card-compact">
                   <span>{copy.guestOrders}</span>
                   <strong>{guestOrdersCount}</strong>
-                  <small>{language === "MN" ? "Anonymous хэрэглэгчийн захиалга" : "Orders created by guest users"}</small>
                 </div>
               </div>
 
@@ -1595,27 +3211,34 @@ export default function Account() {
                     <h2>{copy.orders}</h2>
                     <p>
                       {language === "MN"
-                        ? "Захиалга үүсмэгц энд орж ирнэ. Төлбөр шалгах дарахад статус шинэчлэгдэнэ."
-                        : "Orders appear here immediately after confirmation. Payment check updates their status."}
+                        ? "Захиалгын дугаар дээр дарж төлөв болон хүргэлтийн мэдээллийг засна."
+                        : "Click an order number to edit the status and delivery details."}
                     </p>
                   </div>
                 </div>
                 <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
+                  <table className="admin-data-table admin-orders-table">
                     <thead>
                       <tr>
                         <th>{language === "MN" ? "Захиалга" : "Order"}</th>
-                        <th>{language === "MN" ? "Хүлээн авагч" : "Customer"}</th>
-                        <th>{language === "MN" ? "Хаяг" : "Address"}</th>
+                        <th>{language === "MN" ? "Үүссэн хугацаа" : "Created"}</th>
+                        <th>{copy.status}</th>
                         <th>{language === "MN" ? "Бараа" : "Items"}</th>
-                        <th>{language === "MN" ? "Төлбөр" : "Payment"}</th>
-                        <th>{language === "MN" ? "Үүссэн огноо" : "Created"}</th>
+                        <th>{copy.paymentLabel}</th>
+                        <th>{language === "MN" ? "Нийт дүн" : "Total"}</th>
+                        <th>{language === "MN" ? "Эх сурвалж" : "Source"}</th>
+                        <th>{language === "MN" ? "Хүлээн авагч" : "Recipient"}</th>
+                        <th>{language === "MN" ? "Утас" : "Phone"}</th>
+                        <th>{language === "MN" ? "Дүүрэг" : "District"}</th>
+                        <th>{language === "MN" ? "Баг" : "Bag"}</th>
+                        <th>{language === "MN" ? "Нэмэлт" : "Additional"}</th>
+                        <th className="admin-table-sticky-action">{copy.actions}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {orders.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="admin-table-empty">
+                          <td colSpan={13} className="admin-table-empty">
                             {copy.emptyOrders}
                           </td>
                         </tr>
@@ -1623,52 +3246,102 @@ export default function Account() {
                         orders.map((order) => (
                           <tr key={order.id}>
                             <td>
+                              <button type="button" className="admin-table-link" onClick={() => openOrderModal(order)}>
+                                <div className="admin-table-primary">
+                                  <strong>{order.orderNumber}</strong>
+                                  <small>{language === "MN" ? "Дарж засварлана" : "Click to edit"}</small>
+                                </div>
+                              </button>
+                            </td>
+                            <td>
                               <div className="admin-table-primary">
-                                <strong>{order.orderNumber}</strong>
-                                <small>{getOrderStatusLabel(order.status, language)}</small>
+                                <strong>{formatAdminDateTime(order.createdAt, language)}</strong>
                               </div>
                             </td>
                             <td>
                               <div className="admin-table-primary">
-                                <strong>{order.customer.fullName || order.customer.phoneNumber}</strong>
+                                <span className={getOrderStatusClassName(order.status)}>
+                                  {getOrderStatusLabel(order.status, language)}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary admin-order-table-items admin-table-cell-wrap">
+                                <div className="admin-order-table-item-names">
+                                  {order.items.map((item, itemIndex) => (
+                                    <span key={`${order.id}-${item.productId}-${item.variant ?? "default"}-${itemIndex}`}>
+                                      {item.name}
+                                      {item.variant ? ` / ${item.variant}` : ""}
+                                      {` × ${item.quantity}`}
+                                    </span>
+                                  ))}
+                                </div>
                                 <small>
-                                  {order.customer.phoneNumber}
-                                  {order.auth.isAnonymous
-                                    ? ` • ${language === "MN" ? "зочин" : "guest"}`
-                                    : ` • ${getAuthMethodLabel(order.auth.method as UserAuthMethod, language)}`}
+                                  {language === "MN"
+                                    ? `Нийт ${getOrderTotalQuantity(order)} ширхэг`
+                                    : `Total ${getOrderTotalQuantity(order)} pcs`}
                                 </small>
                               </div>
                             </td>
                             <td>
                               <div className="admin-table-primary">
-                                <strong>{getOrderAddressLabel(order)}</strong>
-                                <small>{order.address.additionalAddress || order.customer.note || "-"}</small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>
-                                  {order.items.length} {language === "MN" ? "төрөл" : "items"}
-                                </strong>
-                                <small>{order.items.map((item) => item.name).slice(0, 2).join(", ") || "-"}</small>
+                                <strong>{order.payment.method.toUpperCase()}</strong>
+                                <small>{getOrderPaymentStatusLabel(order.payment.status, language)}</small>
                               </div>
                             </td>
                             <td>
                               <div className="admin-table-primary">
                                 <strong>{formatStorePrice(order.totals.grandTotal)}</strong>
-                                <small>{getOrderStatusLabel(order.status, language)}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="admin-table-code">
+                                {order.auth.isAnonymous
+                                  ? language === "MN"
+                                    ? "Зочин"
+                                    : "Guest"
+                                  : getAuthMethodLabel(order.auth.method as UserAuthMethod, language)}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{order.customer.fullName || order.customer.phoneNumber || "-"}</strong>
                               </div>
                             </td>
                             <td>
                               <div className="admin-table-primary">
-                                <strong>{formatAdminDateTime(order.createdAt, language)}</strong>
+                                <strong>{order.customer.phoneNumber}</strong>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{order.address.districtOrSoum || "-"}</strong>
+                                <small>{order.address.region || "-"}</small>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary">
+                                <strong>{order.address.khorooOrBag || "-"}</strong>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="admin-table-primary admin-table-cell-wrap">
+                                <strong>{order.address.streetAddress || "-"}</strong>
                                 <small>
-                                  {order.payment.paidAt
-                                    ? `${language === "MN" ? "Төлөгдсөн:" : "Paid:"} ${formatAdminDateTime(order.payment.paidAt, language)}`
-                                    : language === "MN"
-                                      ? "Төлбөр хүлээгдэж байна"
-                                      : "Payment pending"}
+                                  {[order.address.additionalAddress, order.customer.note].filter(Boolean).join(" • ") || "-"}
                                 </small>
+                              </div>
+                            </td>
+                            <td className="admin-table-sticky-action">
+                              <div className="admin-table-actions">
+                                <button
+                                  type="button"
+                                  className="admin-icon-btn admin-icon-btn-neutral"
+                                  onClick={() => openOrderModal(order)}
+                                  aria-label={`${copy.edit} ${order.orderNumber}`}
+                                >
+                                  <Pencil size={15} />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1908,11 +3581,11 @@ export default function Account() {
                               <div className="admin-table-actions">
                                 <button
                                   type="button"
-                                  className="btn btn-outline admin-table-action"
+                                  className="admin-icon-btn admin-icon-btn-neutral"
                                   onClick={() => openCollectionModal(collection)}
+                                  aria-label={`${copy.edit} ${collection.name}`}
                                 >
                                   <Pencil size={15} />
-                                  {copy.edit}
                                 </button>
                                 <button
                                   type="button"
@@ -2038,11 +3711,11 @@ export default function Account() {
                               <div className="admin-table-actions">
                                 <button
                                   type="button"
-                                  className="btn btn-outline admin-table-action"
+                                  className="admin-icon-btn admin-icon-btn-neutral"
                                   onClick={() => openProductModal(product)}
+                                  aria-label={`${copy.edit} ${product.name}`}
                                 >
                                   <Pencil size={15} />
-                                  {copy.edit}
                                 </button>
                                 <button
                                   type="button"
@@ -2164,6 +3837,18 @@ export default function Account() {
                   onChange={(event) =>
                     setSettingsModal({
                       draft: { ...settingsModal.draft, aboutIntroBody: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.contactPhone}</span>
+                <input
+                  value={settingsModal.draft.contactPhone}
+                  onChange={(event) =>
+                    setSettingsModal({
+                      ...settingsModal,
+                      draft: { ...settingsModal.draft, contactPhone: event.target.value },
                     })
                   }
                 />
@@ -2308,6 +3993,415 @@ export default function Account() {
             <p className="admin-inline-note">{copy.settingsInactiveNote}</p>
             <div className="admin-modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setSettingsModal(null)}>
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary">
+                {copy.save}
+              </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {navigationModal && (
+        <AdminModal
+          title={navigationModal.mode === "create" ? copy.navigationModalCreate : copy.navigationModalEdit}
+          description={copy.navigationSummary}
+          onClose={closeNavigationModal}
+          disableClose={navigationBannerUploading}
+        >
+          <form
+            className="admin-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (navigationBannerUploading) {
+                return;
+              }
+
+              saveSettingsSection((draft) => ({
+                ...draft,
+                navigationItems: draft.navigationItems.map((item) =>
+                  item.id === navigationModal.draft.id ? navigationModal.draft : item
+                ),
+              }));
+              setNavigationModal(null);
+              setNavigationBannerUploadError(null);
+            }}
+          >
+            <div className="admin-form-grid">
+              <label className="admin-field">
+                <span>{copy.status}</span>
+                <select
+                  value={navigationModal.draft.status}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: { ...navigationModal.draft, status: event.target.value as EntityStatus },
+                    })
+                  }
+                >
+                  <option value="active">{copy.active}</option>
+                  <option value="inactive">{copy.inactive}</option>
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>{copy.group}</span>
+                <select
+                  value={navigationModal.draft.group}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: {
+                        ...navigationModal.draft,
+                        group: event.target.value as SiteNavigationItem["group"],
+                      },
+                    })
+                  }
+                >
+                  <option value="left">{copy.leftGroup}</option>
+                  <option value="right">{copy.rightGroup}</option>
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>{copy.sortOrder}</span>
+                <input
+                  type="number"
+                  value={navigationModal.draft.sortOrder}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: { ...navigationModal.draft, sortOrder: Number(event.target.value) || 0 },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>ID</span>
+                <input value={navigationModal.draft.id} disabled />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.labelMn}</span>
+                <input
+                  value={navigationModal.draft.labelMn}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: { ...navigationModal.draft, labelMn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.labelEn}</span>
+                <input
+                  value={navigationModal.draft.labelEn}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: { ...navigationModal.draft, labelEn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.pageBanner}</span>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={navigationModal.draft.pageBannerImage}
+                  onChange={(event) =>
+                    setNavigationModal({
+                      ...navigationModal,
+                      draft: { ...navigationModal.draft, pageBannerImage: event.target.value },
+                    })
+                  }
+                />
+                <small>{copy.pageBannerHelp}</small>
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.bannerUpload}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleNavigationBannerFileChange}
+                  disabled={navigationBannerUploading}
+                />
+                {navigationBannerUploading && <small>{copy.bannerUploadProgress}</small>}
+                {navigationBannerUploadError && (
+                  <small className="admin-field-error">{navigationBannerUploadError}</small>
+                )}
+              </label>
+              <div className="admin-field admin-field-wide">
+                <span>{copy.imagePreview}</span>
+                <div className="admin-collection-preview admin-banner-preview">
+                  {navigationModal.draft.pageBannerImage ? (
+                    <img
+                      src={navigationModal.draft.pageBannerImage}
+                      alt={navigationModal.draft.labelEn || navigationModal.draft.labelMn || navigationModal.draft.id}
+                    />
+                  ) : (
+                    <div className="admin-collection-preview-empty">N</div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={closeNavigationModal}
+                disabled={navigationBannerUploading}
+              >
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={navigationBannerUploading}>
+                {copy.save}
+              </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {journalSettingsModal && (
+        <AdminModal
+          title={copy.journalSettingsModalTitle}
+          description={copy.journalSummary}
+          onClose={() => setJournalSettingsModal(null)}
+        >
+          <form
+            className="admin-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveSettingsSection((draft) => ({
+                ...draft,
+                journalHeadingMn: journalSettingsModal.journalHeadingMn,
+                journalHeadingEn: journalSettingsModal.journalHeadingEn,
+                journalSubtextMn: journalSettingsModal.journalSubtextMn,
+                journalSubtextEn: journalSettingsModal.journalSubtextEn,
+              }));
+              setJournalSettingsModal(null);
+            }}
+          >
+            <div className="admin-form-grid">
+              <label className="admin-field">
+                <span>{copy.journalHeadingMn}</span>
+                <input
+                  value={journalSettingsModal.journalHeadingMn}
+                  onChange={(event) =>
+                    setJournalSettingsModal({
+                      ...journalSettingsModal,
+                      journalHeadingMn: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.journalHeadingEn}</span>
+                <input
+                  value={journalSettingsModal.journalHeadingEn}
+                  onChange={(event) =>
+                    setJournalSettingsModal({
+                      ...journalSettingsModal,
+                      journalHeadingEn: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.journalSubtextMn}</span>
+                <textarea
+                  rows={3}
+                  value={journalSettingsModal.journalSubtextMn}
+                  onChange={(event) =>
+                    setJournalSettingsModal({
+                      ...journalSettingsModal,
+                      journalSubtextMn: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.journalSubtextEn}</span>
+                <textarea
+                  rows={3}
+                  value={journalSettingsModal.journalSubtextEn}
+                  onChange={(event) =>
+                    setJournalSettingsModal({
+                      ...journalSettingsModal,
+                      journalSubtextEn: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="admin-modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setJournalSettingsModal(null)}>
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary">
+                {copy.save}
+              </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {journalEntryModal && (
+        <AdminModal
+          title={journalEntryModal.mode === "create" ? copy.journalModalCreate : copy.journalModalEdit}
+          description={copy.journalSummary}
+          onClose={() => setJournalEntryModal(null)}
+        >
+          <form
+            className="admin-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveSettingsSection((draft) => ({
+                ...draft,
+                journalEntries:
+                  journalEntryModal.mode === "create"
+                    ? [...draft.journalEntries, journalEntryModal.draft]
+                    : draft.journalEntries.map((entry) =>
+                        entry.id === journalEntryModal.draft.id ? journalEntryModal.draft : entry
+                      ),
+              }));
+              setJournalEntryModal(null);
+            }}
+          >
+            <div className="admin-form-grid">
+              <label className="admin-field">
+                <span>{copy.status}</span>
+                <select
+                  value={journalEntryModal.draft.status}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, status: event.target.value as EntityStatus },
+                    })
+                  }
+                >
+                  <option value="active">{copy.active}</option>
+                  <option value="inactive">{copy.inactive}</option>
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>{copy.author}</span>
+                <input
+                  value={journalEntryModal.draft.author}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, author: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.publishedAt}</span>
+                <input
+                  type="date"
+                  value={journalEntryModal.draft.publishedAt}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, publishedAt: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.journalImage}</span>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={journalEntryModal.draft.image}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, image: event.target.value },
+                    })
+                  }
+                />
+                <small>{copy.journalImageHelp}</small>
+              </label>
+              <label className="admin-field">
+                <span>{copy.categoryMn}</span>
+                <input
+                  value={journalEntryModal.draft.categoryMn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, categoryMn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.categoryEn}</span>
+                <input
+                  value={journalEntryModal.draft.categoryEn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, categoryEn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.titleMn}</span>
+                <input
+                  value={journalEntryModal.draft.titleMn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, titleMn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.titleEn}</span>
+                <input
+                  value={journalEntryModal.draft.titleEn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, titleEn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.excerptMn}</span>
+                <textarea
+                  rows={3}
+                  value={journalEntryModal.draft.excerptMn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, excerptMn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.excerptEn}</span>
+                <textarea
+                  rows={3}
+                  value={journalEntryModal.draft.excerptEn}
+                  onChange={(event) =>
+                    setJournalEntryModal({
+                      ...journalEntryModal,
+                      draft: { ...journalEntryModal.draft, excerptEn: event.target.value },
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="admin-modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setJournalEntryModal(null)}>
                 {copy.cancel}
               </button>
               <button type="submit" className="btn btn-primary">
@@ -2930,6 +5024,218 @@ export default function Account() {
               </button>
             </div>
           </div>
+        </AdminModal>
+      )}
+
+      {orderModal && (
+        <AdminModal
+          title={copy.orderDetailsTitle}
+          description={`${copy.orderDetailsText} (${orderModal.draft.orderNumber})`}
+          onClose={closeOrderModal}
+          wide
+          disableClose={savingOrderModal}
+        >
+          <form className="admin-modal-form" onSubmit={handleOrderModalSubmit}>
+            {orderModalError && <div className="admin-sync-error">{orderModalError}</div>}
+
+            <div className="admin-order-meta-grid">
+              <div className="admin-order-meta-card">
+                <span>{language === "MN" ? "Захиалгын дугаар" : "Order number"}</span>
+                <strong>{orderModal.draft.orderNumber}</strong>
+                <small>{formatAdminDateTime(orderModal.draft.createdAt, language)}</small>
+              </div>
+              <div className="admin-order-meta-card">
+                <span>{copy.paymentLabel}</span>
+                <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
+                <small>
+                  {orderModal.draft.status === "new"
+                    ? language === "MN"
+                      ? "Төлбөр хүлээгдэж байна"
+                      : "Payment pending"
+                    : `${copy.paidAtLabel}: ${formatAdminDateTime(orderModal.draft.payment.paidAt, language)}`}
+                </small>
+              </div>
+            </div>
+
+            <div className="admin-form-grid">
+              <label className="admin-field">
+                <span>{copy.status}</span>
+                <select value={orderModal.draft.status} onChange={handleOrderStatusChange}>
+                  {orderStatusOptions.map((statusOption) => (
+                    <option key={statusOption.value} value={statusOption.value}>
+                      {statusOption.label}
+                    </option>
+                  ))}
+                </select>
+                <small>{copy.orderStatusHelp}</small>
+              </label>
+
+              <div className="admin-field">
+                <span>{copy.orderPaymentLabel}</span>
+                <div className="admin-order-static-value">
+                  <strong>
+                    {orderModal.draft.status === "new"
+                      ? language === "MN"
+                        ? "Төлбөр хүлээгдэж байна"
+                        : "Payment pending"
+                      : language === "MN"
+                        ? "Төлбөр төлөгдсөн"
+                        : "Payment paid"}
+                  </strong>
+                  <small>{copy.paymentStateLabel}</small>
+                </div>
+              </div>
+            </div>
+
+            <div className="admin-inline-card">
+              <div className="admin-inline-card-head">
+                <strong>{copy.customerInfo}</strong>
+              </div>
+              <div className="admin-form-grid">
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
+                  <input
+                    type="text"
+                    value={orderModal.draft.customer.fullName}
+                    onChange={handleOrderCustomerChange("fullName")}
+                    required
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Утасны дугаар" : "Phone number"}</span>
+                  <input
+                    type="tel"
+                    value={orderModal.draft.customer.phoneNumber}
+                    onChange={handleOrderCustomerChange("phoneNumber")}
+                    required
+                  />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{language === "MN" ? "И-мэйл" : "Email"}</span>
+                  <input
+                    type="email"
+                    value={orderModal.draft.customer.email ?? ""}
+                    onChange={handleOrderCustomerChange("email")}
+                  />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{copy.note}</span>
+                  <textarea value={orderModal.draft.customer.note} onChange={handleOrderCustomerChange("note")} rows={3} />
+                </label>
+              </div>
+            </div>
+
+            <div className="admin-inline-card">
+              <div className="admin-inline-card-head">
+                <strong>{copy.addressInfo}</strong>
+              </div>
+              <div className="admin-form-grid">
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
+                  <input type="text" value={orderModal.draft.address.region} onChange={handleOrderAddressChange("region")} required />
+                </label>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Дүүрэг / Сум" : "District / Soum"}</span>
+                  <input
+                    type="text"
+                    value={orderModal.draft.address.districtOrSoum}
+                    onChange={handleOrderAddressChange("districtOrSoum")}
+                    required
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Хороо / Баг" : "Khoroo / Bag"}</span>
+                  <input
+                    type="text"
+                    value={orderModal.draft.address.khorooOrBag}
+                    onChange={handleOrderAddressChange("khorooOrBag")}
+                    required
+                  />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{language === "MN" ? "Байр, орц, давхар, тоот" : "Street address"}</span>
+                  <input
+                    type="text"
+                    value={orderModal.draft.address.streetAddress}
+                    onChange={handleOrderAddressChange("streetAddress")}
+                    required
+                  />
+                </label>
+                <label className="admin-field admin-field-wide">
+                  <span>{language === "MN" ? "Нэмэлт хаяг" : "Additional address"}</span>
+                  <input
+                    type="text"
+                    value={orderModal.draft.address.additionalAddress}
+                    onChange={handleOrderAddressChange("additionalAddress")}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="admin-inline-card">
+              <div className="admin-inline-card-head">
+                <strong>{copy.orderItemsLabel}</strong>
+                <small className="admin-inline-note">{copy.orderReadonlyItemsNote}</small>
+              </div>
+              <div className="admin-order-items-summary">
+                <span>
+                  {language === "MN"
+                    ? `${orderModal.draft.items.length} төрөл`
+                    : `${orderModal.draft.items.length} item types`}
+                </span>
+                <strong>
+                  {language === "MN"
+                    ? `Нийт ${getOrderTotalQuantity(orderModal.draft)} ширхэг`
+                    : `Total ${getOrderTotalQuantity(orderModal.draft)} pcs`}
+                </strong>
+              </div>
+              <div className="admin-order-items">
+                {orderModal.draft.items.map((item, itemIndex) => (
+                  <div key={`${item.productId}-${item.variant ?? "default"}-${itemIndex}`} className="admin-order-item">
+                    <div className="admin-order-item-main">
+                      <div className="admin-order-item-thumb">
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} />
+                        ) : (
+                          <span>{item.name.slice(0, 1).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="admin-order-item-copy">
+                        <strong>{item.name}</strong>
+                        <div className="admin-order-item-meta">
+                          <span>{item.variant || (language === "MN" ? "Сонголтгүй" : "No variant")}</span>
+                          <span>{item.category}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="admin-order-item-stats">
+                      <div>
+                        <span>{language === "MN" ? "Тоо" : "Qty"}</span>
+                        <strong>{item.quantity}</strong>
+                      </div>
+                      <div>
+                        <span>{language === "MN" ? "Нэгж үнэ" : "Unit price"}</span>
+                        <strong>{formatStorePrice(item.unitPrice)}</strong>
+                      </div>
+                      <div>
+                        <span>{language === "MN" ? "Нийлбэр" : "Line total"}</span>
+                        <strong>{formatStorePrice(item.lineTotal)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="admin-modal-footer">
+              <button type="button" className="btn btn-outline" onClick={closeOrderModal} disabled={savingOrderModal}>
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={savingOrderModal}>
+                {savingOrderModal ? "..." : copy.save}
+              </button>
+            </div>
+          </form>
         </AdminModal>
       )}
     </div>

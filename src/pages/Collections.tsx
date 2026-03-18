@@ -2,22 +2,37 @@ import { useParams, Link } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
-import { getActiveCollections, getActiveProducts, SYSTEM_COLLECTION_SLUG } from "../lib/storefrontHelpers";
+import {
+  getActiveCollections,
+  getActiveProducts,
+  getPageBannerNavigationItem,
+  getPageBannerStyle,
+  getRenderableSettings,
+  SYSTEM_COLLECTION_SLUG,
+} from "../lib/storefrontHelpers";
 import "./Collections.css";
 
 export default function Collections() {
   const { slug } = useParams();
   const { t } = useLanguage();
-  const { products, collections } = useStorefront();
+  const { products, collections, settings } = useStorefront();
+  const visibleSettings = getRenderableSettings(settings);
   const activeCollections = getActiveCollections(collections);
   const visibleProducts = getActiveProducts(products, collections);
+  const isBestSellersRoute = slug === SYSTEM_COLLECTION_SLUG;
+  const pageBanner = getPageBannerNavigationItem(
+    visibleSettings.navigationItems,
+    isBestSellersRoute ? "/collections/best-sellers" : "/collections"
+  );
+  const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
+  const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
   const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
 
   const currentCollection = slug
     ? activeCollections.find((c) => c.slug === slug)
     : null;
 
-  const filteredProducts = slug === SYSTEM_COLLECTION_SLUG
+  const filteredProducts = isBestSellersRoute
     ? bestSellersVisible
       ? visibleProducts.filter((p) => p.bestSeller)
       : []
@@ -25,8 +40,10 @@ export default function Collections() {
       ? visibleProducts.filter((p) => p.category === slug)
       : visibleProducts;
 
-  const title = slug
-    ? currentCollection?.name || (slug === SYSTEM_COLLECTION_SLUG ? t.bestSellers : slug)
+  const title = isBestSellersRoute
+    ? t.bestSellers
+    : slug
+    ? currentCollection?.name || slug
     : t.allProducts;
   const description = currentCollection
     ? currentCollection.description
@@ -34,7 +51,10 @@ export default function Collections() {
 
   return (
     <div className="collections-page">
-      <div className="collections-hero">
+      <div
+        className={`collections-hero${hasPageBanner ? " has-banner" : ""}`}
+        style={pageBannerStyle}
+      >
         <div className="collections-hero-inner container">
           <div className="breadcrumb">
             <Link to="/">Home</Link> / <span>{title}</span>
@@ -59,7 +79,7 @@ export default function Collections() {
               key={c.id}
               className={`filter-btn ${c.slug === slug ? "active" : ""}`}
             >
-              {c.name}
+              {c.slug === SYSTEM_COLLECTION_SLUG ? t.bestSellers : c.name}
             </Link>
           ))}
         </div>

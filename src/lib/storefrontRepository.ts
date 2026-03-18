@@ -19,11 +19,14 @@ import {
 } from "firebase/firestore";
 import type { Collection, Product } from "../data/products";
 import {
+  normalizeShopSettings,
+  resolveNavigationItemLabel,
   createDefaultStorefrontData,
   resolveSeedHeroBanners,
   type HeroBanner,
   type MarketItem,
   type ShopSettings,
+  type SiteNavigationItem,
   type StorefrontData,
   type Testimonial,
 } from "../data/storefront";
@@ -34,6 +37,7 @@ const STOREFRONT_SCHEMA_VERSION = 1;
 
 const siteRef = doc(db, "sites", STOREFRONT_SITE_ID);
 const settingsRef = doc(db, "sites", STOREFRONT_SITE_ID, "settings", "general");
+const navigationItemsRef = collection(db, "sites", STOREFRONT_SITE_ID, "navigationItems");
 const legacyCollectionsRef = collection(db, "sites", STOREFRONT_SITE_ID, "collections");
 const collectionsRef = collection(db, "collections");
 const legacyProductsRef = collection(db, "sites", STOREFRONT_SITE_ID, "products");
@@ -49,6 +53,14 @@ function deserializeStatus(value: unknown) {
 function serializeSettings(settings: ShopSettings) {
   return {
     ...settings,
+    navigationItems: [],
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function serializeNavigationItem(item: SiteNavigationItem) {
+  return {
+    ...item,
     updatedAt: serverTimestamp(),
   };
 }
@@ -159,6 +171,21 @@ function deserializeHeroBanner(snapshot: QueryDocumentSnapshot<DocumentData>): H
   };
 }
 
+function deserializeNavigationItem(snapshot: QueryDocumentSnapshot<DocumentData>): SiteNavigationItem {
+  const data = snapshot.data() as Record<string, unknown>;
+  const id = String(data.id ?? "") as SiteNavigationItem["id"];
+
+  return {
+    id,
+    group: data.group === "right" ? "right" : "left",
+    labelEn: resolveNavigationItemLabel(id, "EN", data.labelEn),
+    labelMn: resolveNavigationItemLabel(id, "MN", data.labelMn),
+    pageBannerImage: String(data.pageBannerImage ?? ""),
+    sortOrder: Number.isFinite(data.sortOrder) ? Number(data.sortOrder) : 0,
+    status: deserializeStatus(data.status),
+  };
+}
+
 function deserializeMarket(snapshot: QueryDocumentSnapshot<DocumentData>): MarketItem {
   const data = snapshot.data() as Record<string, unknown>;
 
@@ -186,32 +213,7 @@ function deserializeTestimonial(snapshot: QueryDocumentSnapshot<DocumentData>): 
 
 function deserializeSettings(snapshot: DocumentSnapshot<DocumentData>) {
   const data = snapshot.data() as Partial<Record<keyof ShopSettings, unknown>> | undefined;
-
-  if (!data) {
-    return createDefaultStorefrontData().settings;
-  }
-
-  return {
-    status: deserializeStatus(data.status),
-    brandName: String(data.brandName ?? ""),
-    brandDescription: String(data.brandDescription ?? ""),
-    heroHeading: String(data.heroHeading ?? ""),
-    heroSubtext: String(data.heroSubtext ?? ""),
-    aboutIntroTitle: String(data.aboutIntroTitle ?? ""),
-    aboutIntroBody: String(data.aboutIntroBody ?? ""),
-    contactEmail: String(data.contactEmail ?? ""),
-    location: String(data.location ?? ""),
-    responseTime: String(data.responseTime ?? ""),
-    facebookUrl: String(data.facebookUrl ?? "https://www.facebook.com/SavanaOrganica"),
-    instagramUrl: String(data.instagramUrl ?? ""),
-    instagramHandle: String(data.instagramHandle ?? ""),
-    mapNote: String(data.mapNote ?? ""),
-    marketIntro: String(data.marketIntro ?? ""),
-    storeHoursText: String(data.storeHoursText ?? ""),
-    wholesaleHeading: String(data.wholesaleHeading ?? ""),
-    wholesaleText: String(data.wholesaleText ?? ""),
-    wholesaleEmail: String(data.wholesaleEmail ?? ""),
-  } satisfies ShopSettings;
+  return normalizeShopSettings(data);
 }
 
 export function getStorefrontStructure() {
@@ -219,9 +221,11 @@ export function getStorefrontStructure() {
     database: firestoreDatabaseId,
     site: `sites/${STOREFRONT_SITE_ID}`,
     settings: `sites/${STOREFRONT_SITE_ID}/settings/general`,
+    navigationItems: `sites/${STOREFRONT_SITE_ID}/navigationItems/{navigationId}`,
     collections: "collections/{collectionId}",
     products: "products/{productId}",
     orders: "orders/{orderId}",
+    contactMessages: `sites/${STOREFRONT_SITE_ID}/contactMessages/{messageId}`,
     heroBanners: `sites/${STOREFRONT_SITE_ID}/heroBanners/{bannerId}`,
     markets: `sites/${STOREFRONT_SITE_ID}/markets/{marketId}`,
     testimonials: `sites/${STOREFRONT_SITE_ID}/testimonials/{testimonialId}`,
@@ -237,6 +241,7 @@ export async function ensureStorefrontSeeded(seedData: StorefrontData = createDe
   const [
     siteSnapshot,
     settingsSnapshot,
+    navigationItemsSnapshot,
     collectionsSnapshot,
     legacyCollectionsSnapshot,
     productsSnapshot,
@@ -247,6 +252,7 @@ export async function ensureStorefrontSeeded(seedData: StorefrontData = createDe
   ] = await Promise.all([
     getDoc(siteRef),
     getDoc(settingsRef),
+    getDocs(query(navigationItemsRef, limit(1))),
     getDocs(query(collectionsRef, limit(1))),
     getDocs(query(legacyCollectionsRef, limit(1))),
     getDocs(query(productsRef, limit(1))),
@@ -272,6 +278,23 @@ export async function ensureStorefrontSeeded(seedData: StorefrontData = createDe
 
   if (!settingsSnapshot.exists()) {
     batch.set(settingsRef, serializeSettings(seedData.settings));
+    hasWrites = true;
+  }
+
+  const settingsValue = settingsSnapshot.exists() ? deserializeSettings(settingsSnapshot) : seedData.settings;
+  const rawSettingsData = settingsSnapshot.data() as Partial<Record<keyof ShopSettings, unknown>> | undefined;
+  const hasInlineNavigationItems =
+    Array.isArray(rawSettingsData?.navigationItems) && rawSettingsData.navigationItems.length > 0;
+
+  if (navigationItemsSnapshot.empty) {
+    settingsValue.navigationItems.forEach((item) => {
+      batch.set(doc(navigationItemsRef, item.id), serializeNavigationItem(item));
+    });
+    hasWrites = true;
+  }
+
+  if (hasInlineNavigationItems) {
+    batch.set(settingsRef, serializeSettings(settingsValue), { merge: true });
     hasWrites = true;
   }
 
@@ -336,6 +359,7 @@ export async function readStorefront(): Promise<StorefrontData> {
   const [
     siteSnapshot,
     settingsSnapshot,
+    navigationItemsSnapshot,
     collectionsSnapshot,
     legacyCollectionsSnapshot,
     productsSnapshot,
@@ -347,6 +371,7 @@ export async function readStorefront(): Promise<StorefrontData> {
     await Promise.all([
       getDoc(siteRef),
       getDoc(settingsRef),
+      getDocs(query(navigationItemsRef, orderBy("sortOrder"))),
       getDocs(query(collectionsRef, orderBy("sortOrder"))),
       getDocs(query(legacyCollectionsRef, orderBy("sortOrder"))),
       getDocs(query(productsRef, orderBy("sortOrder"))),
@@ -367,11 +392,18 @@ export async function readStorefront(): Promise<StorefrontData> {
       ? (siteSnapshot.exists() ? [] : defaults.products)
       : legacyProductsSnapshot.docs.map((snapshot) => deserializeProduct(snapshot))
     : productsSnapshot.docs.map((snapshot) => deserializeProduct(snapshot));
+  const resolvedSettings = settingsSnapshot.exists() ? deserializeSettings(settingsSnapshot) : defaults.settings;
+  const resolvedNavigationItems = navigationItemsSnapshot.empty
+    ? resolvedSettings.navigationItems
+    : navigationItemsSnapshot.docs.map((snapshot) => deserializeNavigationItem(snapshot));
   const fallbackMarkets = siteSnapshot.exists() ? [] : defaults.markets;
   const fallbackTestimonials = siteSnapshot.exists() ? [] : defaults.testimonials;
 
   return {
-    settings: settingsSnapshot.exists() ? deserializeSettings(settingsSnapshot) : defaults.settings,
+    settings: {
+      ...resolvedSettings,
+      navigationItems: resolvedNavigationItems,
+    },
     collections: resolvedCollections,
     products: resolvedProducts,
     heroBanners: bannersSnapshot.empty
@@ -388,6 +420,7 @@ export async function readStorefront(): Promise<StorefrontData> {
 
 interface StorefrontListeners {
   onSettings: (settings: ShopSettings) => void;
+  onNavigationItems: (items: SiteNavigationItem[]) => void;
   onCollections: (collections: Collection[]) => void;
   onProducts: (products: Product[]) => void;
   onHeroBanners: (heroBanners: HeroBanner[]) => void;
@@ -401,6 +434,11 @@ export function subscribeToStorefront(listeners: StorefrontListeners): Unsubscri
     onSnapshot(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
         listeners.onSettings(deserializeSettings(snapshot));
+      }
+    }, listeners.onError),
+    onSnapshot(query(navigationItemsRef, orderBy("sortOrder")), (snapshot) => {
+      if (!snapshot.empty) {
+        listeners.onNavigationItems(snapshot.docs.map((docSnapshot) => deserializeNavigationItem(docSnapshot)));
       }
     }, listeners.onError),
     onSnapshot(query(collectionsRef, orderBy("sortOrder")), (snapshot) => {
@@ -422,7 +460,15 @@ export function subscribeToStorefront(listeners: StorefrontListeners): Unsubscri
 }
 
 export async function saveSettings(settings: ShopSettings) {
-  await setDoc(settingsRef, serializeSettings(settings), { merge: true });
+  const batch = writeBatch(db);
+
+  batch.set(settingsRef, serializeSettings(settings), { merge: true });
+
+  settings.navigationItems.forEach((item) => {
+    batch.set(doc(navigationItemsRef, item.id), serializeNavigationItem(item), { merge: true });
+  });
+
+  await batch.commit();
 }
 
 export async function saveCollection(collectionItem: Collection) {
@@ -467,6 +513,7 @@ export async function deleteTestimonial(testimonialId: number) {
 
 export async function resetStorefrontDocuments(seedData: StorefrontData = createDefaultStorefrontData()) {
   const [
+    navigationItemsSnapshot,
     collectionsSnapshot,
     legacyCollectionsSnapshot,
     productsSnapshot,
@@ -475,6 +522,7 @@ export async function resetStorefrontDocuments(seedData: StorefrontData = create
     marketsSnapshot,
     testimonialsSnapshot,
   ] = await Promise.all([
+    getDocs(navigationItemsRef),
     getDocs(collectionsRef),
     getDocs(legacyCollectionsRef),
     getDocs(productsRef),
@@ -486,6 +534,7 @@ export async function resetStorefrontDocuments(seedData: StorefrontData = create
 
   const batch = writeBatch(db);
 
+  navigationItemsSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
   collectionsSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
   legacyCollectionsSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
   productsSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
@@ -500,6 +549,10 @@ export async function resetStorefrontDocuments(seedData: StorefrontData = create
     updatedAt: serverTimestamp(),
   }, { merge: true });
   batch.set(settingsRef, serializeSettings(seedData.settings));
+
+  seedData.settings.navigationItems.forEach((item) => {
+    batch.set(doc(navigationItemsRef, item.id), serializeNavigationItem(item));
+  });
 
   seedData.collections.forEach((collectionItem) => {
     batch.set(doc(collectionsRef, String(collectionItem.id)), serializeCollection(collectionItem));

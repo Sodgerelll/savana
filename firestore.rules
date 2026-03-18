@@ -31,11 +31,54 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == resource.data.auth.uid;
     }
 
+    function isOrderStatus(status) {
+      return status == "new"
+        || status == "paid"
+        || status == "delivering"
+        || status == "delivered";
+    }
+
+    function isSettledOrderStatus(status) {
+      return status == "paid"
+        || status == "delivering"
+        || status == "delivered";
+    }
+
+    function isValidContactMessage() {
+      return request.resource.data.keys().hasOnly([
+          "schemaVersion",
+          "name",
+          "email",
+          "subject",
+          "message",
+          "createdAt",
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 3
+        && request.resource.data.email.size() <= 160
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.subject.size() <= 160
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 4000
+        && request.resource.data.createdAt == request.time;
+    }
+
     match /sites/{siteId} {
       allow read: if true;
       allow create, update, delete: if canWriteStorefront();
 
       match /settings/{documentId} {
+        allow read: if true;
+        allow create, update, delete: if canWriteStorefront();
+      }
+
+      match /navigationItems/{documentId} {
         allow read: if true;
         allow create, update, delete: if canWriteStorefront();
       }
@@ -64,6 +107,11 @@ service cloud.firestore {
         allow read: if true;
         allow create, update, delete: if canWriteStorefront();
       }
+
+      match /contactMessages/{documentId} {
+        allow create: if isValidContactMessage();
+        allow read, update, delete: if hasPrivilegedProfileRole();
+      }
     }
 
     match /products/{documentId} {
@@ -81,7 +129,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.auth.uid == request.auth.uid
         && request.resource.data.auth.isAnonymous == (request.auth.token.firebase.sign_in_provider == "anonymous")
-        && request.resource.data.status == "pending"
+        && request.resource.data.status == "new"
         && request.resource.data.currency == "MNT"
         && request.resource.data.schemaVersion == 1
         && request.resource.data.customer.phoneNumber is string
@@ -107,8 +155,8 @@ service cloud.firestore {
         && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal + 8000;
       allow update: if isOrderOwner()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "payment", "updatedAt"])
-        && resource.data.status == "pending"
-        && request.resource.data.status == "payment_paid"
+        && resource.data.status == "new"
+        && request.resource.data.status == "paid"
         && request.resource.data.payment.method == resource.data.payment.method
         && request.resource.data.payment.provider == resource.data.payment.provider
         && request.resource.data.payment.amount == resource.data.payment.amount
@@ -117,6 +165,36 @@ service cloud.firestore {
         && request.resource.data.payment.status == "paid"
         && request.resource.data.payment.paidAt is string
         && request.resource.data.payment.paidAt.size() > 0;
+      allow update: if hasPrivilegedProfileRole()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "payment", "customer", "address", "updatedAt"])
+        && isOrderStatus(request.resource.data.status)
+        && request.resource.data.customer.fullName is string
+        && request.resource.data.customer.phoneNumber is string
+        && request.resource.data.customer.phoneNumber.size() > 0
+        && (request.resource.data.customer.email == null || request.resource.data.customer.email is string)
+        && request.resource.data.customer.note is string
+        && request.resource.data.address.region is string
+        && request.resource.data.address.region.size() > 0
+        && request.resource.data.address.districtOrSoum is string
+        && request.resource.data.address.districtOrSoum.size() > 0
+        && request.resource.data.address.khorooOrBag is string
+        && request.resource.data.address.khorooOrBag.size() > 0
+        && request.resource.data.address.streetAddress is string
+        && request.resource.data.address.streetAddress.size() > 0
+        && request.resource.data.address.additionalAddress is string
+        && request.resource.data.payment.method == resource.data.payment.method
+        && request.resource.data.payment.provider == resource.data.payment.provider
+        && request.resource.data.payment.amount == resource.data.payment.amount
+        && request.resource.data.payment.qrPayload == resource.data.payment.qrPayload
+        && (
+          (request.resource.data.status == "new"
+            && request.resource.data.payment.status == "pending"
+            && request.resource.data.payment.paidAt == null)
+          || (isSettledOrderStatus(request.resource.data.status)
+            && request.resource.data.payment.status == "paid"
+            && request.resource.data.payment.paidAt is string
+            && request.resource.data.payment.paidAt.size() > 0)
+        );
       allow delete: if false;
     }
 

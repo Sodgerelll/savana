@@ -1,0 +1,205 @@
+.partnerships-page {
+  min-height: 60vh;
+}
+
+.partnerships-hero {
+  background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
+  min-height: 18rem;
+  padding: 5.5rem 0 4.5rem;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.partnerships-hero h1 {
+  font-family: var(--font-heading);
+  font-size: 3rem;
+  color: var(--color-heading);
+  margin-bottom: 0.75rem;
+}
+
+.partnerships-hero p {
+  max-width: 640px;
+  font-size: clamp(1.08rem, 1rem + 0.3vw, 1.2rem);
+  color: var(--color-text);
+  line-height: 1.7;
+  opacity: 0.85;
+}
+
+.partnerships-hero.has-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 16, 12, 0.38), rgba(20, 16, 12, 0.42));
+}
+
+.partnerships-hero.has-banner {
+  min-height: 24rem;
+  padding: 7rem 0 5.75rem;
+}
+
+.partnerships-hero.has-banner .container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
+.partnerships-hero.has-banner h1,
+.partnerships-hero.has-banner p {
+  color: #fff;
+}
+
+.partnerships-intro {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 2rem;
+}
+
+.partnerships-intro span,
+.partnerships-band-panel > span,
+.partnerships-cta-inner span {
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.partnerships-intro h2,
+.partnerships-cta-inner h2 {
+  font-size: clamp(2.1rem, 1.9rem + 1vw, 3rem);
+}
+
+.partnerships-intro p,
+.partnerships-cta-inner p {
+  max-width: 64rem;
+  color: var(--color-text);
+  line-height: 1.85;
+}
+
+.partnerships-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.partnerships-card,
+.partnerships-band-panel {
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(183, 185, 167, 0.6);
+  box-shadow: 0 18px 36px rgba(58, 52, 18, 0.05);
+}
+
+.partnerships-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.partnerships-card-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(90, 81, 3, 0.08);
+  color: var(--color-accent);
+}
+
+.partnerships-card h3,
+.partnerships-band-panel strong {
+  font-size: 1.2rem;
+  color: var(--color-heading);
+}
+
+.partnerships-card p,
+.partnerships-band-panel p {
+  color: var(--color-text);
+  line-height: 1.75;
+}
+
+.partnerships-band {
+  background:
+    linear-gradient(180deg, rgba(242, 240, 235, 0.7) 0%, rgba(255, 255, 255, 0.6) 100%);
+}
+
+.partnerships-band-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 1.5rem;
+}
+
+.partnerships-list,
+.partnerships-steps {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.partnerships-list li {
+  color: var(--color-heading);
+  line-height: 1.7;
+  list-style: disc;
+  margin-left: 1.2rem;
+}
+
+.partnerships-steps div {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(183, 185, 167, 0.45);
+}
+
+.partnerships-steps div:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.partnerships-cta {
+  padding: 0 0 4rem;
+}
+
+.partnerships-cta-inner {
+  padding: 1.75rem;
+  border: 1px solid rgba(183, 185, 167, 0.6);
+  background: linear-gradient(135deg, rgba(245, 241, 232, 0.95) 0%, rgba(232, 224, 208, 0.88) 100%);
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.partnerships-cta-actions {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1024px) {
+  .partnerships-grid,
+  .partnerships-band-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .partnerships-hero {
+    min-height: 15rem;
+    padding: 4.75rem 0 3.5rem;
+  }
+
+  .partnerships-hero.has-banner {
+    min-height: 19.5rem;
+    padding: 6rem 0 4.5rem;
+  }
+
+  .partnerships-hero h1 {
+    font-size: 2.5rem;
+  }
+
+  .partnerships-cta-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

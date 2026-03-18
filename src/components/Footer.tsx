@@ -6,27 +6,16 @@ import { getActiveCollections, getRenderableSettings } from "../lib/storefrontHe
 import "./Footer.css";
 
 export default function Footer() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { collections, settings } = useStorefront();
   const activeCollections = getActiveCollections(collections);
   const visibleSettings = getRenderableSettings(settings);
+  const contactPhone = visibleSettings.contactPhone.trim();
+  const contactPhoneHref = contactPhone.replace(/\s+/g, "");
+  const partnershipLabel = language === "MN" ? "Хамтрал" : "Partnerships";
 
   return (
     <footer className="footer">
-      {/* Newsletter */}
-      <div className="footer-newsletter">
-        <div className="container">
-          <div className="footer-newsletter-inner">
-            <h2>{t.newsletterHeading}</h2>
-            <p>{t.newsletterSubtext}</p>
-            <form className="newsletter-form-footer" onSubmit={(e) => e.preventDefault()}>
-              <input type="email" placeholder={t.newsletterPlaceholder} className="newsletter-input-footer" />
-              <button type="submit" className="btn btn-primary newsletter-submit">{t.subscribe}</button>
-            </form>
-          </div>
-        </div>
-      </div>
-
       {/* Main footer grid */}
       <div className="footer-main">
         <div className="container">
@@ -66,10 +55,8 @@ export default function Footer() {
               <h4>{t.footerInfo}</h4>
               <ul>
                 <li><Link to="/about">{t.footerAbout}</Link></li>
-                <li><Link to="/find-us">{t.findUs}</Link></li>
+                <li><Link to="/partnerships">{partnershipLabel}</Link></li>
                 <li><Link to="/contact">{t.contact}</Link></li>
-                <li><Link to="/shipping">{t.footerShippingReturns}</Link></li>
-                <li><Link to="/wholesale">{t.footerWholesale}</Link></li>
                 <li><Link to="/faq">{t.footerFAQ}</Link></li>
               </ul>
             </div>
@@ -79,6 +66,11 @@ export default function Footer() {
               <h4>{t.footerContact}</h4>
               <ul className="footer-contact-list">
                 <li>{visibleSettings.location}</li>
+                {contactPhone ? (
+                  <li>
+                    <a href={`tel:${contactPhoneHref}`}>{contactPhone}</a>
+                  </li>
+                ) : null}
                 <li>
                   <a href={`mailto:${visibleSettings.contactEmail}`}>{visibleSettings.contactEmail}</a>
                 </li>

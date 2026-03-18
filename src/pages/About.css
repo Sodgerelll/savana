@@ -4,7 +4,14 @@
 
 .about-hero {
   background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
-  padding: 4.5rem 0 3.5rem;
+  min-height: 18rem;
+  padding: 5.5rem 0 4.5rem;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
 }
 
 .about-hero h1 {
@@ -15,9 +22,33 @@
 }
 
 .about-hero p {
-  font-size: 1rem;
+  font-size: clamp(1.08rem, 1rem + 0.3vw, 1.2rem);
   color: var(--color-text);
+  line-height: 1.7;
   opacity: 0.85;
+}
+
+.about-hero.has-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 16, 12, 0.38), rgba(20, 16, 12, 0.42));
+}
+
+.about-hero.has-banner {
+  min-height: 24rem;
+  padding: 7rem 0 5.75rem;
+}
+
+.about-hero.has-banner .container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
+.about-hero.has-banner h1,
+.about-hero.has-banner p {
+  color: #fff;
 }
 
 /* Intro section */
@@ -87,43 +118,6 @@
   color: var(--color-text);
 }
 
-/* Banner */
-.about-banner {
-  position: relative;
-  height: 380px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.about-banner-bg {
-  position: absolute;
-  inset: 0;
-}
-
-.about-banner-content {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  max-width: 600px;
-  padding: 2rem;
-}
-
-.about-banner-content h2 {
-  font-family: var(--font-heading);
-  font-size: 2.5rem;
-  color: var(--color-heading);
-  margin-bottom: 1rem;
-}
-
-.about-banner-content p {
-  font-size: 1rem;
-  color: var(--color-text);
-  margin-bottom: 1.75rem;
-  line-height: 1.65;
-  opacity: 0.85;
-}
-
 /* Process */
 .process-steps {
   display: grid;
@@ -154,6 +148,16 @@
 }
 
 @media (max-width: 768px) {
+  .about-hero {
+    min-height: 15rem;
+    padding: 4.75rem 0 3.5rem;
+  }
+
+  .about-hero.has-banner {
+    min-height: 19.5rem;
+    padding: 6rem 0 4.5rem;
+  }
+
   .about-hero h1 {
     font-size: 2.5rem;
   }
@@ -175,15 +179,6 @@
   .process-steps {
     grid-template-columns: 1fr 1fr;
     gap: 2rem;
-  }
-
-  .about-banner {
-    height: auto;
-    padding: 3rem 0;
-  }
-
-  .about-banner-content h2 {
-    font-size: 2rem;
   }
 }
 

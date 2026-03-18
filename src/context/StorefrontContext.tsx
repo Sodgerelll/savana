@@ -150,7 +150,25 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
         unsubscribers = subscribeToStorefront({
           onSettings: (settings) => {
             if (!active) return;
-            const nextStorefront = { ...storefrontRef.current, settings };
+            const nextStorefront = {
+              ...storefrontRef.current,
+              settings: {
+                ...settings,
+                navigationItems: storefrontRef.current.settings.navigationItems,
+              },
+            };
+            storefrontRef.current = nextStorefront;
+            setStorefront(nextStorefront);
+          },
+          onNavigationItems: (navigationItems) => {
+            if (!active) return;
+            const nextStorefront = {
+              ...storefrontRef.current,
+              settings: {
+                ...storefrontRef.current.settings,
+                navigationItems,
+              },
+            };
             storefrontRef.current = nextStorefront;
             setStorefront(nextStorefront);
           },

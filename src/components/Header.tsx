@@ -4,17 +4,21 @@ import { ShoppingBag, Search, User, Menu, X } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
-import { getActiveCollections } from "../lib/storefrontHelpers";
+import {
+  getActiveSiteNavigation,
+  getPageBannerNavigationItem,
+  getRenderableSettings,
+  getSiteNavigationPath,
+} from "../lib/storefrontHelpers";
 import logoBlack from "../assets/logoBlack.png";
 import logoWhite from "../assets/logoWhite.png";
 import "./Header.css";
 
 export default function Header() {
   const { pathname } = useLocation();
-  const isHome = pathname === "/";
   const { totalItems, setIsCartOpen } = useCart();
   const { language, setLanguage, t } = useLanguage();
-  const { collections } = useStorefront();
+  const { settings } = useStorefront();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -25,14 +29,19 @@ export default function Header() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const shopLinks = getActiveCollections(collections).map((collection) => ({
-    label: collection.name,
-    to: `/collections/${collection.slug}`,
-  }));
+  const visibleSettings = getRenderableSettings(settings);
+  const navigationItems = getActiveSiteNavigation(visibleSettings.navigationItems);
+  const primaryLinks = navigationItems.filter((item) => item.group === "left");
+  const secondaryLinks = navigationItems.filter((item) => item.group === "right");
+  const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, pathname);
+  const useTransparentHeader =
+    pathname === "/" || Boolean(pageBanner?.pageBannerImage.trim());
+  const nextLanguage = language === "EN" ? "MN" : "EN";
+  const nextLanguageLabel = nextLanguage === "EN" ? "English" : "Монгол";
   const headerClasses = [
     "site-header-wrap",
     scrolled ? "scrolled" : "",
-    isHome && !scrolled ? "home-transparent" : "",
+    useTransparentHeader && !scrolled ? "home-transparent" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -55,39 +64,18 @@ export default function Header() {
                 <button
                   className="lang-btn"
                   onClick={() => setLanguage(language === "EN" ? "MN" : "EN")}
+                  aria-label={`Switch language to ${nextLanguageLabel}`}
                 >
-                  <span className={language === "EN" ? "lang-on" : ""}>EN</span>
-                  <span className="lang-div">|</span>
-                  <span className={language === "MN" ? "lang-on" : ""}>MN</span>
+                  {nextLanguage}
                 </button>
               </div>
 
               <div className="header-menu-group header-menu-group-left">
-                <div className="nav-has-dropdown">
-                  <span className="nav-link nav-shop-trigger">
-                    {t.shop} <span className="nav-caret">▾</span>
-                  </span>
-                  <div className="nav-dropdown">
-                    <div className="nav-dropdown-inner">
-                      <Link to="/collections" className="nav-dropdown-item">
-                        {t.allProducts}
-                      </Link>
-                      {shopLinks.map((lnk) => (
-                        <Link
-                          key={lnk.to}
-                          to={lnk.to}
-                          className="nav-dropdown-item"
-                        >
-                          {lnk.label}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <Link to="/about" className="nav-link">
-                  {t.aboutUs}
-                </Link>
+                {primaryLinks.map((link) => (
+                  <Link key={link.id} to={getSiteNavigationPath(link.id)} className="nav-link">
+                    {language === "MN" ? link.labelMn : link.labelEn}
+                  </Link>
+                ))}
               </div>
             </div>
 
@@ -98,12 +86,11 @@ export default function Header() {
 
             <div className="h-right">
               <div className="header-menu-group header-menu-group-right">
-                <Link to="/find-us" className="nav-link">
-                  {t.findUs}
-                </Link>
-                <Link to="/contact" className="nav-link">
-                  {t.contact}
-                </Link>
+                {secondaryLinks.map((link) => (
+                  <Link key={link.id} to={getSiteNavigationPath(link.id)} className="nav-link">
+                    {language === "MN" ? link.labelMn : link.labelEn}
+                  </Link>
+                ))}
               </div>
 
               <div className="header-actions">
@@ -149,31 +136,38 @@ export default function Header() {
           </button>
         </div>
         <div className="mobile-drawer-body">
-          <p className="mobile-section-label">{t.shop}</p>
-          <Link to="/collections" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
-            {t.allProducts}
-          </Link>
-          {shopLinks.map((lnk) => (
-            <Link key={lnk.to} to={lnk.to} className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
-              {lnk.label}
+          {primaryLinks.map((link) => (
+            <Link
+              key={link.id}
+              to={getSiteNavigationPath(link.id)}
+              className="mobile-link"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {language === "MN" ? link.labelMn : link.labelEn}
             </Link>
           ))}
           <div className="mobile-divider" />
-          <Link to="/about" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>
-            {t.aboutUs}
-          </Link>
-          <Link to="/find-us" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.findUs}</Link>
-          <Link to="/contact" className="mobile-link" onClick={() => setMobileMenuOpen(false)}>{t.contact}</Link>
+          {secondaryLinks.map((link) => (
+            <Link
+              key={link.id}
+              to={getSiteNavigationPath(link.id)}
+              className="mobile-link"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {language === "MN" ? link.labelMn : link.labelEn}
+            </Link>
+          ))}
           <div className="mobile-divider" />
           <div className="mobile-lang">
             <button
-              className={`mobile-lang-btn${language === "EN" ? " active" : ""}`}
-              onClick={() => { setLanguage("EN"); setMobileMenuOpen(false); }}
-            >English</button>
-            <button
-              className={`mobile-lang-btn${language === "MN" ? " active" : ""}`}
-              onClick={() => { setLanguage("MN"); setMobileMenuOpen(false); }}
-            >Монгол</button>
+              className="mobile-lang-btn"
+              onClick={() => {
+                setLanguage(nextLanguage);
+                setMobileMenuOpen(false);
+              }}
+            >
+              {nextLanguage}
+            </button>
           </div>
         </div>
       </div>

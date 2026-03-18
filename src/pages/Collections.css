@@ -4,7 +4,35 @@
 
 .collections-hero {
   background: linear-gradient(135deg, #e8e0d0 0%, #d4c9b0 100%);
-  padding: 4rem 0 3rem;
+  min-height: 18rem;
+  padding: 5.25rem 0 4.25rem;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.collections-hero.has-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 16, 12, 0.38), rgba(20, 16, 12, 0.42));
+}
+
+.collections-hero.has-banner {
+  min-height: 24rem;
+  padding: 7rem 0 5.5rem;
+}
+
+.collections-hero.has-banner .collections-hero-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.collections-hero-inner {
+  width: 100%;
 }
 
 .collections-hero-inner .breadcrumb {
@@ -31,10 +59,18 @@
 }
 
 .collections-hero-inner p {
-  font-size: 1rem;
+  font-size: clamp(1.08rem, 1rem + 0.3vw, 1.2rem);
   color: var(--color-text);
   max-width: 560px;
+  line-height: 1.7;
   opacity: 0.85;
+}
+
+.collections-hero.has-banner .breadcrumb,
+.collections-hero.has-banner .breadcrumb a,
+.collections-hero.has-banner .collections-hero-inner h1,
+.collections-hero.has-banner .collections-hero-inner p {
+  color: #fff;
 }
 
 .collections-body {
@@ -92,7 +128,13 @@
 
 @media (max-width: 768px) {
   .collections-hero {
-    padding: 3rem 0 2rem;
+    min-height: 15rem;
+    padding: 4.5rem 0 3.25rem;
+  }
+
+  .collections-hero.has-banner {
+    min-height: 19.5rem;
+    padding: 6rem 0 4.5rem;
   }
 
   .collections-hero-inner h1 {
