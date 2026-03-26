@@ -99,7 +99,6 @@ interface CollectionModalState {
 interface ProductModalState {
   mode: ModalMode;
   draft: Product;
-  variantsText: string;
 }
 
 interface HeroBannerModalState {
@@ -175,30 +174,8 @@ interface AdminMenuGroup {
   items: AdminMenuItem[];
 }
 
-function formatVariants(variants?: Product["variants"]) {
-  return variants?.map((variant) => `${variant.name}|${variant.price}`).join("\n") ?? "";
-}
-
-function parseVariants(value: string): Product["variants"] | undefined {
-  const rows = value
-    .split("\n")
-    .map((row) => row.trim())
-    .filter(Boolean);
-
-  const variants = rows
-    .map((row) => {
-      const [name, price] = row.split("|").map((part) => part.trim());
-      const parsedPrice = Number(price);
-
-      if (!name || !Number.isFinite(parsedPrice)) {
-        return null;
-      }
-
-      return { name, price: parsedPrice };
-    })
-    .filter((variant): variant is NonNullable<typeof variant> => variant !== null);
-
-  return variants.length > 0 ? variants : undefined;
+function cloneVariants(variants?: Product["variants"]): Product["variants"] {
+  return variants?.map((v) => ({ ...v }));
 }
 
 function cloneProduct(product: Product): Product {
@@ -429,6 +406,7 @@ export default function Account() {
     deleteCollection,
     saveProductDraft,
     deleteProduct,
+    updateProduct,
     saveHeroBannerDraft,
     deleteHeroBanner,
     saveMarketDraft,
@@ -543,9 +521,26 @@ export default function Account() {
           comparePrice: "Compare at price",
           badge: "Badge",
           variants: "Variants",
+          variantName: "Хэмжээ",
+          variantPrice: "Үнэ",
+          variantQuantity: "Тоо ширхэг",
+          addVariant: "Variant нэмэх",
+          totalStock: "Нийт нөөц",
+          soldCount: "Зарагдсан",
+          stockRemaining: "Үлдэгдэл",
           imageHelp: "Category card болон home section дээр харагдах зургийн URL оруулна.",
           imagePreview: "Зургийн preview",
           variantsHelp: "Нэг мөрөнд `Нэр|Үнэ` форматаар оруулна.",
+          productImages: "Бүтээгдэхүүний зураг",
+          productImagesHelp: "Ихдээ 3 зураг upload хийж болно.",
+          addImage: "Зураг нэмэх",
+          ingredientsLabel: "Орц найрлага",
+          usageLabel: "Үйлчилгээ",
+          howToUseLabel: "Хэрэглэх заавар",
+          cautionLabel: "Анхаар зүйлс",
+          shelfLifeLabel: "Хадгалах хугацаа",
+          sizeLabelField: "Хэмжээ / Грамм",
+          sizeLabelHelp: "Variants байхгүй үед харагдана. Жишээ: 85 гр, 100 мл",
           description: "Тайлбар",
           price: "Үнэ",
           name: "Нэр",
@@ -791,9 +786,26 @@ export default function Account() {
           comparePrice: "Compare at price",
           badge: "Badge",
           variants: "Variants",
+          variantName: "Size",
+          variantPrice: "Price",
+          variantQuantity: "Quantity",
+          addVariant: "Add variant",
+          totalStock: "Total stock",
+          soldCount: "Sold",
+          stockRemaining: "Remaining",
           imageHelp: "Paste the image URL used on category cards and home sections.",
           imagePreview: "Image preview",
           variantsHelp: "Enter one variant per line using `Name|Price`.",
+          productImages: "Product images",
+          productImagesHelp: "Upload up to 3 images.",
+          addImage: "Add image",
+          ingredientsLabel: "Ingredients",
+          usageLabel: "Usage",
+          howToUseLabel: "How to use",
+          cautionLabel: "Caution",
+          shelfLifeLabel: "Shelf life",
+          sizeLabelField: "Size / Weight",
+          sizeLabelHelp: "Shown when no variants exist. e.g. 85g, 100ml",
           description: "Description",
           price: "Price",
           name: "Name",
@@ -956,6 +968,8 @@ export default function Account() {
   const [bannerUploading, setBannerUploading] = useState(false);
   const [journalImageUploadError, setJournalImageUploadError] = useState<string | null>(null);
   const [journalImageUploading, setJournalImageUploading] = useState(false);
+  const [productImageUploading, setProductImageUploading] = useState(false);
+  const [productImageUploadError, setProductImageUploadError] = useState<string | null>(null);
   const [savingUserProfile, setSavingUserProfile] = useState(false);
   const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [savingOrderModal, setSavingOrderModal] = useState(false);
@@ -1165,6 +1179,20 @@ export default function Account() {
                 description: "Audit trail, activity feed, cross-module reports.",
                 icon: <CheckCircle2 size={18} />,
               },
+              {
+                id: "products",
+                label: "Бүтээгдэхүүн",
+                description: "SKU, pricing, copy, assets, status management.",
+                icon: <Package size={18} />,
+                implemented: true,
+              },
+              {
+                id: "categories",
+                label: "Ангилал",
+                description: "Catalog taxonomy, collection structure.",
+                icon: <Store size={18} />,
+                implemented: true,
+              },
             ],
           },
           {
@@ -1209,20 +1237,6 @@ export default function Account() {
                 icon: <MessageSquareQuote size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
-              },
-              {
-                id: "categories",
-                label: "Ангилал",
-                description: "Catalog taxonomy, collection structure.",
-                icon: <Store size={18} />,
-                implemented: true,
-              },
-              {
-                id: "products",
-                label: "Бүтээгдэхүүн",
-                description: "SKU, pricing, copy, assets, status management.",
-                icon: <Package size={18} />,
-                implemented: true,
               },
             ],
           },
@@ -1447,6 +1461,20 @@ export default function Account() {
                 description: "Audit trail, activity feed, and cross-module reports.",
                 icon: <CheckCircle2 size={18} />,
               },
+              {
+                id: "products",
+                label: "Products",
+                description: "SKU, pricing, copy, assets, and status management.",
+                icon: <Package size={18} />,
+                implemented: true,
+              },
+              {
+                id: "categories",
+                label: "Categories",
+                description: "Catalog taxonomy and collection structure.",
+                icon: <Store size={18} />,
+                implemented: true,
+              },
             ],
           },
           {
@@ -1491,20 +1519,6 @@ export default function Account() {
                 icon: <MessageSquareQuote size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
-              },
-              {
-                id: "categories",
-                label: "Categories",
-                description: "Catalog taxonomy and collection structure.",
-                icon: <Store size={18} />,
-                implemented: true,
-              },
-              {
-                id: "products",
-                label: "Products",
-                description: "SKU, pricing, copy, assets, and status management.",
-                icon: <Package size={18} />,
-                implemented: true,
               },
             ],
           },
@@ -1882,8 +1896,8 @@ export default function Account() {
         draft: {
           ...cloneProduct(product),
           category: nextCategory,
+          variants: cloneVariants(product.variants),
         },
-        variantsText: formatVariants(product.variants),
       });
       return;
     }
@@ -1900,7 +1914,49 @@ export default function Account() {
         images: [""],
         status: "active",
       },
-      variantsText: "",
+    });
+  };
+
+  const handleProductImageUpload = async (event: ChangeEvent<HTMLInputElement>, imageIndex: number) => {
+    const file = event.target.files?.[0];
+
+    if (!file || !productModal) {
+      return;
+    }
+
+    const currentImages = productModal.draft.images.filter(Boolean);
+    if (imageIndex >= 3) {
+      return;
+    }
+
+    setProductImageUploadError(null);
+    setProductImageUploading(true);
+
+    try {
+      const uploadedImageUrl = await uploadStorefrontImage(file, "product-images");
+      setProductModal((current) => {
+        if (!current) return current;
+        const nextImages = [...current.draft.images];
+        nextImages[imageIndex] = uploadedImageUrl;
+        return {
+          ...current,
+          draft: { ...current.draft, images: nextImages },
+        };
+      });
+    } catch {
+      setProductImageUploadError(copy.bannerUploadFailed);
+    } finally {
+      setProductImageUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeProductImage = (imageIndex: number) => {
+    if (!productModal) return;
+    const nextImages = productModal.draft.images.filter((_, i) => i !== imageIndex);
+    setProductModal({
+      ...productModal,
+      draft: { ...productModal.draft, images: nextImages.length > 0 ? nextImages : [""] },
     });
   };
 
@@ -2314,12 +2370,36 @@ export default function Account() {
     setOrderModalError(null);
 
     try {
+      const originalOrder = orders.find((o) => o.id === orderModal.draft.id);
+      const isNewlyDelivered =
+        orderModal.draft.status === "delivered" &&
+        originalOrder != null &&
+        originalOrder.status !== "delivered";
+
       await updateOrderByAdmin(orderModal.draft.id, {
         status: orderModal.draft.status,
         customer: nextCustomer,
         address: nextAddress,
         payment: orderModal.draft.payment,
       });
+
+      if (isNewlyDelivered && originalOrder) {
+        for (const item of originalOrder.items) {
+          const currentProduct = products.find((p) => p.id === item.productId);
+          if (currentProduct) {
+            const updatedVariants = currentProduct.variants?.map((v) =>
+              v.name === item.variant
+                ? { ...v, soldCount: (v.soldCount ?? 0) + item.quantity }
+                : v
+            );
+            updateProduct(item.productId, {
+              soldCount: (currentProduct.soldCount ?? 0) + item.quantity,
+              ...(updatedVariants ? { variants: updatedVariants } : {}),
+            });
+          }
+        }
+      }
+
       setOrderModal(null);
       setOrderModalError(null);
     } catch (error) {
@@ -3841,6 +3921,7 @@ export default function Account() {
                         <th>{copy.category}</th>
                         <th>{copy.price}</th>
                         <th>{copy.compareShort}</th>
+                        <th>{copy.stockRemaining}</th>
                         <th>{copy.status}</th>
                         <th>{copy.actions}</th>
                       </tr>
@@ -3848,7 +3929,7 @@ export default function Account() {
                     <tbody>
                       {products.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="admin-table-empty">
+                          <td colSpan={7} className="admin-table-empty">
                             {copy.emptyProducts}
                           </td>
                         </tr>
@@ -3876,6 +3957,14 @@ export default function Account() {
                             <td>{collectionNameBySlug.get(product.category) ?? product.category}</td>
                             <td>{formatStorePrice(product.price)}</td>
                             <td>{product.compareAtPrice ? formatStorePrice(product.compareAtPrice) : "-"}</td>
+                            <td>
+                              {(() => {
+                                const stock = product.variants?.length
+                                  ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
+                                  : (product.totalStock ?? 0);
+                                return `${product.soldCount ?? 0}/${stock}`;
+                              })()}
+                            </td>
                             <td>
                               <StatusBadge
                                 status={product.status}
@@ -4889,10 +4978,16 @@ export default function Account() {
                 return;
               }
 
+              const cleanedVariants = productModal.draft.variants?.filter((v) => v.name.trim()) ?? [];
+              const hasVariants = cleanedVariants.length > 0;
+              const computedStock = hasVariants
+                ? cleanedVariants.reduce((sum, v) => sum + (v.quantity || 0), 0)
+                : (productModal.draft.totalStock ?? 0);
               saveProductDraft({
                 ...productModal.draft,
                 category: productModal.draft.category || selectableCategories[0].slug,
-                variants: parseVariants(productModal.variantsText),
+                variants: hasVariants ? cleanedVariants : undefined,
+                totalStock: computedStock,
               });
               setProductModal(null);
             }}
@@ -5026,19 +5121,235 @@ export default function Account() {
                 />
               </label>
               <label className="admin-field admin-field-wide">
-                <span>{copy.variants}</span>
+                <span>{copy.ingredientsLabel}</span>
                 <textarea
                   rows={4}
-                  value={productModal.variantsText}
+                  value={productModal.draft.ingredients ?? ""}
                   onChange={(event) =>
                     setProductModal({
                       ...productModal,
-                      variantsText: event.target.value,
+                      draft: { ...productModal.draft, ingredients: event.target.value || undefined },
                     })
                   }
                 />
-                <small>{copy.variantsHelp}</small>
               </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.usageLabel}</span>
+                <textarea
+                  rows={4}
+                  value={productModal.draft.usage ?? ""}
+                  onChange={(event) =>
+                    setProductModal({
+                      ...productModal,
+                      draft: { ...productModal.draft, usage: event.target.value || undefined },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.howToUseLabel}</span>
+                <textarea
+                  rows={4}
+                  value={productModal.draft.howToUse ?? ""}
+                  onChange={(event) =>
+                    setProductModal({
+                      ...productModal,
+                      draft: { ...productModal.draft, howToUse: event.target.value || undefined },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.cautionLabel}</span>
+                <textarea
+                  rows={4}
+                  value={productModal.draft.caution ?? ""}
+                  onChange={(event) =>
+                    setProductModal({
+                      ...productModal,
+                      draft: { ...productModal.draft, caution: event.target.value || undefined },
+                    })
+                  }
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.shelfLifeLabel}</span>
+                <input
+                  value={productModal.draft.shelfLife ?? ""}
+                  onChange={(event) =>
+                    setProductModal({
+                      ...productModal,
+                      draft: { ...productModal.draft, shelfLife: event.target.value || undefined },
+                    })
+                  }
+                />
+              </label>
+              {!(productModal.draft.variants?.length) && (
+                <label className="admin-field admin-field-wide">
+                  <span>{copy.sizeLabelField}</span>
+                  <input
+                    value={productModal.draft.sizeLabel ?? ""}
+                    placeholder={copy.sizeLabelHelp}
+                    onChange={(event) =>
+                      setProductModal({
+                        ...productModal,
+                        draft: { ...productModal.draft, sizeLabel: event.target.value || undefined },
+                      })
+                    }
+                  />
+                </label>
+              )}
+              <div className="admin-field admin-field-wide">
+                <span>{copy.variants}</span>
+                <div className="admin-variants-list">
+                  {(productModal.draft.variants ?? []).map((variant, vIndex) => (
+                    <div key={vIndex} className="admin-variant-row">
+                      <input
+                        placeholder={copy.variantName}
+                        value={variant.name}
+                        onChange={(event) => {
+                          const next = [...(productModal.draft.variants ?? [])];
+                          next[vIndex] = { ...next[vIndex], name: event.target.value };
+                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                        }}
+                      />
+                      <input
+                        type="number"
+                        placeholder={copy.variantPrice}
+                        value={variant.price || ""}
+                        onChange={(event) => {
+                          const next = [...(productModal.draft.variants ?? [])];
+                          next[vIndex] = { ...next[vIndex], price: Number(event.target.value) || 0 };
+                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                        }}
+                      />
+                      <input
+                        type="number"
+                        placeholder={copy.variantQuantity}
+                        value={variant.quantity || ""}
+                        onChange={(event) => {
+                          const next = [...(productModal.draft.variants ?? [])];
+                          next[vIndex] = { ...next[vIndex], quantity: Number(event.target.value) || 0 };
+                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                        }}
+                      />
+                      {(variant.soldCount ?? 0) > 0 && (
+                        <span className="admin-variant-sold">
+                          {language === "MN"
+                            ? `${variant.soldCount} зарагдсан · ${variant.quantity - (variant.soldCount ?? 0)} үлдсэн`
+                            : `${variant.soldCount} sold · ${variant.quantity - (variant.soldCount ?? 0)} left`}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="admin-icon-btn"
+                        onClick={() => {
+                          const next = (productModal.draft.variants ?? []).filter((_, i) => i !== vIndex);
+                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next.length > 0 ? next : undefined } });
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => {
+                      const next = [...(productModal.draft.variants ?? []), { name: "", price: 0, quantity: 0 }];
+                      setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                    }}
+                  >
+                    <Plus size={14} /> {copy.addVariant}
+                  </button>
+                </div>
+              </div>
+              {(() => {
+                const hasVariants = (productModal.draft.variants ?? []).length > 0;
+                const variantTotal = hasVariants
+                  ? (productModal.draft.variants ?? []).reduce((sum, v) => sum + (v.quantity || 0), 0)
+                  : 0;
+                const currentStock = hasVariants ? variantTotal : (productModal.draft.totalStock ?? 0);
+                const sold = productModal.draft.soldCount ?? 0;
+                return (
+                  <div className="admin-field admin-field-wide">
+                    <span>{copy.totalStock} / {copy.soldCount}</span>
+                    <div className="admin-stock-row">
+                      {hasVariants ? (
+                        <div className="admin-stock-remaining">
+                          <small>{copy.totalStock}</small>
+                          <strong>{variantTotal}</strong>
+                        </div>
+                      ) : (
+                        <label className="admin-field">
+                          <small>{copy.totalStock}</small>
+                          <input
+                            type="number"
+                            value={productModal.draft.totalStock ?? 0}
+                            onChange={(event) =>
+                              setProductModal({
+                                ...productModal,
+                                draft: { ...productModal.draft, totalStock: Number(event.target.value) || 0 },
+                              })
+                            }
+                          />
+                        </label>
+                      )}
+                      <label className="admin-field">
+                        <small>{copy.soldCount}</small>
+                        <input
+                          type="number"
+                          value={sold}
+                          onChange={(event) =>
+                            setProductModal({
+                              ...productModal,
+                              draft: { ...productModal.draft, soldCount: Number(event.target.value) || 0 },
+                            })
+                          }
+                        />
+                      </label>
+                      <div className="admin-stock-remaining">
+                        <small>{copy.stockRemaining}</small>
+                        <strong>{currentStock - sold}</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="admin-field admin-field-wide">
+                <span>{copy.productImages}</span>
+                <small>{copy.productImagesHelp}</small>
+                <div className="admin-product-images">
+                  {productModal.draft.images.map((image, index) =>
+                    image ? (
+                      <div key={index} className="admin-product-image-item">
+                        <img src={image} alt={`Product ${index + 1}`} className="admin-product-image-preview" />
+                        <button type="button" className="admin-product-image-remove" onClick={() => removeProductImage(index)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : null
+                  )}
+                  {productModal.draft.images.filter(Boolean).length < 3 && (
+                    <label className="admin-product-image-add">
+                      <Plus size={20} />
+                      <span>{copy.addImage}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const nextIndex = productModal.draft.images.filter(Boolean).length;
+                          handleProductImageUpload(event, nextIndex);
+                        }}
+                        disabled={productImageUploading}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  )}
+                </div>
+                {productImageUploading && <small>{copy.bannerUploadProgress}</small>}
+                {productImageUploadError && <small className="admin-field-error">{productImageUploadError}</small>}
+              </div>
             </div>
             <div className="admin-modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setProductModal(null)}>

@@ -113,7 +113,6 @@ export default function About() {
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, "/about");
   const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
-  const aboutParagraphs = visibleSettings.aboutIntroBody.split("\n\n").filter(Boolean);
   const copy = aboutSectionCopy[language];
 
   return (
@@ -141,9 +140,8 @@ export default function About() {
             </div>
             <div className="about-intro-content">
               <h2>{visibleSettings.aboutIntroTitle}</h2>
-              {aboutParagraphs.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
+              <p>{t.brandStoryBody1}</p>
+              <p>{t.brandStoryBody2}</p>
             </div>
           </div>
         </div>

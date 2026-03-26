@@ -6,9 +6,17 @@ export interface Product {
   price: number;
   compareAtPrice?: number;
   description: string;
+  ingredients?: string;
+  usage?: string;
+  howToUse?: string;
+  caution?: string;
+  shelfLife?: string;
   category: string;
   images: string[];
-  variants?: { name: string; price: number }[];
+  sizeLabel?: string;
+  variants?: { name: string; price: number; quantity: number; soldCount?: number }[];
+  totalStock?: number;
+  soldCount?: number;
   badge?: string;
   bestSeller?: boolean;
   status: EntityStatus;
@@ -27,54 +35,63 @@ export interface Collection {
 export const collections: Collection[] = [
   {
     id: 1,
-    name: "All Natural Soap",
+    name: "Нүүр биеийн саван",
     slug: "soap",
-    description: "Handcrafted natural bar soaps made with love on the Canadian prairies.",
+    description: "Байгалийн гаралтай түүхий эдээр гар аргаар хийсэн органик саван.",
     gradient: "linear-gradient(135deg, #c8bfa8 0%, #b5a98e 100%)",
     image: "",
     status: "active",
   },
   {
     id: 2,
-    name: "Skin Care",
-    slug: "skin-care",
-    description: "Natural skincare formulated with wildcrafted botanicals and essential oils.",
+    name: "Ахуйн бүтээгдэхүүн",
+    slug: "household",
+    description: "Аяга таваг, хувцас угаалгад зориулсан байгальд ээлтэй бүтээгдэхүүн.",
     gradient: "linear-gradient(135deg, #d4c9b0 0%, #c2b49a 100%)",
     image: "",
     status: "active",
   },
   {
     id: 3,
-    name: "Body Care",
-    slug: "body-care",
-    description: "Rich, nourishing body care products for deep hydration.",
+    name: "Ванны бүтээгдэхүүн",
+    slug: "bath",
+    description: "Биеийг хоргүйжүүлж, булчин суллах ванны давс, сүү, хөлийн дүрлэг.",
     gradient: "linear-gradient(135deg, #bfc8aa 0%, #aab592 100%)",
     image: "",
     status: "active",
   },
   {
     id: 4,
-    name: "Hair",
+    name: "Үсний арчилгаа",
     slug: "hair",
-    description: "Natural hair care crafted with prairie botanicals.",
+    description: "Үс уналтыг багасгаж, үсний ургалтыг дэмжих органик шампунь, ангижруулагч.",
     gradient: "linear-gradient(135deg, #c4bda8 0%, #b0a890 100%)",
     image: "",
     status: "active",
   },
   {
     id: 5,
-    name: "Lip Care",
-    slug: "lip-care",
-    description: "Nourishing lip balms made with natural waxes and botanical oils.",
+    name: "Уламжлалт эмчилгээ",
+    slug: "wellness",
+    description: "Монгол уламжлалт анагаах ухаанд суурилсан эрүүл мэндийг дэмжих бүтээгдэхүүн.",
     gradient: "linear-gradient(135deg, #d0c0b0 0%, #bda898 100%)",
     image: "",
     status: "active",
   },
   {
     id: 6,
-    name: "Best Sellers",
+    name: "Бэлгийн багц",
+    slug: "gift-sets",
+    description: "Онцгой баяр ёслол, бэлэг дурсгалд зориулсан бэлгийн багцууд.",
+    gradient: "linear-gradient(135deg, #d4b8c0 0%, #c2a0a8 100%)",
+    image: "",
+    status: "active",
+  },
+  {
+    id: 7,
+    name: "Шилдэг бүтээгдэхүүн",
     slug: "best-sellers",
-    description: "Our most-loved products, tried and trusted by the prairie community.",
+    description: "Хэрэглэгчдийн хамгийн их сонирхсон бүтээгдэхүүнүүд.",
     gradient: "linear-gradient(135deg, #c8c0a0 0%, #b5aa88 100%)",
     image: "",
     status: "active",
@@ -82,13 +99,13 @@ export const collections: Collection[] = [
 ];
 
 export const products: Product[] = [
-  // Soap
+  // ── Нүүр биеийн саван ──
   {
     id: 1,
-    name: "Eucalyptus Mint Soap",
-    price: 13.25,
+    name: "Календула цэцэгтэй саван",
+    price: 8000,
     description:
-      "Wake up your senses with this invigorating eucalyptus and mint soap. A spa experience in your daily shower. Made with saponified oils and pure essential oils.",
+      "Орц найрлага: Наргил модны самрын тос, оливын тос, наранцэцгийн тос, календула цэцгийн хандтай тос, шүлт, нэрмэл ус, календула цэцгийн нунтаг, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Батга, тууралт, түлэгдэлт, хайрст үлд болон арьсны улайлт, цочрол, загатнааг намдааж, харшилтай арьсыг гүн цэвэрлэж, чийгшүүлнэ.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
     bestSeller: true,
@@ -96,10 +113,10 @@ export const products: Product[] = [
   },
   {
     id: 2,
-    name: "Goldenrod & Tallow Soap",
-    price: 13.25,
+    name: "Сүүлэн тостой саван",
+    price: 8000,
     description:
-      "Traditional tallow soap infused with wild goldenrod harvested from the Alberta prairies. Rich, creamy lather with prairie botanicals.",
+      "Орц найрлага: Оливын тос, наранцэцгийн тос, наргил модны самрын тос, өөхөн тос, сүүлний тос, шүлт, нэрмэл ус, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Хуурай, эмзэг арьсанд тохиромжтой. Гүн чийгшүүлнэ. Арьс таталдахгүй. Зөөлөн мэдрэмж төрүүлнэ.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
     bestSeller: true,
@@ -107,275 +124,263 @@ export const products: Product[] = [
   },
   {
     id: 3,
-    name: "Wild Rose Hip Soap",
-    price: 13.25,
+    name: "Ногоон буурцагтай саван",
+    price: 8000,
     description:
-      "A delicate, nourishing soap crafted with wild rose hip oil and botanicals. Gentle on skin with a light floral scent.",
+      "Орц найрлага: Наргил модны самрын тос, оливын тос, наранцэцгийн тос, кастор тос, шүлт, нэрмэл ус, нунтаг ногоон буурцаг, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Арьсны гүнд хуримтлагдсан бохирдол, хар тугалга болон бусад хорт бодисыг гадагшлуулна. Арьсыг гүн цэвэрлэж, хоргүйжүүлнэ. Пудрын хор тайлна. Цайруулж нөсөө толбыг бүдгэрүүлнэ.\n\nНүүрээр нь багташилт гардаг бүх насны хүмүүс болон нарийн тоосжилт, утаа, орчны бохирдол ихтэй газарт ажиллаж амьдардаг хүмүүст зориулав.",
     category: "soap",
     images: [""],
+    variants: [
+      { name: "85 гр", price: 8000, quantity: 0 },
+      { name: "65 гр", price: 5000, quantity: 0 },
+      { name: "35 гр", price: 3000, quantity: 0 },
+    ],
+    bestSeller: true,
     status: "active",
   },
   {
     id: 4,
-    name: "Saskatoon Berry Soap",
-    price: 13.25,
+    name: "Гангатай саван",
+    price: 8000,
     description:
-      "Prairie-inspired soap featuring the beloved Saskatoon berry. Packed with antioxidants and naturally moisturizing.",
+      "Орц найрлага: Оливын тос, наранцэцгийн тос, наргил модны самрын тос, сүүлний тос, шүлт, нэрмэл ус, нунтаг ганга, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Нян бактерийн эсрэг үйлчилгээтэй. Үрэвсэл намдаана. Арьсыг гүн цэвэрлэнэ. Тослогийг тэнцвэржүүлнэ. Арьсыг сэргээж эрүүл харагдуулна.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
     status: "active",
   },
   {
     id: 5,
-    name: "Charcoal & Yarrow Soap",
-    price: 13.25,
+    name: "Харшлын эсрэг халгайтай саван",
+    price: 8000,
     description:
-      "Activated charcoal meets wild yarrow in this deeply cleansing bar. Perfect for oily or combination skin.",
+      "Орц найрлага: Наргил модны самрын тос, оливын тос, наранцэцгийн тос, сүүлэн тос, халгайн хандтай тос, шүлт, нэрмэл ус, нунтаг халгай, цайны модны эфирийн тос.\n\nҮйлчилгээ: Арьсыг чийгшүүлнэ. Загатнаа арилгана. Хоргүйжүүлнэ. Харшлыг намдаана.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
     status: "active",
   },
   {
     id: 6,
-    name: "Lavender Milk Soap",
-    price: 13.25,
+    name: "Арцтай саван",
+    price: 8000,
     description:
-      "Calming lavender with nourishing milk creates this soothing, luxurious bar. Perfect for sensitive or dry skin.",
+      "Орц найрлага: Оливын тос, наранцэцгийн тос, наргил модны самрын тос, сүүлний тос, шүлт, нэрмэл ус, нунтаг арц, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Үрэвсэл, бактерийн эсрэг үйчилгээтэй. Улайж, үрэвссэн арьсыг тайвшруулна. Арьсны бохирдлыг гүн цэвэрлэж, тослогийг тэнцвэржүүлнэ. Батга гарах, нүхжилт үүсэхээс сэргийлнэ.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
-    bestSeller: true,
     status: "active",
   },
   {
     id: 7,
-    name: "Dandelion & Honey Soap",
-    price: 13.25,
+    name: "Арт саван",
+    price: 8000,
     description:
-      "Gentle and moisturizing soap made with real dandelion-infused oil and local prairie honey. A true prairie original.",
+      "Орц найрлага: Наргил модны самрын тос, Оливын тос, Наранцэцгийн тос, Кастор тос, Шүлт, Нэрмэл ус, Оксайд, Лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Арьсанд тэжээл өгч, гүн цэвэрлэнэ, чийгшүүлэн, зөөлрүүлнэ.\n\nОнцгой баярууд, бэлэг дурсгалд зориулан хийгддэг Арт саван. Өөрсдийн брэндийн нэр, логотой саванг захиалгаар хийлгэж авах боломжтой.\n\nХэмжээ: 85 гр",
     category: "soap",
     images: [""],
     status: "active",
   },
   {
     id: 8,
-    name: "Forest Bath Soap",
-    price: 13.25,
+    name: "Хүүхдийн саван",
+    price: 5000,
     description:
-      "A woodsy, grounding soap that brings the forest to your bathroom. Made with pine and cedarwood essential oils.",
+      "Орц найрлага: Оливын тос, Наргил модны самрын тос, Наранцэцгийн тос, Кастор тос, Шүлт, Нэрмэл ус, Лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Арьсыг чийгшүүлж, тэжээл өгнө. Булбарай зөөлөн болгоно.\n\nХэмжээ: 50 гр",
     category: "soap",
     images: [""],
     status: "active",
   },
-  // Skin Care
   {
     id: 9,
-    name: "Rejuvenate Face Serum",
-    price: 58.0,
+    name: "Чага мөөгтэй саван",
+    price: 8000,
     description:
-      "A potent face serum formulated with wildcrafted botanicals to rejuvenate and restore your skin's natural glow.",
-    category: "skin-care",
+      "Орц найрлага: Оливын тос, Наргил модны самрын тос, Наранцэцгийн тос, Кастор тос, Сүүлэн тос, Чага мөөгний хандтай тос, Шүлт, Нэрмэл ус, Лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Хоргүйжүүлнэ, үрэвсэл намдаана, арьсыг хамгаална, тэжээл өгч чийгшүүлнэ.\n\nХэмжээ: 85 гр",
+    category: "soap",
     images: [""],
-    bestSeller: true,
     status: "active",
   },
   {
     id: 10,
-    name: "Refresh Face Toner",
-    price: 44.0,
+    name: "Зочид буудлын саван",
+    price: 1000,
     description:
-      "A balancing face toner made with botanical extracts to refresh and prep your skin for the day ahead.",
-    category: "skin-care",
+      "Орц найрлага: Оливын тос, наранцэцгийн тос, наргил модны самрын тос, өөхөн тос, сүүлний тос, шүлт, нэрмэл ус, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Арьсыг чийгшүүлнэ, зөөлрүүлнэ. Харшил өгөхгүй. Хөөсрөлт сайн.\n\nЗочид буудал, жуулчны бааз, аялал жуучлалын компани, эмнэлэг, сувилал, бэлэг дурсгалд зориулсан.\n\nХэмжээ: 15 гр",
+    category: "soap",
     images: [""],
     status: "active",
   },
+  // ── Ахуйн бүтээгдэхүүн ──
   {
     id: 11,
-    name: "Restorative Face Cream",
-    price: 34.0,
+    name: "Аяга таваг угаагч саван",
+    price: 4000,
     description:
-      "A rich, deeply nourishing face cream that restores moisture and supports healthy skin barrier function.",
-    category: "skin-care",
+      "Орц найрлага: Цэвэршүүлсэн өөхөн тос, Наргил модны самрын тос /коконат/, Наранцэцгийн тос, Нэрмэл ус, Шүлт, Лимон жимсний эфирийн тос, хужир.\n\nҮйлчилгээ: Өөх тосыг сайн задална, халдваргүйжүүлнэ. Найрлагад коконат орсон тул хөөсрөлт сайн. Хөөс нь аяга тавагнаас хурдан сална. Гарын арьсыг хуурайшуулахгүй.\n\nХэмжээ: 70 гр",
+    category: "household",
     images: [""],
     status: "active",
   },
   {
     id: 12,
-    name: "Renew Oil Cleanser",
-    price: 36.0,
+    name: "Эдийн саван",
+    price: 4000,
     description:
-      "A gentle oil cleanser that effectively removes makeup and impurities while nourishing the skin.",
-    category: "skin-care",
+      "Орц найрлага: Цэвэршүүлсэн өөхөн тос, Наргил модны самрын тос, Наранцэцгийн тос, Нэрмэл ус, Шүлт.\n\nҮйлчилгээ: Хувцасны хир толбыг сайн арилгана, өнгийг сэргээнэ. Бүх төрлийн хувцас угаах боломжтой.\n\nХэмжээ: 130 гр",
+    category: "household",
     images: [""],
     status: "active",
   },
   {
     id: 13,
-    name: "Essential Skincare Set",
-    price: 118.0,
+    name: "Угаалгын нунтаг",
+    price: 25000,
     description:
-      "A complete skincare routine featuring our best-selling products. The perfect gift or self-care treat.",
-    category: "skin-care",
+      "Орц найрлага: Цэвэршүүлсэн өөхөн тос, Наргил модны самрын тос, Наранцэцгийн тос, Нэрмэл ус, Шүлт, Угаалгын сод.\n\nҮйлчилгээ: Хир, толбыг сайн арилгана, хувцасны өнгийг сэргээнэ, бүх төрлийн хувцсыг угаана, хөөсрөлт сайн, үнэргүй, харшил өгөхгүй, натурал түүхий эдийн найрлагатай.\n\nХэрэглэх заавар: Автомат, хагас автомат угаалгын машин болон гар аргаар угаалга хийх боломжтой. 30-40 грамм угаалгын нунтгийг хувцастайгаа хамт хийж угаана.\n\nХэмжээ: 800 гр",
+    category: "household",
     images: [""],
-    badge: "Best Seller",
+    status: "active",
+  },
+  // ── Ванны бүтээгдэхүүн ──
+  {
+    id: 14,
+    name: "Ванны давс",
+    price: 4000,
+    description:
+      "Орц найрлага: Шүдэн уулын жамц давс, сод, оливын тос, нарс модны эфирийн тос.\n\nҮйлчилгээ: Эрдэст давсны шимт бодис нь биеийг хоргүйжүүлж, булчин суллана. Цусны эргэлтийг сайжруулж, алжаал ядаргааг тайлна. Дархлаа дэмжинэ. Найрлаганд нь орсон нарс модны эфирийн тос нь уушги цэвэрлэж, амьсгалыг сайжруулах ач тустай.",
+    category: "bath",
+    images: [""],
+    variants: [
+      { name: "70 гр", price: 4000, quantity: 0 },
+      { name: "150 гр", price: 6000, quantity: 0 },
+      { name: "300 гр", price: 12000, quantity: 0 },
+      { name: "1,500 гр", price: 40000, quantity: 0 },
+    ],
     bestSeller: true,
     status: "active",
   },
   {
-    id: 14,
-    name: "Replenish Eye Serum",
-    price: 28.0,
-    description:
-      "A targeted eye serum to replenish and brighten the delicate skin around the eyes.",
-    category: "skin-care",
-    images: [""],
-    status: "active",
-  },
-  // Body Care
-  {
     id: 15,
-    name: "Prairie Gold Balm",
-    price: 27.5,
+    name: "Ванны сүү",
+    price: 4000,
     description:
-      "A multi-use healing balm made with prairie-sourced ingredients. Soothes and protects dry, cracked skin.",
-    category: "body-care",
+      "Орц найрлага: Хатаасан сүү, шүдэн уулын жамц давс, сод, оливын тос, лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: А, B, D витаминаар баялаг. Арьсыг чийгшүүлэн гуужуулж, зөөлөн булбарай болгоно. Хаван хөөнө. Найрлаганд орсон Лаванда цэцгийн эфирийн тос нь биеийн тамир тэтгэж, алжаал ядаргаа тайлна.",
+    category: "bath",
     images: [""],
+    variants: [
+      { name: "50 гр", price: 4000, quantity: 0 },
+      { name: "100 гр", price: 6000, quantity: 0 },
+      { name: "200 гр", price: 12000, quantity: 0 },
+      { name: "1,000 гр", price: 40000, quantity: 0 },
+    ],
     bestSeller: true,
     status: "active",
   },
   {
     id: 16,
-    name: "Pine Resin Salve",
-    price: 16.0,
+    name: "Хөлийн дүрлэг",
+    price: 4000,
     description:
-      "Traditional pine resin salve with powerful healing properties. A prairie staple for cuts, scrapes, and dry skin.",
-    category: "body-care",
+      "Орц найрлага: Шүдэн уулын жамц давс, цагаан гаа.\n\nҮйлчилгээ: Бөөр, нурууны өвдөлтийг намдаана. Найрлагад орсон цагаан гаа үрэвслийн эсрэг үйлчилгээтэй тул үе мөчний өвчний үед хэрэглэвэл тустай. Нойрны чанарыг сайжруулж, эмэгтэйчүүдийн сарын тэмдгийн үед өвдөлтийг намдаана. Нүдний хараа сайжруулна. Тамир тэнхээ тэтгэнэ, хоргүйжүүлнэ.",
+    category: "bath",
     images: [""],
+    variants: [
+      { name: "50 гр", price: 4000, quantity: 0 },
+      { name: "300 гр", price: 16000, quantity: 0 },
+    ],
     status: "active",
   },
+  // ── Үсний арчилгаа ──
   {
     id: 17,
-    name: "White Spruce Body Butter",
-    price: 28.0,
+    name: "Халгайтай шампунь",
+    price: 9000,
     description:
-      "A rich, whipped body butter infused with white spruce. Deep moisture with a fresh, woodsy scent.",
-    category: "body-care",
+      "Орц найрлага: Наргил модны самрын тос, оливын тос, кастор тос, камелла тос, канола тос, халгайн хандтай тос, нэрмэл ус, шүлт, гааны эфирийн тос, розмарин эфирийн тос, халгай өвсний нунтаг.\n\nҮйлчилгээ: Үс уналтыг багасгана, үсний ургалтыг дэмжинэ. Тогтмол хэрэглэснээр үсийг гялалзсан эрүүл харагдуулна.\n\nҮсний ургалт удааширсан, уналт ихтэй үсэнд зориулав.\n\nХэмжээ: 75 гр",
+    category: "hair",
     images: [""],
+    bestSeller: true,
     status: "active",
   },
   {
     id: 18,
-    name: "Eucalyptus Mint Body Butter",
-    price: 28.0,
+    name: "Гангатай шампунь",
+    price: 9000,
     description:
-      "A refreshing body butter with eucalyptus and mint essential oils. Deeply moisturizing with an invigorating scent.",
-    category: "body-care",
+      "Орц найрлага: Наргил модны самрын тос, оливын тос, кастор тос, камелла тос, канола тос, халгайн хандтай тос, нэрмэл ус, шүлт, гааны эфирийн тос, розмарин эфирийн тос, халгай өвсний нунтаг.\n\nҮйлчилгээ: Үс уналтыг багасгана, хуйханд байгаа илүүдэл тослогийг багасгана. Тогтмол хэрэглэснээр үс болон хуйхыг эрүүл байлгана.\n\nХуйхны үрэвсэлтэй, харшилтай, үс нь ихээр унадаг хүмүүст зориулав.\n\nХэмжээ: 75 гр",
+    category: "hair",
     images: [""],
     status: "active",
   },
   {
     id: 19,
-    name: "Sage Foot Balm",
-    price: 22.0,
+    name: "Ангижруулагч",
+    price: 9000,
     description:
-      "A soothing foot balm with sage and nourishing botanicals. Perfect for tired, dry feet after a long day.",
-    category: "body-care",
+      "Орц найрлага: Какао масло, Наргил модны самрын тос, Ангижруулагчны суурь, Витамин Е, Лаванда цэцгийн эфирийн тос.\n\nҮйлчилгээ: Үсэнд тэжээл өгч, зөөлрүүлнэ. Үсний гэмтлийг багасгана.\n\nХэмжээ: 75 гр",
+    category: "hair",
     images: [""],
     status: "active",
   },
+  // ── Уламжлалт эмчилгээ ──
   {
     id: 20,
-    name: "Forest Bath Body Spray",
-    price: 18.0,
+    name: "Давсан жин",
+    price: 25000,
     description:
-      "Immerse yourself in the Canadian forest with this grounding body spray. Notes of pine, cedar, and earth.",
-    category: "body-care",
+      "Орц найрлага: Шүдэн уулын жамц давс.\n\nҮйлчилгээ: Нурууны булчин суллана, уушиг цэвэрлэнэ, хоргүйжүүлнэ. Бөөрний тамир тэтгэнэ. Цистит, гэдэс гүйлгэх, хөл даарах үед хэрэглэнэ. Ходоодны шингээх чадварыг сайжруулна. Гурван махбодыг тэнцүүлэн, хий цусны гүйдлийг сайжруулж, өвдөлт намдаах, тайвшруулах, нойрсуулах үйлдэлтэй.\n\nАнхаарах: Хэт их халааж даавуугаа түлэхээс болон арьсаа улайж, түлэхээс болгоомжлоорой.\n\nХэмжээ: 1 кг",
+    category: "wellness",
     images: [""],
     status: "active",
   },
-  // Hair
   {
     id: 21,
-    name: "Shampoo Bar Rosemary Mint",
-    price: 21.95,
+    name: "Арвайтай жин",
+    price: 20000,
     description:
-      "Invigorating rosemary and mint solid shampoo bar. Cleanses gently while stimulating the scalp for healthy hair.",
-    category: "hair",
+      "Орц найрлага: Арвай будаа.\n\nҮйлчилгээ: Бөөрний тамир тэтгэн, цусны эргэлт сайжруулна. Нойрны чанарыг сайжруулж, булчин суллах, тайвшруулах үйлчилгээтэй. Чихний сонсгол сайжруулна.\n\nАнхаарах: Хэт их халааж даавуугаа түлэхээс болон арьсаа улайж, түлэхээс болгоомжлоорой.\n\nХэмжээ: 500 гр",
+    category: "wellness",
     images: [""],
-    bestSeller: true,
     status: "active",
   },
+  // ── Бэлгийн багц ──
   {
     id: 22,
-    name: "Conditioner Bar Rosemary Mint",
-    price: 23.95,
+    name: "Бэлгийн багц /том/",
+    price: 60000,
     description:
-      "Invigorating rosemary and mint solid conditioner bar. Stimulates the scalp and adds shine to every strand.",
-    category: "hair",
+      "Багцад: Органик саван 85 гр, Ванны сүү 200 гр, Ванны давс 300 гр, Гар нүүрийн алчуур, Хөлийн дүрлэг 50 гр, Бэлгийн хайрцаг, тууз.",
+    category: "gift-sets",
     images: [""],
+    bestSeller: true,
     status: "active",
   },
   {
     id: 23,
-    name: "Prairie Man Bar 3-in-1",
-    price: 13.25,
+    name: "Бэлгийн багц /дунд/",
+    price: 50000,
     description:
-      "The ultimate all-in-one bar for the prairie man. Works as shampoo, conditioner, and body wash. Rugged and natural.",
-    category: "hair",
+      "Багцад: Органик саван 85 гр, Ванны сүү 200 гр, Шилтэй ванны давс 260 гр, Хөлийн дүрлэг 50 гр, Бэлгийн хайрцаг, тууз.",
+    category: "gift-sets",
     images: [""],
     status: "active",
   },
-  // Lip Care
   {
     id: 24,
-    name: "Rose Hip Lip Balm",
-    price: 12.0,
+    name: "Бэлгийн багц /жижиг/",
+    price: 35000,
     description:
-      "Our best-selling lip balm made with wild rose hip oil. Deeply nourishing and long-lasting moisture for dry lips.",
-    category: "lip-care",
+      "Багцад: Органик саван 85 гр, Ванны сүү 100 гр, Ванны давс 150 гр, Хөлийн дүрлэг 50 гр, Бэлгийн хайрцаг, тууз.",
+    category: "gift-sets",
     images: [""],
-    badge: "Best Seller",
-    bestSeller: true,
     status: "active",
   },
   {
     id: 25,
-    name: "Wild Mint Lip Balm",
-    price: 12.0,
+    name: "Бэлгийн багц /тортой/",
+    price: 20000,
     description:
-      "A refreshing lip balm with wild mint essential oil. Cooling and nourishing for a fresh, smooth pout.",
-    category: "lip-care",
+      "Багцад: Органик саван 85 гр, Ванны сүү 100 гр, Хөлийн дүрлэг 50 гр, Бэлгийн хайрцаг, тууз.",
+    category: "gift-sets",
     images: [""],
-    status: "active",
-  },
-  {
-    id: 26,
-    name: "Raspberry Vanilla Lip Balm",
-    price: 12.0,
-    description:
-      "A delicious raspberry and vanilla lip balm. Moisturizing and subtly sweet for lips that stay soft all day.",
-    category: "lip-care",
-    images: [""],
-    status: "active",
-  },
-  {
-    id: 27,
-    name: "Peony Lip Balm",
-    price: 12.0,
-    description:
-      "A delicate peony-scented lip balm. Lightweight and nourishing with a beautiful floral note.",
-    category: "lip-care",
-    images: [""],
-    status: "active",
-  },
-  {
-    id: 28,
-    name: "Lip Balm Four-Pack",
-    price: 40.0,
-    description:
-      "Save with our popular four-pack of lip balms. Mix and match your favorite scents for the perfect gift or personal collection.",
-    category: "lip-care",
-    images: [""],
-    badge: "Save",
     status: "active",
   },
 ];

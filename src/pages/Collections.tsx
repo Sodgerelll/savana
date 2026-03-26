@@ -47,7 +47,7 @@ export default function Collections() {
     : t.allProducts;
   const description = currentCollection
     ? currentCollection.description
-    : "Browse our complete collection of handcrafted natural products.";
+    : "Байгальд ээлтэй, хог хаягдалгүй органик бүтээгдэхүүн.";
 
   return (
     <div className="collections-page">

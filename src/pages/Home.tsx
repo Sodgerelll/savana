@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, BadgeCheck, BriefcaseBusiness, Palette } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
@@ -21,12 +21,25 @@ import brandStorySoapImage from "../assets/brand-story-soap.jpg";
 import "./Home.css";
 
 const HERO_ROTATION_INTERVAL = 5000;
+const PRODUCT_IMAGE_ROTATION_INTERVAL = 3000;
 
 function ProductCardHome({ product, gradient }: { product: Product; gradient: string }) {
   const { addItem } = useCart();
   const { t } = useLanguage();
   const [hovered, setHovered] = useState(false);
-  const primaryImage = getProductPrimaryImage(product);
+  const allImages = product.images.filter(Boolean);
+  const hasMultiple = allImages.length > 1;
+  const imageIndexRef = useRef(0);
+  const [activeImage, setActiveImage] = useState(allImages[0] || "");
+
+  useEffect(() => {
+    if (!hasMultiple) return undefined;
+    const interval = window.setInterval(() => {
+      imageIndexRef.current = (imageIndexRef.current + 1) % allImages.length;
+      setActiveImage(allImages[imageIndexRef.current]);
+    }, PRODUCT_IMAGE_ROTATION_INTERVAL);
+    return () => window.clearInterval(interval);
+  }, [hasMultiple, allImages.length]);
 
   return (
     <div
@@ -36,8 +49,8 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
     >
       <Link to={`/product/${product.id}`} className="home-product-image-wrap">
         <div className="home-product-image-bg" style={{ background: gradient }}>
-          {primaryImage ? (
-            <img src={primaryImage} alt={product.name} className="home-product-photo" loading="lazy" />
+          {activeImage ? (
+            <img src={activeImage} alt={product.name} className="home-product-photo" loading="lazy" />
           ) : (
             <div className="home-product-icon">
               <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">

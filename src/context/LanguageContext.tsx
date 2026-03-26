@@ -72,7 +72,10 @@ export interface Translations {
   // Product detail
   quantity: string;
   ingredients: string;
+  usage: string;
   howToUse: string;
+  caution: string;
+  shelfLife: string;
   shippingReturns: string;
   youMayAlsoLike: string;
   productNotFound: string;
@@ -181,11 +184,11 @@ const en: Translations = {
   addToCart: "Add to Cart",
   outOfStock: "Out of Stock",
   quickAdd: "Quick Add",
-  brandStoryHeading: "Small-Batch, Wild-Crafted & Made with Love",
+  brandStoryHeading: "Handcrafted with Nature, Made in Mongolia",
   brandStoryBody1:
-    "Every product we create starts with carefully sourced, natural ingredients. We believe that what you put on your skin matters, which is why we use only plant-based oils, locally harvested botanicals, and pure essential oils.",
+    "Savana Organica LLC has been producing eco-friendly, zero-waste organic beauty, household cleaning and traditional medicine-based health products that meet international standards for 7 years.",
   brandStoryBody2:
-    "Our small-batch process ensures that each product receives the attention it deserves, resulting in handcrafted goods that are as beautiful as they are effective.",
+    "We use juniper, thyme, nettle, sea buckthorn oil, Shuden mountain rock salt, natural soda, honey, purified tallow, lard, and ghee from Mongolian pasture livestock to handcraft each product with care and dedication.",
   learnOurStory: "Learn Our Story",
   collectionsHeading: "Our Collections",
   testimonialsHeading: "What Our Customers Are Saying",
@@ -195,7 +198,7 @@ const en: Translations = {
   newsletterPlaceholder: "Your email address",
   subscribe: "Subscribe",
   footerBrandDesc:
-    "Organic soap, solid shampoo, and wellness products made in Mongolia with thoughtful natural ingredients.",
+    "Eco-friendly organic beauty, household cleaning, and traditional wellness products. Handcrafted in Mongolia since 2019.",
   footerShop: "Shop",
   footerInfo: "Info",
   footerContact: "Contact",
@@ -213,7 +216,10 @@ const en: Translations = {
   cartNote: "Shipping calculated at checkout",
   quantity: "Quantity",
   ingredients: "Ingredients",
+  usage: "Usage",
   howToUse: "How to Use",
+  caution: "Caution",
+  shelfLife: "Shelf Life",
   shippingReturns: "Shipping & Returns",
   youMayAlsoLike: "You May Also Like",
   productNotFound: "Product not found",
@@ -316,21 +322,21 @@ const mn: Translations = {
   addToCart: "Сагслах",
   outOfStock: "Дууссан",
   quickAdd: "Хурдан нэмэх",
-  brandStoryHeading: "Жижиг багцаар, зэрлэг ургамлаар, хайраар хийсэн",
+  brandStoryHeading: "Байгалиас гаралтай, Монголд бүтээгдсэн",
   brandStoryBody1:
-    "Бид бүтээдэг бүтээгдэхүүн бүрийг анхааралтай сонгосон байгалийн түүхий эдээс эхэлдэг. Арьсандаа тавьдаг зүйл чухал тул бид зөвхөн ургамлын тос, нутгийн ургамал, цэвэр эфирийн тос ашигладаг.",
+    "Савана органика ХХК нь байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан эрүүл мэндийг дэмжих, ОУ-ын стандартад нийцсэн чанартай бүтээгдэхүүнийг 7 жилийн турш хэрэглэгчиддээ үйлдвэрлэн хүргэсээр байна.",
   brandStoryBody2:
-    "Жижиг багцаар хийдэг үйл явц нь бүтээгдэхүүн бүрт анхаарал тавих боломжийг олгодог бөгөөд гоё бөгөөд үр дүнтэй бүтээгдэхүүн гаргах боломжийг бүрдүүлдэг.",
+    "Бид Монгол орны хөрсөнд ургасан арц, ганга, халгай, чацаргана жимсний охь тос, шүдэн уулын жамц давс, байгалийн цэвэр хужир, зөгийн бал, Монгол бэлчээрийн малын цэвэршүүлсэн сүүлэн тос, өөхөн тос, шар тосыг ашиглан бүтээгдэхүүн нэг бүрийг гар аргаар сэтгэлээ шингээн үйлдвэрлэдэг.",
   learnOurStory: "Бидний тухай",
   collectionsHeading: "Манай цуглуулга",
-  testimonialsHeading: "Манай үйлчлүүлэгчид юу хэлж байна",
+  testimonialsHeading: "Хэрэглэгчдийн сэтгэгдэл",
   newsletterHeading: "SAVANA нийгэмлэгт нэгдээрэй",
   newsletterSubtext:
     "Шинэ бүтээгдэхүүн, улирлын цуглуулга, SAVANA-ийн мэдээ мэдээллийг аваарай",
   newsletterPlaceholder: "Таны и-мэйл хаяг",
   subscribe: "Бүртгүүлэх",
   footerBrandDesc:
-    "Монголд бүтээгдсэн органик саван, хатуу шампунь, эрүүл мэндийн бүтээгдэхүүнүүд.",
+    "Байгальд ээлтэй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. Since 2019.",
   footerShop: "Дэлгүүр",
   footerInfo: "Мэдээлэл",
   footerContact: "Холбоо барих",
@@ -348,7 +354,10 @@ const mn: Translations = {
   cartNote: "Хүргэлтийн зардлыг захиалгын үед тооцно",
   quantity: "Тоо хэмжээ",
   ingredients: "Найрлага",
-  howToUse: "Хэрхэн ашиглах",
+  usage: "Үйлчилгээ",
+  howToUse: "Хэрэглэх заавар",
+  caution: "Анхаар зүйлс",
+  shelfLife: "Хадгалах хугацаа",
   shippingReturns: "Хүргэлт & Буцаалт",
   youMayAlsoLike: "Таньд таалагдаж болох",
   productNotFound: "Бүтээгдэхүүн олдсонгүй",
@@ -359,7 +368,7 @@ const mn: Translations = {
   noProducts: "Энэ цуглуулгад бүтээгдэхүүн олдсонгүй.",
   viewAllProducts: "Бүх бүтээгдэхүүнийг харах",
   aboutHeroHeading: "Бидний түүх",
-  aboutHeroSub: "Монголын тал нутгийн зүрхнээс таны гэрт.",
+  aboutHeroSub: "Байгальд ээлтэй, хог хаягдалгүй органик бүтээгдэхүүн.",
   contactHeading: "Холбоо барих",
   contactSub: "Бид тантай харилцахдаа баяртай байна. Асуулт, санал хүсэлтээ илгээнэ үү.",
   findUsHeading: "Бидний байршил",

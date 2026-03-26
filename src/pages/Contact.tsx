@@ -201,7 +201,7 @@ export default function Contact() {
               <span className="contact-section-kicker">
                 {language === "MN" ? "Байршил & сувгууд" : "Location & channels"}
               </span>
-              <h2>{language === "MN" ? "SAVANA-тай нэг цэгээс холбогдоорой" : "Reach SAVANA from one place"}</h2>
+              <h2>{language === "MN" ? "SAVANA-тай холбогдоорой" : "Reach SAVANA from one place"}</h2>
               <p>
                 {language === "MN"
                   ? "Байршил, утас, сошиал сувгууд, map чиглэл бүгд энэ хуудсан дээр нэгтгэгдсэн."

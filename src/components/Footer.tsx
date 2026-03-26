@@ -23,7 +23,7 @@ export default function Footer() {
             {/* Col 1: Brand */}
             <div className="footer-col footer-col-brand">
               <Link to="/" className="footer-logo">{visibleSettings.brandName}</Link>
-              <p className="footer-about">{visibleSettings.brandDescription}</p>
+              <p className="footer-about">{t.footerBrandDesc}</p>
               <div className="social-links">
                 <a href={visibleSettings.instagramUrl} aria-label="Instagram" rel="noopener noreferrer" target="_blank">
                   <Instagram size={18} />
@@ -93,7 +93,7 @@ export default function Footer() {
       {/* Bottom bar */}
       <div className="footer-bottom">
         <div className="container">
-          <p>&copy; {new Date().getFullYear()} {t.footerCopyright}</p>
+          <p>&copy; 2019 - {new Date().getFullYear()} {t.footerCopyright}</p>
           <div className="footer-bottom-links">
             <Link to="/privacy">{t.footerPolicies}</Link>
             <Link to="/terms">Terms</Link>

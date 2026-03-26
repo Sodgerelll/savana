@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Minus, Plus, Truck, Leaf, RotateCcw } from "lucide-react";
+import { Minus, Plus, Truck, Leaf, RotateCcw, FlaskConical, Sparkles, BookOpen, AlertTriangle, Clock } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import ProductCard from "../components/ProductCard";
-import { formatStorePrice, getActiveProducts, getCategoryGradient, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import { formatStorePrice, getActiveProducts, getCategoryGradient } from "../lib/storefrontHelpers";
 import "./ProductDetail.css";
 
 export default function ProductDetail() {
   const { id } = useParams();
   const { addItem } = useCart();
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const { products, collections } = useStorefront();
   const visibleProducts = getActiveProducts(products, collections);
   const [quantity, setQuantity] = useState(1);
@@ -39,7 +39,17 @@ export default function ProductDetail() {
     : product.price;
 
   const gradient = getCategoryGradient(collections, product.category);
-  const primaryImage = getProductPrimaryImage(product);
+  const allImages = product.images.filter(Boolean);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const activeImage = allImages[activeImageIndex] || allImages[0] || "";
+
+  useEffect(() => {
+    if (allImages.length <= 1) return undefined;
+    const interval = window.setInterval(() => {
+      setActiveImageIndex((i) => (i + 1) % allImages.length);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [allImages.length]);
 
   return (
     <div className="product-detail">
@@ -53,8 +63,8 @@ export default function ProductDetail() {
           {/* Image area */}
           <div className="product-detail-images">
             <div className="product-main-image" style={{ background: gradient }}>
-              {primaryImage ? (
-                <img src={primaryImage} alt={product.name} className="product-main-photo" />
+              {activeImage ? (
+                <img src={activeImage} alt={product.name} className="product-main-photo" />
               ) : (
                 <div className="product-main-icon">
                   <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
@@ -68,33 +78,79 @@ export default function ProductDetail() {
                 <span className="pd-badge">{product.badge}</span>
               )}
             </div>
+            {allImages.length > 1 && (
+              <div className="product-thumbnails">
+                {allImages.map((image, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`product-thumbnail ${index === activeImageIndex ? "active" : ""}`}
+                    onClick={() => setActiveImageIndex(index)}
+                    style={{ background: gradient }}
+                  >
+                    <img src={image} alt={`${product.name} ${index + 1}`} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Info */}
           <div className="product-detail-info">
             <h1>{product.name}</h1>
             <p className="pd-price">{formatStorePrice(currentPrice)}</p>
+            {(() => {
+              const stock = product.variants?.length
+                ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
+                : (product.totalStock ?? 0);
+              const sold = product.soldCount ?? 0;
+              const remaining = stock - sold;
+              if (stock <= 0) return null;
+              return (
+                <p className={`pd-stock ${remaining <= 0 ? "pd-stock-out" : remaining <= 5 ? "pd-stock-low" : ""}`}>
+                  {remaining > 0
+                    ? (language === "MN" ? `Үлдэгдэл: ${remaining} ширхэг` : `${remaining} in stock`)
+                    : (language === "MN" ? "Дууссан" : "Out of stock")}
+                </p>
+              );
+            })()}
 
             <div className="pd-description">
               <p>{product.description}</p>
             </div>
 
-            {product.variants && (
+            {product.variants && product.variants.length > 0 ? (
               <div className="pd-variants">
                 <label className="pd-label">Option</label>
                 <div className="variant-buttons">
-                  {product.variants.map((variant) => (
-                    <button
-                      key={variant.name}
-                      className={`variant-btn ${selectedVariant === variant.name ? "active" : ""}`}
-                      onClick={() => setSelectedVariant(variant.name)}
-                    >
-                      {variant.name} — {formatStorePrice(variant.price)}
-                    </button>
-                  ))}
+                  {product.variants.map((variant) => {
+                    const remaining = variant.quantity - (variant.soldCount ?? 0);
+                    return (
+                      <button
+                        key={variant.name}
+                        className={`variant-btn ${selectedVariant === variant.name ? "active" : ""} ${remaining <= 0 ? "variant-btn-out" : ""}`}
+                        onClick={() => setSelectedVariant(variant.name)}
+                        disabled={remaining <= 0}
+                      >
+                        <span>{variant.name} — {formatStorePrice(variant.price)}</span>
+                        {variant.quantity > 0 && (
+                          <span className={`variant-stock ${remaining <= 0 ? "variant-stock-out" : remaining <= 5 ? "variant-stock-low" : ""}`}>
+                            {remaining > 0
+                              ? (language === "MN" ? `${remaining} ширхэг` : `${remaining} left`)
+                              : (language === "MN" ? "Дууссан" : "Sold out")}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
+            ) : product.sizeLabel ? (
+              <div className="pd-size-label">
+                <span className="pd-label">{language === "MN" ? "Хэмжээ" : "Size"}</span>
+                <span className="pd-size-value">{product.sizeLabel}</span>
+              </div>
+            ) : null}
 
             <div className="pd-quantity">
               <label className="pd-label">{t.quantity}</label>
@@ -132,22 +188,38 @@ export default function ProductDetail() {
             </div>
 
             <div className="pd-accordion">
+              {product.ingredients && (
+                <details>
+                  <summary><FlaskConical size={16} strokeWidth={1.5} /> {t.ingredients}</summary>
+                  <p>{product.ingredients}</p>
+                </details>
+              )}
+              {product.usage && (
+                <details>
+                  <summary><Sparkles size={16} strokeWidth={1.5} /> {t.usage}</summary>
+                  <p>{product.usage}</p>
+                </details>
+              )}
+              {product.howToUse && (
+                <details>
+                  <summary><BookOpen size={16} strokeWidth={1.5} /> {t.howToUse}</summary>
+                  <p>{product.howToUse}</p>
+                </details>
+              )}
+              {product.caution && (
+                <details>
+                  <summary><AlertTriangle size={16} strokeWidth={1.5} /> {t.caution}</summary>
+                  <p>{product.caution}</p>
+                </details>
+              )}
+              {product.shelfLife && (
+                <details>
+                  <summary><Clock size={16} strokeWidth={1.5} /> {t.shelfLife}</summary>
+                  <p>{product.shelfLife}</p>
+                </details>
+              )}
               <details>
-                <summary>{t.ingredients}</summary>
-                <p>
-                  Saponified oils of olive, coconut, and sustainably sourced palm,
-                  shea butter, essential oils, natural botanicals, and love.
-                </p>
-              </details>
-              <details>
-                <summary>{t.howToUse}</summary>
-                <p>
-                  Lather between wet hands or with a washcloth. Apply to body, face,
-                  or hands. Rinse thoroughly. Store on a well-draining soap dish between uses.
-                </p>
-              </details>
-              <details>
-                <summary>{t.shippingReturns}</summary>
+                <summary><Truck size={16} strokeWidth={1.5} /> {t.shippingReturns}</summary>
                 <p>
                   Delivery timing and fees depend on your location. Please review checkout details
                   before confirming your order.

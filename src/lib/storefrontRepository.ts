@@ -82,6 +82,14 @@ function serializeProduct(product: Product) {
     variants: product.variants ?? null,
     badge: product.badge ?? null,
     compareAtPrice: product.compareAtPrice ?? null,
+    ingredients: product.ingredients ?? null,
+    usage: product.usage ?? null,
+    howToUse: product.howToUse ?? null,
+    caution: product.caution ?? null,
+    shelfLife: product.shelfLife ?? null,
+    sizeLabel: product.sizeLabel ?? null,
+    totalStock: product.totalStock ?? 0,
+    soldCount: product.soldCount ?? 0,
     bestSeller: Boolean(product.bestSeller),
     sortOrder: product.id,
     updatedAt: serverTimestamp(),
@@ -136,6 +144,12 @@ function deserializeProduct(snapshot: QueryDocumentSnapshot<DocumentData>): Prod
     compareAtPrice:
       typeof data.compareAtPrice === "number" ? data.compareAtPrice : undefined,
     description: String(data.description ?? ""),
+    ingredients: typeof data.ingredients === "string" ? data.ingredients : undefined,
+    usage: typeof data.usage === "string" ? data.usage : undefined,
+    howToUse: typeof data.howToUse === "string" ? data.howToUse : undefined,
+    caution: typeof data.caution === "string" ? data.caution : undefined,
+    shelfLife: typeof data.shelfLife === "string" ? data.shelfLife : undefined,
+    sizeLabel: typeof data.sizeLabel === "string" ? data.sizeLabel : undefined,
     category: String(data.category ?? ""),
     images: Array.isArray(data.images) ? data.images.map((image) => String(image)) : [""],
     variants: Array.isArray(data.variants)
@@ -149,10 +163,14 @@ function deserializeProduct(snapshot: QueryDocumentSnapshot<DocumentData>): Prod
             return {
               name: String(variantData.name ?? ""),
               price: Number(variantData.price ?? 0),
+              quantity: Number(variantData.quantity ?? 0),
+              soldCount: Number(variantData.soldCount ?? 0),
             };
           })
           .filter((variant): variant is NonNullable<typeof variant> => variant !== null)
       : undefined,
+    totalStock: typeof data.totalStock === "number" ? data.totalStock : undefined,
+    soldCount: typeof data.soldCount === "number" ? data.soldCount : undefined,
     badge: typeof data.badge === "string" ? data.badge : undefined,
     bestSeller: Boolean(data.bestSeller),
     status: deserializeStatus(data.status),

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import type { Product } from "../data/products";
-import { formatStorePrice, getCategoryGradient, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import { formatStorePrice, getCategoryGradient } from "../lib/storefrontHelpers";
 import "./ProductCard.css";
+
+const IMAGE_ROTATION_INTERVAL = 3000;
 
 interface ProductCardProps {
   product: Product;
@@ -16,9 +18,21 @@ export default function ProductCard({ product }: ProductCardProps) {
   const { t } = useLanguage();
   const { collections } = useStorefront();
   const [hovered, setHovered] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const gradient = getCategoryGradient(collections, product.category);
-  const primaryImage = getProductPrimaryImage(product);
+  const allImages = product.images.filter(Boolean);
+  const hasMultiple = allImages.length > 1;
+
+  useEffect(() => {
+    if (!hasMultiple) return undefined;
+    const interval = window.setInterval(() => {
+      setActiveIndex((i) => (i + 1) % allImages.length);
+    }, IMAGE_ROTATION_INTERVAL);
+    return () => window.clearInterval(interval);
+  }, [hasMultiple, allImages.length]);
+
+  const currentImage = allImages[activeIndex] || allImages[0] || "";
 
   return (
     <div
@@ -28,8 +42,8 @@ export default function ProductCard({ product }: ProductCardProps) {
     >
       <Link to={`/product/${product.id}`} className="product-card-image">
         <div className="product-card-bg" style={{ background: gradient }}>
-          {primaryImage ? (
-            <img src={primaryImage} alt={product.name} className="product-card-photo" loading="lazy" />
+          {currentImage ? (
+            <img src={currentImage} alt={product.name} className="product-card-photo" loading="lazy" />
           ) : (
             <div className="product-card-icon">
               <svg width="52" height="52" viewBox="0 0 52 52" fill="none">

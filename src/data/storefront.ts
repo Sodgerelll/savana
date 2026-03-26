@@ -99,11 +99,11 @@ export interface StorefrontData {
 export const LEGACY_STOREFRONT_STORAGE_KEY = "savana.storefront.v1";
 export const OFFICIAL_FACEBOOK_URL = "https://www.facebook.com/SavanaOrganica";
 const SYSTEM_COLLECTION_SLUG = "best-sellers";
-const PRAIRIE_SOURCE_BANNER_IMAGES = [
-  "https://www.prairiesoapshack.com/cdn/shop/files/PSS_WomenBeauty_Photoshoot-09955.jpg?v=1757878646&width=1500",
-  "https://www.prairiesoapshack.com/cdn/shop/files/LUM08714.jpg?v=1717130728&width=1500",
-  "https://www.prairiesoapshack.com/cdn/shop/files/CHE08917.jpg?v=1766084176&width=1500",
-  "https://www.prairiesoapshack.com/cdn/shop/files/LUM08420.jpg?v=1691208130&width=1500",
+const DEFAULT_BANNER_IMAGES = [
+  "",
+  "",
+  "",
+  "",
 ] as const;
 const defaultNavigationItems: SiteNavigationItem[] = [
   {
@@ -213,13 +213,13 @@ const defaultSettings: ShopSettings = {
   status: "active",
   brandName: "SAVANA",
   brandDescription:
-    "Organic soap, solid shampoo, and wellness products made in Mongolia with thoughtful natural ingredients.",
+    "Байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. Since 2019.",
   heroHeading: "SAVANA",
   heroSubtext:
-    "Organic soap, solid shampoo, and wellness products for the whole family.",
-  aboutIntroTitle: "SAVANA",
+    "Байгалийн гаралтай органик саван, шампунь, ванны бүтээгдэхүүн. Back to nature.",
+  aboutIntroTitle: "Савана органика ХХК",
   aboutIntroBody:
-    "SAVANA creates natural care products with a focus on everyday use, clean ingredients, and simple routines.\n\nOur collections are built around organic soaps, solid shampoos, and wellness products designed for modern households.\n\nWe continue to improve each product with careful sourcing, practical formulas, and a commitment to quality.",
+    "Савана органика ХХК нь байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан эрүүл мэндийг дэмжих, ОУ-ын стандартад нийцсэн чанартай бүтээгдэхүүнийг 7 жилийн турш хэрэглэгчиддээ үйлдвэрлэн хүргэсээр байна.\n\nБид Монгол орны хөрсөнд ургасан арц, ганга, халгай, чацаргана жимсний охь тос, шүдэн уулын жамц давс, байгалийн цэвэр хужир, зөгийн бал, Монгол бэлчээрийн малын цэвэршүүлсэн сүүлэн тос, өөхөн тос, шар тосыг ашиглан бүтээгдэхүүн нэг бүрийг гар аргаар сэтгэлээ шингээн үйлдвэрлэдэг.",
   contactPhone: "77770081",
   contactEmail: "savanaorganica@gmail.com",
   location: "Улаанбаатар, Монгол Улс",
@@ -228,14 +228,14 @@ const defaultSettings: ShopSettings = {
   instagramUrl: "https://www.instagram.com/savana_brand/",
   instagramHandle: "@savana_brand",
   mapNote:
-    "Follow SAVANA on Facebook and Instagram for the latest updates and announcements.",
+    "SAVANA-ийн Facebook болон Instagram хуудсаар шинэ мэдээлэл авна уу.",
   marketIntro:
-    "Store and delivery information is updated through SAVANA's official channels.",
+    "Дэлгүүр болон хүргэлтийн мэдээллийг SAVANA-ийн албан ёсны сувгуудаар дамжуулан шинэчилдэг.",
   storeHoursText:
-    "Orders and support requests are processed throughout the week. Delivery times may vary by location.",
-  wholesaleHeading: "Work With SAVANA",
+    "Захиалга, тусламжийн хүсэлтийг долоо хоногийн турш хүлээн авна. Хүргэлтийн хугацаа байршлаас хамаарч өөрчлөгдөж болно.",
+  wholesaleHeading: "SAVANA-тай хамтрах",
   wholesaleText:
-    "We welcome partnerships with retailers, boutiques, and distributors who want to offer SAVANA products.",
+    "Байгууллага, хувь хүн, event, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
   wholesaleEmail: "savanaorganica@gmail.com",
   navigationItems: defaultNavigationItems,
   journalHeadingEn: "SAVANA Journal",
@@ -250,34 +250,10 @@ const defaultSettings: ShopSettings = {
 const defaultMarkets: MarketItem[] = [
   {
     id: 1,
-    name: "Calgary Farmers' Market",
-    schedule: "Saturdays, 9am - 3pm",
-    address: "510 77 Ave SE, Calgary, AB",
-    season: "Year-round",
-    status: "active",
-  },
-  {
-    id: 2,
-    name: "Edmonton City Market",
-    schedule: "Saturdays, 8am - 3pm",
-    address: "103A Ave & 97 St NW, Edmonton, AB",
-    season: "May - October",
-    status: "active",
-  },
-  {
-    id: 3,
-    name: "Red Deer Farmers' Market",
-    schedule: "Saturdays, 8am - 1pm",
-    address: "4747 53 St, Red Deer, AB",
-    season: "Year-round",
-    status: "active",
-  },
-  {
-    id: 4,
-    name: "Lethbridge Farmer's Market",
-    schedule: "Thursdays, 10am - 2pm",
-    address: "400 Stafford Dr N, Lethbridge, AB",
-    season: "April - October",
+    name: "SAVANA шууд борлуулалт",
+    schedule: "Даваа-Баасан, 10:00-18:00",
+    address: "Улаанбаатар, Монгол Улс",
+    season: "Жилийн турш",
     status: "active",
   },
 ];
@@ -285,23 +261,23 @@ const defaultMarkets: MarketItem[] = [
 const defaultTestimonials: Testimonial[] = [
   {
     id: 1,
-    text: "I've been using SAVANA soaps for over a year now and my skin has never been happier. The Dandelion & Honey is my absolute favourite!",
-    author: "Sarah M.",
-    location: "Calgary, AB",
+    text: "Ногоон буурцагтай саваныг хэрэглэж эхлээд нүүрний арьс маш их цэвэрлэгдсэн. Органик бүтээгдэхүүн гэдэг нь мэдрэмжээрээ ялгаатай байна.",
+    author: "Болормаа Б.",
+    location: "Улаанбаатар",
     status: "active",
   },
   {
     id: 2,
-    text: "Finally found natural products that actually work. The body butter is incredibly moisturizing without feeling greasy. Will never go back to store-bought.",
-    author: "Jennifer K.",
-    location: "Edmonton, AB",
+    text: "Ванны давсыг тогтмол хэрэглэснээр алжаал ядаргаа маш сайн тайлагддаг. Гэр бүлээрээ хэрэглэдэг.",
+    author: "Мөнхцэцэг Д.",
+    location: "Улаанбаатар",
     status: "active",
   },
   {
     id: 3,
-    text: "The Forest Bath soap is like bringing the outdoors into my shower every morning. Beautiful products made with so much care. Highly recommend!",
-    author: "Michael R.",
-    location: "Red Deer, AB",
+    text: "Хүүхдийн саваныг хүүхдүүддээ хэрэглүүлж байгаа, арьсанд маш зөөлөн, харшил огт өгөөгүй. Маш сэтгэл хангалуун байна.",
+    author: "Оюунчимэг С.",
+    location: "Дархан",
     status: "active",
   },
 ];
@@ -495,12 +471,12 @@ function getBannerCollections(collections: Collection[]) {
 
 export function createDefaultHeroBanners(collections: Collection[]): HeroBanner[] {
   return getBannerCollections(collections)
-    .slice(0, PRAIRIE_SOURCE_BANNER_IMAGES.length)
+    .slice(0, DEFAULT_BANNER_IMAGES.length)
     .map((collection, index) => ({
       id: index + 1,
       collectionSlug: collection.slug,
-      image: PRAIRIE_SOURCE_BANNER_IMAGES[index],
-      source: "prairiesoapshack.com",
+      image: DEFAULT_BANNER_IMAGES[index],
+      source: "",
       status: "active",
     }));
 }
