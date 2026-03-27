@@ -1924,7 +1924,6 @@ export default function Account() {
       return;
     }
 
-    const currentImages = productModal.draft.images.filter(Boolean);
     if (imageIndex >= 3) {
       return;
     }
