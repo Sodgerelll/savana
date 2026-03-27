@@ -202,11 +202,6 @@ export default function Contact() {
                 {language === "MN" ? "Байршил & сувгууд" : "Location & channels"}
               </span>
               <h2>{language === "MN" ? "SAVANA-тай холбогдоорой" : "Reach SAVANA from one place"}</h2>
-              <p>
-                {language === "MN"
-                  ? "Байршил, утас, сошиал сувгууд, map чиглэл бүгд энэ хуудсан дээр нэгтгэгдсэн."
-                  : "Location details, phone, social channels, and map directions are now consolidated on this page."}
-              </p>
               <div className="contact-visit-actions">
                 <a href={mapLink} target="_blank" rel="noopener noreferrer" className="btn btn-outline">
                   <MapPin size={16} />
