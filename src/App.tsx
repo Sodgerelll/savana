@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { CartProvider } from "./context/CartContext";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StorefrontProvider } from "./context/StorefrontContext";
 import { LanguageProvider } from "./context/LanguageContext";
 import { useStorefront } from "./context/StorefrontContext";
@@ -33,8 +33,9 @@ function ScrollToTop() {
 function AppShell() {
   const { pathname } = useLocation();
   const { settings } = useStorefront();
-  const hideHeader = pathname === "/account";
-  const hideFooter = pathname === "/account" || pathname === "/checkout";
+  const { isPrivilegedUser } = useAuth();
+  const hideHeader = pathname === "/account" && isPrivilegedUser;
+  const hideFooter = (pathname === "/account" && isPrivilegedUser) || pathname === "/checkout";
   const visibleSettings = getRenderableSettings(settings);
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, pathname);
   const hasHeroHeaderOffset = pathname === "/" || Boolean(pageBanner?.pageBannerImage.trim());

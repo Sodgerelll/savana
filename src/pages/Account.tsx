@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   MapPin,
+  Menu,
   MessageSquareQuote,
   Package,
   Pencil,
@@ -25,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useCart } from "../context/CartContext";
 import type { Collection, EntityStatus, Product } from "../data/products";
 import {
   cloneShopSettings,
@@ -44,7 +46,7 @@ import {
   type UserRole,
 } from "../lib/userProfiles";
 import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
-import { subscribeToOrders, updateOrderByAdmin, type OrderRecord, type OrderStatus } from "../lib/orders";
+import { subscribeToOrders, subscribeToUserOrders, updateOrderByAdmin, type OrderRecord, type OrderStatus } from "../lib/orders";
 import {
   DEFAULT_COLLECTION_GRADIENT,
   getActiveHeroBanners,
@@ -162,6 +164,7 @@ interface AdminMenuItem {
   icon: ReactNode;
   implemented?: boolean;
   requiresPrivilege?: boolean;
+  badge?: number;
 }
 
 interface AdminMenuGroup {
@@ -172,6 +175,7 @@ interface AdminMenuGroup {
   highlights: AdminModuleHighlight[];
   architectureNotes: string[];
   items: AdminMenuItem[];
+  badge?: number;
 }
 
 function cloneVariants(variants?: Product["variants"]): Product["variants"] {
@@ -389,6 +393,7 @@ export default function Account() {
   const navigate = useNavigate();
   const { user, profile, role, authMethod, isPrivilegedUser, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
+  const { items: cartItems, totalItems: cartTotalItems, totalPrice: cartTotalPrice, updateQuantity: updateCartQuantity, removeItem: removeCartItem } = useCart();
   const {
     settings,
     collections,
@@ -980,6 +985,8 @@ export default function Account() {
   const [contactMessagesError, setContactMessagesError] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [myOrders, setMyOrders] = useState<OrderRecord[]>([]);
+  const [myOrdersError, setMyOrdersError] = useState<string | null>(null);
   const [openNavGroups, setOpenNavGroups] = useState<Record<AdminMenuGroup["key"], boolean>>({
     common: true,
     website: true,
@@ -987,6 +994,7 @@ export default function Account() {
     finance: false,
     factory: false,
   });
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const visibleSettings = useMemo(() => getRenderableSettings(settings), [settings]);
   const activeNavigationItems = useMemo(
@@ -1243,6 +1251,7 @@ export default function Account() {
           {
             key: "crm",
             label: "CRM",
+            badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
             description: "Customer 360, захиалга, service, retention workflow.",
             icon: <Users size={20} />,
             highlights: [
@@ -1287,6 +1296,7 @@ export default function Account() {
                 icon: <WalletCards size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
+                badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
               },
               {
                 id: "crmService",
@@ -1525,6 +1535,7 @@ export default function Account() {
           {
             key: "crm",
             label: "CRM",
+            badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
             description: "Customer 360, order operations, service, and retention workflows.",
             icon: <Users size={20} />,
             highlights: [
@@ -1569,6 +1580,7 @@ export default function Account() {
                 icon: <WalletCards size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
+                badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
               },
               {
                 id: "crmService",
@@ -1751,6 +1763,25 @@ export default function Account() {
       },
     });
   }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (isPrivilegedUser || !user) {
+      setMyOrders([]);
+      setMyOrdersError(null);
+      return;
+    }
+
+    return subscribeToUserOrders({
+      uid: user.uid,
+      onData: (nextOrders) => {
+        setMyOrders(nextOrders);
+        setMyOrdersError(null);
+      },
+      onError: (subscriptionError) => {
+        setMyOrdersError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser, user]);
 
   useEffect(() => {
     if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "messages")) {
@@ -2434,10 +2465,138 @@ export default function Account() {
     }
   };
 
+  if (!isPrivilegedUser) {
+    return (
+      <div className="customer-account-page">
+        <div className="customer-account-container">
+          <div className="customer-account-header">
+            <h1>{language === "MN" ? "Миний бүртгэл" : "My Account"}</h1>
+          </div>
+
+          <div className="customer-account-grid">
+            <div className="customer-profile-card">
+              <h2>{language === "MN" ? "Профайл" : "Profile"}</h2>
+              <div className="customer-profile-info">
+                <div className="customer-profile-row">
+                  <span>{language === "MN" ? "Нэр" : "Name"}</span>
+                  <strong>{profile?.displayName || "-"}</strong>
+                </div>
+                <div className="customer-profile-row">
+                  <span>{language === "MN" ? "Утас" : "Phone"}</span>
+                  <strong>{profile?.phoneNumber || user?.phoneNumber || "-"}</strong>
+                </div>
+                <div className="customer-profile-row">
+                  <span>{language === "MN" ? "И-мэйл" : "Email"}</span>
+                  <strong>{profile?.email || user?.email || "-"}</strong>
+                </div>
+                <div className="customer-profile-row">
+                  <span>{language === "MN" ? "Бүртгүүлсэн" : "Registered"}</span>
+                  <strong>{formatAdminDateTime(profile?.registeredAt ?? null, language)}</strong>
+                </div>
+              </div>
+              <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: "1rem" }} onClick={logout}>
+                {language === "MN" ? "Гарах" : "Sign out"}
+              </button>
+            </div>
+
+            {cartItems.length > 0 && (
+              <div className="customer-cart-card">
+                <h2>{language === "MN" ? "Миний сагс" : "My Cart"} <small>({cartTotalItems})</small></h2>
+                <div className="customer-cart-items">
+                  {cartItems.map((item, idx) => (
+                    <div key={idx} className="customer-cart-item">
+                      <div className="customer-order-product-thumb">
+                        {item.product.images?.[0] ? <img src={item.product.images[0]} alt={item.product.name} /> : <span>{item.product.name.slice(0, 1)}</span>}
+                      </div>
+                      <div className="customer-cart-item-body">
+                        <div className="customer-order-product-info">
+                          <span>{item.product.name}</span>
+                          <small>{item.variant ? `${item.variant} · ` : ""}{formatStorePrice(item.unitPrice)}</small>
+                        </div>
+                        <div className="customer-cart-item-controls">
+                          <div className="customer-cart-qty">
+                            <button type="button" onClick={() => updateCartQuantity(item.product.id, item.quantity - 1, item.variant)}>−</button>
+                            <span>{item.quantity}</span>
+                            <button type="button" onClick={() => updateCartQuantity(item.product.id, item.quantity + 1, item.variant)}>+</button>
+                          </div>
+                          <strong>{formatStorePrice(item.unitPrice * item.quantity)}</strong>
+                          <button type="button" className="customer-cart-remove" onClick={() => removeCartItem(item.product.id, item.variant)}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="customer-cart-footer">
+                  <div className="customer-order-totals-row customer-order-grand">
+                    <span>{language === "MN" ? "Нийт" : "Total"}</span>
+                    <strong>{formatStorePrice(cartTotalPrice)}</strong>
+                  </div>
+                  <button type="button" className="btn btn-primary" onClick={() => navigate("/checkout")}>
+                    {language === "MN" ? "Захиалга өгөх" : "Checkout"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="customer-orders-card">
+              <h2>{language === "MN" ? "Миний захиалгууд" : "My Orders"} {myOrders.length > 0 && <small>({myOrders.length})</small>}</h2>
+              {myOrdersError && <p className="customer-error">{myOrdersError}</p>}
+              {myOrders.length === 0 ? (
+                <p className="customer-empty">{language === "MN" ? "Захиалга байхгүй байна" : "No orders yet"}</p>
+              ) : (
+                <div className="customer-orders-list">
+                  {myOrders.map((order) => (
+                    <div key={order.id} className="customer-order-item">
+                      <div className="customer-order-head">
+                        <div>
+                          <strong>{order.orderNumber}</strong>
+                          <small>{formatAdminDateTime(order.createdAt, language)}</small>
+                        </div>
+                        <span className={getOrderStatusClassName(order.status)}>
+                          {getOrderStatusLabel(order.status, language)}
+                        </span>
+                      </div>
+                      <div className="customer-order-products">
+                        {order.items.map((item, idx) => (
+                          <div key={idx} className="customer-order-product">
+                            <div className="customer-order-product-thumb">
+                              {item.image ? <img src={item.image} alt={item.name} /> : <span>{item.name.slice(0, 1)}</span>}
+                            </div>
+                            <div className="customer-order-product-info">
+                              <span>{item.name}</span>
+                              <small>{item.variant ? `${item.variant} · ` : ""}{item.quantity} x {formatStorePrice(item.unitPrice)}</small>
+                            </div>
+                            <strong>{formatStorePrice(item.lineTotal)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="customer-order-footer">
+                        <div className="customer-order-totals-row">
+                          <span>{language === "MN" ? "Хүргэлт" : "Shipping"}</span>
+                          <span>{formatStorePrice(order.totals.shippingFee)}</span>
+                        </div>
+                        <div className="customer-order-totals-row customer-order-grand">
+                          <span>{language === "MN" ? "Нийт" : "Total"}</span>
+                          <strong>{formatStorePrice(order.totals.grandTotal)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-page">
-      <div className="admin-shell">
-        <aside className="admin-sidebar">
+      <div className={`admin-shell ${sidebarOpen ? "" : "admin-shell-collapsed"}`}>
+        <aside className={`admin-sidebar ${sidebarOpen ? "" : "admin-sidebar-hidden"}`}>
           <div className="admin-sidebar-brand">
             <img src={logoBlack} alt="Savana" className="admin-sidebar-logo" />
             <strong>{visibleSettings.brandName}</strong>
@@ -2460,6 +2619,7 @@ export default function Account() {
                     <span className="admin-nav-parent-main">
                       <span className="admin-nav-parent-icon">{group.icon}</span>
                       <span className="admin-nav-parent-label">{group.label}</span>
+                      {group.badge != null && group.badge > 0 && <span className="admin-nav-badge">{group.badge}</span>}
                     </span>
                     <span className="admin-nav-parent-toggle">
                       {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -2476,6 +2636,7 @@ export default function Account() {
                         >
                           <span className="admin-nav-child-dot" />
                           <span className="admin-nav-child-label">{item.label}</span>
+                          {item.badge != null && item.badge > 0 && <span className="admin-nav-badge">{item.badge}</span>}
                         </button>
                       ))}
                     </div>
@@ -2532,6 +2693,14 @@ export default function Account() {
         </aside>
 
         <section className="admin-content">
+          <button
+            type="button"
+            className="admin-sidebar-toggle"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-label="Toggle sidebar"
+          >
+            <Menu size={20} />
+          </button>
           {activeSection === "dashboard" ? (
             <>
               <div className="admin-topbar">
@@ -3419,10 +3588,6 @@ export default function Account() {
                 <div className="admin-summary-card admin-summary-card-compact">
                   <span>{copy.totalOrders}</span>
                   <strong>{orders.length}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.newOrders}</span>
-                  <strong>{newOrdersCount}</strong>
                 </div>
                 <div className="admin-summary-card admin-summary-card-compact">
                   <span>{copy.paidOrders}</span>
@@ -5786,14 +5951,6 @@ export default function Account() {
                   />
                 </label>
                 <label className="admin-field admin-field-wide">
-                  <span>{language === "MN" ? "И-мэйл" : "Email"}</span>
-                  <input
-                    type="email"
-                    value={orderModal.draft.customer.email ?? ""}
-                    onChange={handleOrderCustomerChange("email")}
-                  />
-                </label>
-                <label className="admin-field admin-field-wide">
                   <span>{copy.note}</span>
                   <textarea value={orderModal.draft.customer.note} onChange={handleOrderCustomerChange("note")} rows={3} />
                 </label>
@@ -5899,6 +6056,20 @@ export default function Account() {
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="admin-order-totals">
+                <div className="admin-order-totals-row">
+                  <span>{language === "MN" ? "Барааны дүн" : "Subtotal"}</span>
+                  <span>{formatStorePrice(orderModal.draft.totals.subtotal)}</span>
+                </div>
+                <div className="admin-order-totals-row">
+                  <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
+                  <span>{formatStorePrice(orderModal.draft.totals.shippingFee)}</span>
+                </div>
+                <div className="admin-order-totals-row admin-order-totals-grand">
+                  <span>{language === "MN" ? "Нийт дүн" : "Grand total"}</span>
+                  <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
+                </div>
               </div>
             </div>
 

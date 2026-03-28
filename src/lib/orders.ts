@@ -8,6 +8,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
@@ -101,7 +102,7 @@ export interface UpdateOrderAdminInput {
   payment: OrderPaymentPayload;
 }
 
-function createOrderNumber(id: string) {
+function createOrderNumber(): string {
   const dateParts = new Intl.DateTimeFormat("en", {
     timeZone: "Asia/Ulaanbaatar",
     year: "2-digit",
@@ -111,9 +112,12 @@ function createOrderNumber(id: string) {
   const year = dateParts.find((part) => part.type === "year")?.value ?? "00";
   const month = dateParts.find((part) => part.type === "month")?.value ?? "00";
   const day = dateParts.find((part) => part.type === "day")?.value ?? "00";
-  const suffix = id.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase().padEnd(4, "0");
 
-  return `ORD-${year}${month}${day}${suffix}`;
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const randomLetter = chars[Math.floor(Math.random() * chars.length)];
+  const randomDigits = String(Math.floor(Math.random() * 100)).padStart(2, "0");
+
+  return `ORD-${year}${month}${day}${randomLetter}${randomDigits}`;
 }
 
 function createQpayQrPayload(input: {
@@ -262,7 +266,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
 
 export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder> {
   const orderRef = doc(collection(db, ORDERS_COLLECTION));
-  const orderNumber = createOrderNumber(orderRef.id);
+  const orderNumber = createOrderNumber();
   const payment: OrderPaymentPayload = {
     method: "qpay",
     provider: "qpay",
@@ -358,6 +362,29 @@ export function subscribeToOrders({
 }) {
   return onSnapshot(
     query(collection(db, ORDERS_COLLECTION), orderBy("createdAt", "desc")),
+    (snapshot) => {
+      const orders = snapshot.docs.map((documentSnapshot) => deserializeOrder(documentSnapshot));
+      onData(orders);
+    },
+    onError,
+  );
+}
+
+export function subscribeToUserOrders({
+  uid,
+  onData,
+  onError,
+}: {
+  uid: string;
+  onData: (orders: OrderRecord[]) => void;
+  onError?: (error: FirestoreError) => void;
+}) {
+  return onSnapshot(
+    query(
+      collection(db, ORDERS_COLLECTION),
+      where("auth.uid", "==", uid),
+      orderBy("createdAt", "desc"),
+    ),
     (snapshot) => {
       const orders = snapshot.docs.map((documentSnapshot) => deserializeOrder(documentSnapshot));
       onData(orders);

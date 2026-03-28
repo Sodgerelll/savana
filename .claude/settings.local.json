@@ -4,7 +4,13 @@
       "Bash(npm install:*)",
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
-      "Bash(grep -E \"\\\\.\\(js|mjs|ts|json\\)$\")"
+      "Bash(grep -E \"\\\\.\\(js|mjs|ts|json\\)$\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh api:*)",
+      "Bash(where gh:*)",
+      "Bash(git add:*)",
+      "Bash(npx firebase:*)"
     ]
   }
 }

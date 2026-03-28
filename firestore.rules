@@ -132,7 +132,9 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow read: if isOrderOwner() || hasPrivilegedProfileRole();
+      allow get: if isOrderOwner() || hasPrivilegedProfileRole();
+      allow list: if hasPrivilegedProfileRole()
+        || (isSignedIn() && request.auth.uid == resource.data.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.auth.uid == request.auth.uid
         && request.resource.data.auth.isAnonymous == (request.auth.token.firebase.sign_in_provider == "anonymous")

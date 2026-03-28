@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
-import { CheckCircle2, ChevronLeft, PackageCheck, QrCode, RefreshCcw, Truck, WalletCards } from "lucide-react";
+import { CheckCircle2, ChevronLeft, PackageCheck, QrCode, RefreshCcw, Trash2, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -44,7 +44,7 @@ type CheckoutStep = "delivery" | "payment";
 
 export default function Checkout() {
   const { user, profile, authMethod, loading, signInAsGuest } = useAuth();
-  const { items, totalPrice, clearCart, setIsCartOpen } = useCart();
+  const { items, totalPrice, clearCart, setIsCartOpen, updateQuantity, removeItem } = useCart();
   const { language } = useLanguage();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -772,12 +772,32 @@ export default function Checkout() {
             <div className="checkout-summary-items">
               {summaryItems.map((item) => (
                 <div key={`${item.productId}-${item.variant}`} className="checkout-summary-item">
-                  <div className="checkout-summary-copy">
-                    <strong>{item.name}</strong>
-                    <small>{item.variant ?? copy.defaultVariant}</small>
-                    <small>× {item.quantity}</small>
+                  <div className="checkout-summary-thumb">
+                    {item.image ? <img src={item.image} alt={item.name} /> : <span>{item.name.slice(0, 1)}</span>}
                   </div>
-                  <span>{formatStorePrice(item.lineTotal)}</span>
+                  <div className="checkout-summary-item-body">
+                    <div className="checkout-summary-copy">
+                      <strong>{item.name}</strong>
+                      <small>{item.variant ?? copy.defaultVariant}</small>
+                    </div>
+                    <div className="checkout-summary-item-bottom">
+                      {!isOrderLocked ? (
+                        <div className="checkout-summary-qty">
+                          <button type="button" onClick={() => updateQuantity(item.productId, item.quantity - 1, item.variant ?? undefined)}>−</button>
+                          <span>{item.quantity}</span>
+                          <button type="button" onClick={() => updateQuantity(item.productId, item.quantity + 1, item.variant ?? undefined)}>+</button>
+                        </div>
+                      ) : (
+                        <small>× {item.quantity}</small>
+                      )}
+                      <strong>{formatStorePrice(item.lineTotal)}</strong>
+                      {!isOrderLocked && (
+                        <button type="button" className="checkout-summary-remove" onClick={() => removeItem(item.productId, item.variant ?? undefined)}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
