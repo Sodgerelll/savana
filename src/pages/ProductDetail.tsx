@@ -154,14 +154,21 @@ export default function ProductDetail() {
 
             <div className="pd-quantity">
               <label className="pd-label">{t.quantity}</label>
-              <div className="quantity-selector">
-                <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>
-                  <Minus size={14} />
-                </button>
-                <span>{quantity}</span>
-                <button onClick={() => setQuantity(quantity + 1)}>
-                  <Plus size={14} />
-                </button>
+              <div className="pd-quantity-row">
+                <div className="quantity-selector">
+                  <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>
+                    <Minus size={14} />
+                  </button>
+                  <span>{quantity}</span>
+                  <button onClick={() => setQuantity(quantity + 1)}>
+                    <Plus size={14} />
+                  </button>
+                </div>
+                {quantity > 1 && (
+                  <span className="pd-quantity-total">
+                    = {formatStorePrice(currentPrice * quantity)}
+                  </span>
+                )}
               </div>
             </div>
 

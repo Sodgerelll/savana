@@ -74,7 +74,7 @@
   left: 1rem;
   background-color: var(--color-accent);
   color: #fff;
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -84,20 +84,23 @@
 /* Info */
 .product-detail-info h1 {
   font-family: var(--font-heading);
-  font-size: 2.5rem;
+  font-size: var(--fs-2xl);
   font-weight: 400;
   margin-bottom: 0.75rem;
   line-height: 1.15;
 }
 
 .pd-price {
-  font-size: 1.2rem;
-  color: var(--color-text);
+  display: inline-block;
+  font-size: var(--fs-md);
+  color: #fff;
+  background: var(--color-accent);
+  padding: 0.25rem 0.85rem;
   margin-bottom: 0.5rem;
 }
 
 .pd-stock {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: #5a7a4a;
   margin-bottom: 1.5rem;
 }
@@ -117,7 +120,7 @@
 }
 
 .pd-description p {
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
   line-height: 1.8;
   color: var(--color-text);
 }
@@ -125,7 +128,7 @@
 .pd-label {
   display: block;
   font-family: var(--font-body);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   margin-bottom: 0.6rem;
@@ -145,7 +148,7 @@
 }
 
 .pd-size-value {
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
   padding: 0.4rem 1rem;
   border: 1px solid var(--color-border-light, #ddd8cf);
   border-radius: 6px;
@@ -162,7 +165,7 @@
   padding: 0.55rem 1.1rem;
   border: 1px solid var(--color-border);
   background: transparent;
-  font-size: 0.83rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   transition: all 0.25s;
   font-family: var(--font-body);
@@ -186,7 +189,7 @@
 }
 
 .variant-stock {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: #27ae60;
 }
 
@@ -200,6 +203,19 @@
 
 .pd-quantity {
   margin-bottom: 1.5rem;
+}
+
+.pd-quantity-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pd-quantity-total {
+  font-family: var(--font-heading);
+  font-size: var(--fs-md);
+  color: var(--color-heading);
+  font-weight: 500;
 }
 
 .quantity-selector {
@@ -226,7 +242,7 @@
 
 .quantity-selector span {
   padding: 0.6rem 1.25rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
   min-width: 3rem;
   text-align: center;
   border-left: 1px solid var(--color-border);
@@ -237,7 +253,7 @@
   width: 100%;
   margin-bottom: 2rem;
   padding: 1rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
 }
 
 .pd-features {
@@ -253,7 +269,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
 }
 
@@ -269,7 +285,7 @@
 .pd-accordion summary {
   padding: 1rem 0;
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
   cursor: pointer;
   list-style: none;
@@ -285,7 +301,7 @@
 
 .pd-accordion summary::after {
   content: '+';
-  font-size: 1.35rem;
+  font-size: var(--fs-md);
   font-weight: 300;
   color: var(--color-accent);
 }
@@ -296,7 +312,7 @@
 
 .pd-accordion details p {
   padding: 0 0 1rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   line-height: 1.75;
   color: var(--color-text);
 }
@@ -312,6 +328,6 @@
   }
 
   .product-detail-info h1 {
-    font-size: 1.85rem;
+    font-size: var(--fs-xl);
   }
 }
