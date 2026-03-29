@@ -16,7 +16,7 @@
 
 .partnerships-hero h1 {
   font-family: var(--font-heading);
-  font-size: 3rem;
+  font-size: var(--fs-3xl);
   color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
@@ -61,7 +61,7 @@
 .partnerships-intro span,
 .partnerships-band-panel > span,
 .partnerships-cta-inner span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--color-accent);
@@ -110,7 +110,7 @@
 
 .partnerships-card h3,
 .partnerships-band-panel strong {
-  font-size: 1.2rem;
+  font-size: var(--fs-md);
   color: var(--color-heading);
 }
 
@@ -195,7 +195,7 @@
   }
 
   .partnerships-hero h1 {
-    font-size: 2.5rem;
+    font-size: var(--fs-2xl);
   }
 
   .partnerships-cta-inner {

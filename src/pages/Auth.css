@@ -25,7 +25,7 @@
 }
 
 .auth-kicker {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   opacity: 0.8;
@@ -40,7 +40,7 @@
 
 .auth-visual p {
   max-width: 36rem;
-  font-size: 1rem;
+  font-size: var(--fs-base);
   line-height: 1.8;
   opacity: 0.9;
 }
@@ -55,7 +55,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
 }
 
 .auth-benefit svg {
@@ -80,7 +80,7 @@
 }
 
 .auth-card h2 {
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   margin-bottom: 0.65rem;
 }
 
@@ -107,7 +107,7 @@
   background: rgba(255, 255, 255, 0.92);
   color: var(--color-heading);
   padding: 0.95rem 1rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -135,7 +135,7 @@
   justify-content: center;
   background: rgba(90, 81, 3, 0.1);
   color: var(--color-accent);
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -147,12 +147,12 @@
 }
 
 .auth-provider-copy strong {
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
 }
 
 .auth-provider-copy small {
   color: rgba(58, 52, 18, 0.62);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   line-height: 1.35;
 }
 
@@ -178,7 +178,7 @@
   padding: 0 0.8rem;
   background: rgba(248, 247, 242, 0.96);
   color: rgba(58, 52, 18, 0.65);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -208,7 +208,7 @@
   background: rgba(255, 255, 255, 0.68);
   color: rgba(58, 52, 18, 0.78);
   padding: 0.85rem 1rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: all 0.2s ease;
@@ -245,7 +245,7 @@
 }
 
 .auth-field label {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-heading);
@@ -257,7 +257,7 @@
   border: 1px solid var(--color-border);
   background: rgba(255, 255, 255, 0.9);
   color: var(--color-heading);
-  font-size: 0.94rem;
+  font-size: var(--fs-base);
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -270,7 +270,7 @@
 .auth-notice,
 .auth-error {
   padding: 0.9rem 1rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   margin-bottom: 1rem;
 }
 
@@ -292,7 +292,7 @@
 }
 
 .auth-session-meta span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(58, 52, 18, 0.62);
@@ -346,7 +346,7 @@
 
 .auth-switch {
   margin-top: 1rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
 }
 
 .account-layout {
@@ -362,7 +362,7 @@
 }
 
 .account-hero h1 {
-  font-size: 3rem;
+  font-size: var(--fs-3xl);
   margin-bottom: 0.5rem;
 }
 
@@ -382,7 +382,7 @@
 }
 
 .account-card-panel h2 {
-  font-size: 1.5rem;
+  font-size: var(--fs-lg);
 }
 
 .account-meta {
@@ -392,7 +392,7 @@
 
 .account-meta-item span {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.65;
@@ -408,7 +408,7 @@
   background: rgba(90, 81, 3, 0.08);
   color: var(--color-accent);
   border: 1px solid rgba(90, 81, 3, 0.18);
-  font-size: 0.76rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -418,7 +418,7 @@
 }
 
 .account-cart-total {
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   color: var(--color-heading);
 }
 
@@ -475,7 +475,7 @@
   }
 
   .account-hero h1 {
-    font-size: 2.4rem;
+    font-size: var(--fs-2xl);
   }
 }
 
@@ -559,7 +559,7 @@
 }
 
 .admin-brand-mark {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.26em;
   text-transform: uppercase;
   color: var(--color-accent);
@@ -567,7 +567,7 @@
 }
 
 .admin-sidebar-brand strong {
-  font-size: 1.45rem;
+  font-size: var(--fs-lg);
   font-weight: 500;
   color: var(--color-heading);
 }
@@ -578,7 +578,7 @@
 }
 
 .admin-language-switch > span {
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: rgba(38, 33, 29, 0.72);
@@ -595,7 +595,7 @@
   background: rgba(255, 255, 255, 0.74);
   color: var(--color-heading);
   padding: 0.7rem 0.8rem;
-  font-size: 0.76rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: background 0.2s ease, border-color 0.2s ease;
@@ -731,7 +731,7 @@
 }
 
 .admin-nav-parent-label {
-  font-size: 1.02rem;
+  font-size: var(--fs-base);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -790,14 +790,14 @@
 }
 
 .admin-nav-child-label {
-  font-size: 0.96rem;
+  font-size: var(--fs-base);
   font-weight: 500;
 }
 
 .admin-nav-badge {
   background: #e74c3c;
   color: #fff;
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   min-width: 18px;
   height: 18px;
@@ -834,7 +834,7 @@
 .admin-user-head span,
 .admin-user-status span {
   display: block;
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(38, 33, 29, 0.68);
@@ -843,7 +843,7 @@
 
 .admin-user-head strong,
 .admin-user-status strong {
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   font-weight: 500;
   color: var(--color-heading);
 }
@@ -876,7 +876,7 @@
 }
 
 .admin-topbar h1 {
-  font-size: 2.6rem;
+  font-size: var(--fs-2xl);
   margin-bottom: 0.45rem;
 }
 
@@ -885,7 +885,7 @@
 }
 
 .admin-kicker {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-accent);
@@ -950,7 +950,7 @@
 }
 
 .admin-stat-card span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.7;
@@ -962,7 +962,7 @@
 }
 
 .admin-stat-card strong {
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   color: var(--color-heading);
 }
 
@@ -984,7 +984,7 @@
 }
 
 .admin-section-head h2 {
-  font-size: 1.45rem;
+  font-size: var(--fs-lg);
   margin-bottom: 0.25rem;
 }
 
@@ -1021,14 +1021,14 @@
 }
 
 .admin-architecture-card span {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.72;
 }
 
 .admin-architecture-card strong {
-  font-size: 1.15rem;
+  font-size: var(--fs-md);
   color: var(--color-heading);
 }
 
@@ -1071,7 +1071,7 @@
 
 .admin-preview-item span {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.7;
@@ -1079,7 +1079,7 @@
 }
 
 .admin-preview-item strong {
-  font-size: 1rem;
+  font-size: var(--fs-base);
 }
 
 .admin-structure-list {
@@ -1093,7 +1093,7 @@
   background: rgba(242, 240, 235, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   color: var(--color-heading);
-  font-size: 0.84rem;
+  font-size: var(--fs-sm);
   overflow-x: auto;
 }
 
@@ -1120,14 +1120,14 @@
 }
 
 .admin-summary-card span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.72;
 }
 
 .admin-summary-card strong {
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   line-height: 1;
   color: var(--color-heading);
 }
@@ -1137,7 +1137,7 @@
 }
 
 .admin-summary-card small {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   opacity: 0.75;
 }
 
@@ -1147,7 +1147,7 @@
 }
 
 .admin-summary-card-compact strong {
-  font-size: 1.7rem;
+  font-size: var(--fs-lg);
 }
 
 .admin-data-card {
@@ -1168,7 +1168,7 @@
 }
 
 .admin-data-card-head h2 {
-  font-size: 1.45rem;
+  font-size: var(--fs-lg);
   margin-bottom: 0.25rem;
 }
 
@@ -1202,7 +1202,7 @@
 .admin-data-table thead th {
   text-align: left;
   padding: 1rem 1.4rem;
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(62, 55, 33, 0.72);
@@ -1237,11 +1237,11 @@
 }
 
 .admin-table-primary strong {
-  font-size: 0.98rem;
+  font-size: var(--fs-base);
 }
 
 .admin-table-primary small {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   opacity: 0.8;
 }
@@ -1275,7 +1275,7 @@
 }
 
 .admin-order-table-item-names span {
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--color-heading);
   line-height: 1.4;
@@ -1291,7 +1291,7 @@
   padding: 0.55rem 0.95rem;
   border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1386,7 +1386,7 @@
 }
 
 .admin-product-thumb span {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
   text-transform: uppercase;
 }
@@ -1397,7 +1397,7 @@
   background: rgba(242, 240, 235, 0.96);
   border: 1px solid rgba(183, 185, 167, 0.45);
   color: var(--color-heading);
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
 }
 
 .admin-table-actions {
@@ -1456,7 +1456,7 @@
 }
 
 .admin-modal-header h2 {
-  font-size: 1.5rem;
+  font-size: var(--fs-lg);
   margin-bottom: 0.3rem;
 }
 
@@ -1517,7 +1517,7 @@
   width: fit-content;
   padding: 0.42rem 0.72rem;
   border: 1px solid transparent;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1555,7 +1555,7 @@
 }
 
 .admin-field span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-heading);
@@ -1570,7 +1570,7 @@
   color: var(--color-heading);
   padding: 0.85rem 0.95rem;
   outline: none;
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
 }
 
 .admin-field textarea {
@@ -1585,7 +1585,7 @@
 }
 
 .admin-field small {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   opacity: 0.75;
 }
 
@@ -1649,7 +1649,7 @@
   gap: 0.25rem;
   cursor: pointer;
   color: #8a8477;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   transition: border-color 0.15s, color 0.15s;
 }
 
@@ -1677,12 +1677,12 @@
   padding: 0.5rem 0.6rem;
   border: 1px solid #ddd8cf;
   border-radius: 6px;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   background: #fff;
 }
 
 .admin-variant-sold {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: #888;
   white-space: nowrap;
 }
@@ -1706,18 +1706,18 @@
 }
 
 .admin-stock-remaining small {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: #8a8477;
 }
 
 .admin-stock-remaining strong {
-  font-size: 1.1rem;
+  font-size: var(--fs-md);
   color: #3a3630;
 }
 
 .btn-sm {
   padding: 0.35rem 0.75rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   gap: 0.3rem;
 }
 
@@ -1783,7 +1783,7 @@
 }
 
 .admin-repeater-head strong {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
 }
 
@@ -1800,7 +1800,7 @@
 }
 
 .admin-inline-note {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   opacity: 0.78;
 }
@@ -1822,7 +1822,7 @@
 .admin-order-meta-card span,
 .admin-order-static-value small,
 .admin-order-item small {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(38, 33, 29, 0.7);
@@ -1861,19 +1861,19 @@
 .admin-order-totals-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: rgba(38, 33, 29, 0.75);
 }
 
 .admin-order-totals-grand {
   border-top: 1px solid rgba(183, 185, 167, 0.4);
   padding-top: 0.6rem;
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
 }
 
 .admin-order-totals-grand strong {
-  font-size: 1.1rem;
+  font-size: var(--fs-md);
 }
 
 .admin-order-items-summary {
@@ -1887,14 +1887,14 @@
 }
 
 .admin-order-items-summary span {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(38, 33, 29, 0.68);
 }
 
 .admin-order-items-summary strong {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
 }
 
@@ -1934,7 +1934,7 @@
 }
 
 .admin-order-item-thumb span {
-  font-size: 1.25rem;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: var(--color-heading);
 }
@@ -1946,7 +1946,7 @@
 }
 
 .admin-order-item-copy strong {
-  font-size: 1.08rem;
+  font-size: var(--fs-base);
   line-height: 1.35;
 }
 
@@ -1962,7 +1962,7 @@
   padding: 0.38rem 0.65rem;
   border: 1px solid rgba(183, 185, 167, 0.45);
   background: rgba(242, 240, 235, 0.9);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--color-heading);
 }
 
@@ -1982,14 +1982,14 @@
 }
 
 .admin-order-item-stats span {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(38, 33, 29, 0.66);
 }
 
 .admin-order-item-stats strong {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
 }
 
@@ -2030,7 +2030,7 @@
 }
 
 .admin-banner-spec-visual span {
-  font-size: 1.2rem;
+  font-size: var(--fs-md);
   letter-spacing: 0.18em;
   color: var(--color-heading);
 }
@@ -2042,11 +2042,11 @@
 
 .admin-banner-spec-copy strong {
   color: var(--color-heading);
-  font-size: 0.96rem;
+  font-size: var(--fs-base);
 }
 
 .admin-banner-spec-copy small {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   opacity: 0.82;
 }
@@ -2056,7 +2056,7 @@
   height: 100%;
   display: grid;
   place-items: center;
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   color: var(--color-heading);
   text-transform: uppercase;
 }
@@ -2100,7 +2100,7 @@
 }
 
 .admin-navigation-thumb span {
-  font-size: 0.86rem;
+  font-size: var(--fs-sm);
   letter-spacing: 0.18em;
   color: var(--color-heading);
   text-transform: uppercase;
@@ -2112,7 +2112,7 @@
 }
 
 .admin-navigation-copy small {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   opacity: 0.78;
 }
@@ -2153,12 +2153,12 @@
 }
 
 .admin-product-row strong {
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
 }
 
 .admin-product-row span,
 .admin-product-row em {
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   opacity: 0.8;
   font-style: normal;
 }
@@ -2178,7 +2178,7 @@
 }
 
 .admin-product-editor h3 {
-  font-size: 1.4rem;
+  font-size: var(--fs-lg);
 }
 
 .admin-empty-state {
@@ -2305,7 +2305,7 @@
   }
 
   .admin-topbar h1 {
-    font-size: 2rem;
+    font-size: var(--fs-xl);
   }
 
   .admin-modal-backdrop {
@@ -2370,7 +2370,7 @@
 
 .customer-account-header h1 {
   font-family: var(--font-heading);
-  font-size: 1.6rem;
+  font-size: var(--fs-lg);
   color: var(--color-heading);
   margin: 0;
 }
@@ -2393,7 +2393,7 @@
 .customer-orders-card h2,
 .customer-cart-card h2 {
   font-family: var(--font-heading);
-  font-size: 1.05rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
   margin: 0 0 1.2rem;
   padding-bottom: 0.8rem;
@@ -2409,7 +2409,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
 }
 
 .customer-profile-row span {
@@ -2424,13 +2424,13 @@
 .customer-empty {
   text-align: center;
   color: rgba(38, 33, 29, 0.5);
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   padding: 2rem 0;
 }
 
 .customer-error {
   color: #c0392b;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   margin-bottom: 0.5rem;
 }
 
@@ -2455,13 +2455,13 @@
 }
 
 .customer-order-head strong {
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: var(--color-heading);
 }
 
 .customer-order-head small {
   display: block;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: rgba(38, 33, 29, 0.5);
   margin-top: 0.15rem;
 }
@@ -2500,7 +2500,7 @@
 }
 
 .customer-order-product-thumb span {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: rgba(38, 33, 29, 0.4);
   font-weight: 600;
 }
@@ -2512,7 +2512,7 @@
 
 .customer-order-product-info span {
   display: block;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--color-heading);
   white-space: nowrap;
   overflow: hidden;
@@ -2520,12 +2520,12 @@
 }
 
 .customer-order-product-info small {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: rgba(38, 33, 29, 0.5);
 }
 
 .customer-order-product > strong {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--color-heading);
   white-space: nowrap;
 }
@@ -2539,13 +2539,13 @@
 .customer-order-totals-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   color: rgba(38, 33, 29, 0.6);
   padding: 0.15rem 0;
 }
 
 .customer-order-grand {
-  font-size: 0.92rem;
+  font-size: var(--fs-base);
   color: var(--color-heading);
   padding-top: 0.4rem;
   border-top: 1px solid rgba(183, 185, 167, 0.25);
@@ -2597,7 +2597,7 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   color: var(--color-text);
   display: flex;
   align-items: center;
@@ -2611,12 +2611,12 @@
 .customer-cart-qty span {
   min-width: 28px;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 .customer-cart-item-controls strong {
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   margin-left: auto;
 }
 

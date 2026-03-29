@@ -16,7 +16,7 @@
 
 .find-us-hero h1 {
   font-family: var(--font-heading);
-  font-size: 3rem;
+  font-size: var(--fs-3xl);
   color: var(--color-heading);
   margin-bottom: 0.75rem;
 }
@@ -69,7 +69,7 @@
 /* Map area */
 .map-section h2 {
   font-family: var(--font-heading);
-  font-size: 2rem;
+  font-size: var(--fs-xl);
   margin-bottom: 1.5rem;
   color: var(--color-heading);
 }
@@ -107,14 +107,14 @@
 
 .find-us-location {
   font-family: var(--font-heading);
-  font-size: 1.25rem;
+  font-size: var(--fs-md);
   color: var(--color-heading);
   line-height: 1.3;
 }
 
 .map-note {
   font-family: var(--font-body);
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   line-height: 1.6;
   opacity: 0.85;
@@ -141,7 +141,7 @@
   padding: 0.9rem 1rem;
   border: 1px solid var(--color-heading);
   color: var(--color-heading);
-  font-size: 1rem;
+  font-size: var(--fs-base);
   letter-spacing: 0.08em;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -169,13 +169,13 @@
 
 .find-us-cta-inner h2 {
   font-family: var(--font-heading);
-  font-size: 2.25rem;
+  font-size: var(--fs-xl);
   color: var(--color-heading);
   margin-bottom: 1rem;
 }
 
 .find-us-cta-inner p {
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
   color: var(--color-text);
   line-height: 1.75;
   margin-bottom: 2rem;
@@ -194,7 +194,7 @@
   }
 
   .find-us-hero h1 {
-    font-size: 2.5rem;
+    font-size: var(--fs-2xl);
   }
 
   .find-us-grid {
@@ -210,6 +210,6 @@
   }
 
   .find-us-cta-inner h2 {
-    font-size: 1.85rem;
+    font-size: var(--fs-xl);
   }
 }

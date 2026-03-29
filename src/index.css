@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Petrona:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Petrona:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 
 :root {
   --color-bg: rgb(250, 249, 246);
@@ -14,8 +14,18 @@
   --color-white: #FFFFFF;
   --color-overlay: rgba(0, 0, 0, 0.4);
 
-  --font-heading: 'EB Garamond', serif;
+  --font-heading: 'Petrona', serif;
   --font-body: 'Petrona', serif;
+
+  /* Type scale */
+  --fs-xs:   0.72rem;
+  --fs-sm:   0.85rem;
+  --fs-base: 1rem;
+  --fs-md:   1.2rem;
+  --fs-lg:   1.5rem;
+  --fs-xl:   2rem;
+  --fs-2xl:  2.5rem;
+  --fs-3xl:  3rem;
 
   --max-width: 1400px;
   --header-height: 56px;
@@ -46,7 +56,7 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   color: var(--color-heading);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.2;
 }
 
@@ -87,7 +97,7 @@ ul, ol {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.875rem 2rem;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -152,13 +162,13 @@ ul, ol {
 }
 
 .section-header h2 {
-  font-size: 2.5rem;
+  font-size: var(--fs-2xl);
   margin-bottom: 1rem;
   letter-spacing: 0.01em;
 }
 
 .section-header p {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   max-width: 600px;
   margin: 0 auto;
   color: var(--color-text);
@@ -173,7 +183,7 @@ ul, ol {
 
 /* Breadcrumb */
 .breadcrumb {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   letter-spacing: 0.05em;
 }
@@ -234,7 +244,7 @@ ul, ol {
   }
 
   .section-header h2 {
-    font-size: 2rem;
+    font-size: var(--fs-xl);
   }
 
   .container {

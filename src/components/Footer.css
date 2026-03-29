@@ -14,7 +14,7 @@
 /* Brand column */
 .footer-logo {
   font-family: var(--font-heading);
-  font-size: 1.4rem;
+  font-size: var(--fs-lg);
   color: var(--color-heading);
   display: block;
   margin-bottom: 1rem;
@@ -23,7 +23,7 @@
 }
 
 .footer-about {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   line-height: 1.75;
   margin-bottom: 1.5rem;
   color: var(--color-text);
@@ -48,7 +48,7 @@
 /* Footer columns */
 .footer-col h4 {
   font-family: var(--font-body);
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   margin-bottom: 1.25rem;
@@ -62,7 +62,7 @@
 
 .footer-col ul li a,
 .footer-col ul li {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   transition: color 0.25s;
   text-decoration: none;
@@ -73,7 +73,7 @@
 }
 
 .footer-contact-list li {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   margin-bottom: 0.6rem;
 }
@@ -104,7 +104,7 @@
 }
 
 .footer-bottom p {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
 }
 
@@ -115,7 +115,7 @@
 }
 
 .footer-bottom-links a {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--color-text);
   transition: color 0.25s;
   text-decoration: none;

@@ -160,21 +160,25 @@ export default function Journal() {
                       ) : (
                         <div className="journal-card-media-fallback">{category.slice(0, 1) || "J"}</div>
                       )}
-                    </div>
-                    <div className="journal-card-body">
-                      <span className="journal-card-category">{category}</span>
-                      <h3>{title}</h3>
-                      <p>{excerpt}</p>
-                      <div className="journal-card-meta">
-                        <span>
-                          <CalendarDays size={15} />
+                      <div className="journal-card-image-meta">
+                        {category && <span className="journal-card-category">{category}</span>}
+                        <span className="journal-card-date">
+                          <CalendarDays size={13} />
                           {formatJournalDate(entry.publishedAt, language)}
                         </span>
-                        <span>
-                          <UserCircle2 size={15} />
-                          {entry.author}
-                        </span>
                       </div>
+                    </div>
+                    <div className="journal-card-body">
+                      <h3>{title}</h3>
+                      <p>{excerpt}</p>
+                      {entry.author && (
+                        <div className="journal-card-meta">
+                          <span>
+                            <UserCircle2 size={15} />
+                            {entry.author}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </button>
                 );
