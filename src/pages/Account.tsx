@@ -1084,7 +1084,7 @@ export default function Account() {
       ),
     [directoryUsers]
   );
-  const _newOrdersCount = useMemo(() => orders.filter((order) => order.status === "new").length, [orders]);
+
   const paidOrdersCount = useMemo(() => orders.filter((order) => order.status === "paid").length, [orders]);
   const deliveringOrdersCount = useMemo(
     () => orders.filter((order) => order.status === "delivering").length,
