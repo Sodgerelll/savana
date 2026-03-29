@@ -55,7 +55,13 @@ export default function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
         {product.badge && <span className="product-badge">{product.badge}</span>}
+        <p className="product-card-price-badge">
+          {product.variants
+            ? `${t.from} ${formatStorePrice(Math.min(...product.variants.map((v) => v.price)))}`
+            : formatStorePrice(product.price)}
+        </p>
         <div className="product-card-overlay">
+          <h3 className="product-card-title">{product.name}</h3>
           <button
             className="quick-add-btn"
             onClick={(e) => {
@@ -67,25 +73,6 @@ export default function ProductCard({ product }: ProductCardProps) {
           </button>
         </div>
       </Link>
-      <div className="product-card-info">
-        <Link to={`/product/${product.id}`}>
-          <h3 className="product-card-title">{product.name}</h3>
-        </Link>
-        <div className="product-card-price">
-          {product.variants ? (
-            <span>
-              {t.from} {formatStorePrice(Math.min(...product.variants.map((v) => v.price)))}
-            </span>
-          ) : (
-            <>
-              <span>{formatStorePrice(product.price)}</span>
-              {product.compareAtPrice && (
-                <span className="compare-price">{formatStorePrice(product.compareAtPrice)}</span>
-              )}
-            </>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

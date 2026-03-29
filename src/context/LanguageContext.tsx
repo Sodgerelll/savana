@@ -315,9 +315,9 @@ const mn: Translations = {
   heroSubtext: "Жижиг хэмжээний, гараар хийсэн, зэрлэг ургамал, эфирийн тосоор",
   shopNow: "Худалдан авах",
   ourStory: "МАНАЙ ТҮҮХ",
-  categoriesHeading: "Ангиллаар хайх",
+  categoriesHeading: "Ангилал",
   soap: "Саван",
-  bestSellersHeading: "Эрэлттэй бүтээгдэхүүнүүд",
+  bestSellersHeading: "Эрэлттэй",
   viewAll: "Бүгдийг харах",
   addToCart: "Сагслах",
   outOfStock: "Дууссан",
@@ -328,7 +328,7 @@ const mn: Translations = {
   brandStoryBody2:
     "Бид Монгол орны хөрсөнд ургасан арц, ганга, халгай, чацаргана жимсний охь тос, шүдэн уулын жамц давс, байгалийн цэвэр хужир, зөгийн бал, Монгол бэлчээрийн малын цэвэршүүлсэн сүүлэн тос, өөхөн тос, шар тосыг ашиглан бүтээгдэхүүн нэг бүрийг гар аргаар сэтгэлээ шингээн үйлдвэрлэдэг.",
   learnOurStory: "Бидний тухай",
-  collectionsHeading: "Манай цуглуулга",
+  collectionsHeading: "Цуглуулга",
   testimonialsHeading: "Хэрэглэгчдийн сэтгэгдэл",
   newsletterHeading: "SAVANA нийгэмлэгт нэгдээрэй",
   newsletterSubtext:

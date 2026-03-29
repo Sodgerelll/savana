@@ -74,16 +74,6 @@ export default function Footer() {
                 <li>
                   <a href={`mailto:${visibleSettings.contactEmail}`}>{visibleSettings.contactEmail}</a>
                 </li>
-                <li>
-                  <a href={visibleSettings.facebookUrl} target="_blank" rel="noopener noreferrer">
-                    Facebook
-                  </a>
-                </li>
-                <li>
-                  <a href={visibleSettings.instagramUrl} target="_blank" rel="noopener noreferrer">
-                    {visibleSettings.instagramHandle}
-                  </a>
-                </li>
               </ul>
             </div>
           </div>

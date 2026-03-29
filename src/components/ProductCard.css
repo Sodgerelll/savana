@@ -40,7 +40,7 @@
   left: 0.75rem;
   background-color: var(--color-accent);
   color: #fff;
-  font-size: 0.65rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -48,12 +48,17 @@
   z-index: 2;
 }
 
+
 .product-card-overlay {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 0.75rem;
+  padding: 1.5rem 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: linear-gradient(to top, rgba(20, 14, 4, 0.78) 0%, rgba(20, 14, 4, 0.2) 70%, transparent 100%);
   opacity: 0;
   transform: translateY(8px);
   transition: all 0.3s ease;
@@ -71,7 +76,7 @@
   background-color: var(--color-white);
   color: var(--color-heading);
   border: 1px solid var(--color-border);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -86,35 +91,31 @@
   border-color: var(--color-accent);
 }
 
-.product-card-info {
-  padding: 0.9rem 0 0;
-  text-align: center;
+.product-card-price-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--color-accent);
+  padding: 0.2rem 0.65rem;
+  z-index: 2;
+  margin: 0;
 }
+
 
 .product-card-title {
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: var(--fs-md);
   font-weight: 400;
-  color: var(--color-heading);
-  margin-bottom: 0.3rem;
-  transition: color 0.25s;
+  color: #fff;
+  margin: 0;
+  text-align: center;
 }
 
-.product-card-title:hover {
-  color: var(--color-accent);
-}
-
-.product-card-price {
-  font-size: 0.88rem;
-  color: var(--color-text);
-}
-
-.compare-price {
-  text-decoration: line-through;
-  color: var(--color-border);
-  margin-left: 0.5rem;
-  font-size: 0.82rem;
-}
 
 @media (max-width: 480px) {
   .product-card-overlay {

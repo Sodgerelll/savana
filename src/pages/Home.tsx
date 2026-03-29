@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, BadgeCheck, BriefcaseBusiness, Palette } from "lucide-react";
+import { ArrowRight, BadgeCheck, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, Palette, UserCircle2, X } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
 import { useStorefront } from "../context/StorefrontContext";
 import type { Collection, Product } from "../data/products";
+import type { JournalEntry } from "../data/storefront";
 import {
   formatStorePrice,
   getActiveCollections,
   getActiveHeroBanners,
+  getActiveJournalEntries,
   getActiveProducts,
   getActiveTestimonials,
   getCategoryGradient,
@@ -19,6 +21,7 @@ import {
 } from "../lib/storefrontHelpers";
 import brandStorySoapImage from "../assets/brand-story-soap.jpg";
 import "./Home.css";
+import "./Journal.css";
 
 const HERO_ROTATION_INTERVAL = 5000;
 const PRODUCT_IMAGE_ROTATION_INTERVAL = 3000;
@@ -62,7 +65,9 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
           )}
         </div>
         {product.badge && <span className="home-product-badge">{product.badge}</span>}
+        <p className="home-product-price-bar">{formatStorePrice(product.price)}</p>
         <div className="home-product-overlay">
+          <h3 className="home-product-title">{product.name}</h3>
           <button
             className="home-quick-add"
             onClick={(event) => {
@@ -74,12 +79,6 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
           </button>
         </div>
       </Link>
-      <div className="home-product-info">
-        <Link to={`/product/${product.id}`}>
-          <h3 className="home-product-title">{product.name}</h3>
-        </Link>
-        <p className="home-product-price">{formatStorePrice(product.price)}</p>
-      </div>
     </div>
   );
 }
@@ -93,9 +92,31 @@ export default function Home() {
   const { language, t } = useLanguage();
   const { collections, heroBanners, products, settings, testimonials } = useStorefront();
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
 
   const visibleSettings = getRenderableSettings(settings);
+  const latestJournalEntries = getActiveJournalEntries(visibleSettings.journalEntries).slice(0, 3);
   const activeCollections = getActiveCollections(collections);
+
+  const collectionsViewportRef = useRef<HTMLDivElement>(null);
+  const [collectionSlide, setCollectionSlide] = useState(0);
+
+  function goToCollectionSlide(index: number) {
+    const clamped = Math.max(0, Math.min(index, activeCollections.length - 1));
+    setCollectionSlide(clamped);
+    const card = collectionsViewportRef.current?.children[clamped] as HTMLElement | undefined;
+    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  }
+
+  const testimonialsViewportRef = useRef<HTMLDivElement>(null);
+  const [testimonialSlide, setTestimonialSlide] = useState(0);
+
+  function goToTestimonialSlide(index: number, total: number) {
+    const clamped = Math.max(0, Math.min(index, total - 1));
+    setTestimonialSlide(clamped);
+    const card = testimonialsViewportRef.current?.children[clamped] as HTMLElement | undefined;
+    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  }
   const activeProducts = getActiveProducts(products, collections);
   const activeHeroBanners = getActiveHeroBanners(heroBanners, collections);
   const activeTestimonials = getActiveTestimonials(testimonials);
@@ -289,12 +310,15 @@ export default function Home() {
                         </svg>
                       </div>
                     )}
-                  </div>
-                  <div className="category-tile-info">
-                    <p className="category-tile-name">{collection.name}</p>
-                    <span className="category-tile-link">
-                      {t.shopNow} <ArrowRight size={12} />
-                    </span>
+                    <div className="category-tile-title-bar">
+                      <p className="category-tile-name">{collection.name}</p>
+                    </div>
+                    <div className="category-tile-overlay">
+                      <p className="category-tile-name">{collection.name}</p>
+                      <span className="category-tile-overlay-btn">
+                        {t.shopNow} <ArrowRight size={12} />
+                      </span>
+                    </div>
                   </div>
                 </Link>
               );
@@ -343,12 +367,32 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="collections-grid-section section">
+      <section className="collections-slider-section section">
         <div className="container">
-          <div className="section-header">
+          <div className="collections-slider-header">
             <h2>{t.collectionsHeading}</h2>
+            <div className="collections-slider-nav">
+              <button
+                type="button"
+                className="collections-slider-btn"
+                aria-label="Previous"
+                disabled={collectionSlide === 0}
+                onClick={() => goToCollectionSlide(collectionSlide - 1)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="collections-slider-btn"
+                aria-label="Next"
+                disabled={collectionSlide >= activeCollections.length - 1}
+                onClick={() => goToCollectionSlide(collectionSlide + 1)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
-          <div className="collections-grid">
+          <div className="collections-slider-viewport" ref={collectionsViewportRef}>
             {activeCollections.map((collection) => {
               const previewProduct =
                 collection.slug === SYSTEM_COLLECTION_SLUG
@@ -377,12 +421,15 @@ export default function Home() {
                         </svg>
                       </div>
                     )}
-                  </div>
-                  <div className="collections-grid-info">
-                    <h3>{collection.name}</h3>
-                    <span className="collections-grid-link">
-                      {t.shopNow} <ArrowRight size={12} />
-                    </span>
+                    <div className="collections-grid-overlay">
+                      <h3 className="collections-grid-overlay-name">{collection.name}</h3>
+                      <span className="collections-grid-overlay-btn">
+                        {t.shopNow} <ArrowRight size={13} />
+                      </span>
+                    </div>
+                    <div className="collections-grid-title-bar">
+                      <h3 className="collections-grid-overlay-name">{collection.name}</h3>
+                    </div>
                   </div>
                 </Link>
               );
@@ -390,6 +437,51 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {latestJournalEntries.length > 0 && (
+        <section className="home-journal-section section">
+          <div className="container">
+            <div className="best-sellers-header">
+              <h2>{t.journal}</h2>
+              <Link to="/journal" className="view-all-link">
+                {t.viewAll} <ArrowRight size={14} />
+              </Link>
+            </div>
+            <div className="home-journal-grid">
+              {latestJournalEntries.map((entry) => {
+                const title = language === "MN" ? entry.titleMn || entry.titleEn : entry.titleEn || entry.titleMn;
+                const category = language === "MN" ? entry.categoryMn || entry.categoryEn : entry.categoryEn || entry.categoryMn;
+                const excerpt = language === "MN" ? entry.excerptMn || entry.excerptEn : entry.excerptEn || entry.excerptMn;
+                const date = new Date(entry.publishedAt);
+                const formattedDate = Number.isNaN(date.getTime())
+                  ? entry.publishedAt
+                  : date.toLocaleDateString(language === "MN" ? "mn-MN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
+
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className="home-journal-card"
+                    onClick={() => setSelectedJournalEntry(entry)}
+                  >
+                    <div className="home-journal-image">
+                      {entry.image && <img src={entry.image} alt={title} loading="lazy" />}
+                      <div className="home-journal-image-meta">
+                        {category && <span className="home-journal-category">{category}</span>}
+                        <span className="home-journal-date">{formattedDate}</span>
+                      </div>
+                    </div>
+                    <div className="home-journal-body">
+                      <h3 className="home-journal-title">{title}</h3>
+                      <p className="home-journal-excerpt">{excerpt}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="home-partnership-section section">
         <div className="container">
@@ -435,16 +527,88 @@ export default function Home() {
         </div>
       </section>
 
+      {selectedJournalEntry && (() => {
+        const modalTitle = language === "MN" ? selectedJournalEntry.titleMn || selectedJournalEntry.titleEn : selectedJournalEntry.titleEn || selectedJournalEntry.titleMn;
+        const modalCategory = language === "MN" ? selectedJournalEntry.categoryMn || selectedJournalEntry.categoryEn : selectedJournalEntry.categoryEn || selectedJournalEntry.categoryMn;
+        const modalExcerpt = language === "MN" ? selectedJournalEntry.excerptMn || selectedJournalEntry.excerptEn : selectedJournalEntry.excerptEn || selectedJournalEntry.excerptMn;
+        const modalDate = new Date(selectedJournalEntry.publishedAt);
+        const modalFormattedDate = Number.isNaN(modalDate.getTime())
+          ? selectedJournalEntry.publishedAt
+          : modalDate.toLocaleDateString(language === "MN" ? "mn-MN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
+        const paragraphs = modalExcerpt.split(/\n\s*\n/g).map((p) => p.trim()).filter(Boolean);
+
+        return (
+          <div className="journal-modal-backdrop" onClick={() => setSelectedJournalEntry(null)}>
+            <div
+              className="journal-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="home-journal-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="journal-modal-close"
+                onClick={() => setSelectedJournalEntry(null)}
+                aria-label={language === "MN" ? "Нийтлэл хаах" : "Close article"}
+              >
+                <X size={18} />
+              </button>
+              <div className="journal-modal-media">
+                {selectedJournalEntry.image.trim() ? (
+                  <img src={selectedJournalEntry.image} alt={modalTitle} />
+                ) : (
+                  <div className="journal-card-media-fallback">{modalCategory.slice(0, 1) || "J"}</div>
+                )}
+              </div>
+              <div className="journal-modal-body">
+                {modalCategory && <span className="journal-card-category">{modalCategory}</span>}
+                <h3 id="home-journal-modal-title">{modalTitle}</h3>
+                <div className="journal-card-meta journal-modal-meta">
+                  <span><CalendarDays size={15} />{modalFormattedDate}</span>
+                  {selectedJournalEntry.author && <span><UserCircle2 size={15} />{selectedJournalEntry.author}</span>}
+                </div>
+                <div className="journal-modal-content">
+                  {(paragraphs.length > 0 ? paragraphs : [modalExcerpt]).map((p, i) => (
+                    <p key={`${selectedJournalEntry.id}-${i}`}>{p}</p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {activeTestimonials.length > 0 && (
         <section className="testimonials-section section">
           <div className="container">
-            <div className="section-header">
+            <div className="collections-slider-header">
               <h2>{t.testimonialsHeading}</h2>
+              <div className="collections-slider-nav">
+                <button
+                  type="button"
+                  className="collections-slider-btn"
+                  aria-label="Previous"
+                  disabled={testimonialSlide === 0}
+                  onClick={() => goToTestimonialSlide(testimonialSlide - 1, activeTestimonials.length)}
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  className="collections-slider-btn"
+                  aria-label="Next"
+                  disabled={testimonialSlide >= activeTestimonials.length - 1}
+                  onClick={() => goToTestimonialSlide(testimonialSlide + 1, activeTestimonials.length)}
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
             </div>
-            <div className="testimonials-grid">
+            <div className="testimonials-slider-viewport" ref={testimonialsViewportRef}>
               {activeTestimonials.map((testimonial, index) => (
                 <div key={index} className="testimonial-card">
-                  <div className="testimonial-stars">★★★★★</div>
+                  <div className="testimonial-stars">♥♥♥♥♥</div>
                   <p className="testimonial-text">"{testimonial.text}"</p>
                   <div className="testimonial-author">
                     <strong>{testimonial.author}</strong>
