@@ -1027,7 +1027,7 @@ export default function Account() {
   const [settingsModal, setSettingsModal] = useState<SettingsModalState | null>(null);
   const [collectionModal, setCollectionModal] = useState<CollectionModalState | null>(null);
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
-  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
   const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
@@ -4240,12 +4240,12 @@ export default function Account() {
                                   type="button"
                                   className="admin-icon-btn"
                                   onClick={() =>
-                                    setConfirmModal({
-                                      message: copy.deletePackagingDescription,
-                                      onConfirm: async () => {
-                                        await deletePackaging(item.id);
-                                        setConfirmModal(null);
-                                      },
+                                    openConfirmModal({
+                                      title: copy.confirmDeleteTitle,
+                                      description: copy.deletePackagingDescription,
+                                      confirmLabel: copy.delete,
+                                      destructive: true,
+                                      onConfirm: () => deletePackaging(item.id),
                                     })
                                   }
                                 >
