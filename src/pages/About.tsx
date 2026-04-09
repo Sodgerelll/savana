@@ -1,5 +1,6 @@
-import { Leaf, Heart, Sun, Sprout } from "lucide-react";
+import { Eye, Target, Award, ShieldCheck, HeartHandshake } from "lucide-react";
 import aboutSavanaSoapImage from "../assets/about-savana-soap.jpg";
+import womenOwnedLogo from "../assets/women-owned.png";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
@@ -8,28 +9,32 @@ import "./About.css";
 const aboutSectionCopy = {
   EN: {
     valuesHeading: "What We Believe In",
+    visionHeading: "Our Vision",
+    missionHeading: "Our Mission",
+    coreValuesHeading: "Our Values",
     processHeading: "Our Process",
     processSubtext: "From ingredient to finished product, every step is done with care.",
-    values: [
+    sustainability: {
+      title: "Sustainable",
+      body:
+        "We're committed to reducing our environmental footprint. From minimal packaging to biodegradable formulas, we strive to make choices that are kind to the planet.",
+    },
+    vision:
+      "We will create a globally recognized brand by offering skin care and household products made from Mongolian-sourced, natural ingredients.",
+    mission:
+      "We offer products that meet the needs and requirements of consumers with skin allergies, sensitive skin, or those seeking healthy, organic products to support their healthy lifestyle.",
+    coreValues: [
       {
-        title: "Natural Ingredients",
-        body:
-          "We use only plant-based oils, butters, and pure essential oils. No synthetic fragrances, no parabens, no sulfates, no artificial colors. Just honest, natural ingredients you can trust.",
+        title: "Back to nature",
+        body: "We will manufacture our products using technology that meets international standards, and we will work responsibly and humanely throughout the production process.",
       },
       {
-        title: "Small Batch",
-        body:
-          "Every product is handcrafted in small batches, ensuring exceptional quality and consistency. We believe that the best products are made with patience and attention to detail.",
+        title: "Honesty",
+        body: "We are a manufacturer of products based on national tradition and science-based research.",
       },
       {
-        title: "Mongolia Inspired",
-        body:
-          "Our recipes are inspired by local ingredients, practical daily care, and the clean aesthetic that defines SAVANA. We focus on products that feel simple, useful, and intentional.",
-      },
-      {
-        title: "Sustainable",
-        body:
-          "We're committed to reducing our environmental footprint. From minimal packaging to biodegradable formulas, we strive to make choices that are kind to the planet.",
+        title: "Care",
+        body: "Бид хэрэглэгчдийнхээ амьдралын чанарыг дээшлүүлэх, мэдлэгийг түгээж, өдөр тутмын сонголтод нь эерэгээр нөлөөлөгч,хөтлөгч нь байна.",
       },
     ],
     steps: [
@@ -57,28 +62,32 @@ const aboutSectionCopy = {
   },
   MN: {
     valuesHeading: "Бидний үнэт зүйлс",
+    visionHeading: "Алсан хараа",
+    missionHeading: "Эрхэм зорилго",
+    coreValuesHeading: "Үнэт зүйл",
     processHeading: "Бидний үйл явц",
     processSubtext: "Түүхий эдээс эхлээд бэлэн бүтээгдэхүүн болтол алхам бүрийг анхааралтай хийдэг.",
-    values: [
+    sustainability: {
+      title: "Тогтвортой хандлага",
+      body:
+        "Бид байгаль орчинд үзүүлэх нөлөөгөө бууруулахыг зорьдог. Минимал савлагаанаас эхлээд задрах боломжтой найрлага хүртэл дэлхийд ээлтэй шийдлийг сонгохыг хичээдэг.",
+    },
+    vision:
+      "Бид Монгол орны шимт, байгалийн гаралтай түүхий эдээр үйлдвэрлэсэн арьс арчилгаа, ахуйн хэрэглээний бүтээгдэхүүнийг санал болгож, дэлхийд танигдсан брэндийг бүтээнэ.",
+    mission:
+      "Бид арьсны харшилтай, эмзэг арьстай эсвэл эрүүл, органик бүтээгдэхүүн хэрэглэхийг зорьж буй хэрэглэгчиддээ хэрэгцээ, шаардлагад нь нийцсэн, эрүүл амьдралын хэв маягийг нь дэмжих бүтээгдэхүүн санал болгодог.",
+    coreValues: [
       {
-        title: "Байгалийн найрлага",
-        body:
-          "Бид зөвхөн ургамлын тос, butter, цэвэр эфирийн тос ашигладаг. Синтетик үнэртэн, парабен, сульфат, хиймэл өнгө оруулагчгүй. Итгэж болох энгийн, шударга найрлагыг сонгодог.",
+        title: "Хүн, байгальд ээлтэй ",
+        body: "Бид ОУ-ын стандартыг хангасан технологиор бүтээгдэхүүнээ үйлдвэрлэж, үйлдвэрлэлийн бүхий л дамжлагадаа хүн, байгальд ээлтэй, хариуцлагатай сонголтыг хийнэ.",
       },
       {
-        title: "Жижиг багц",
-        body:
-          "Бүтээгдэхүүн бүрийг жижиг багцаар гараар урлаж, чанар ба тогтвортой байдлыг хадгалдаг. Сайн бүтээгдэхүүн тэвчээр, анхаарал хоёрын үр дүнд бий болдог гэж бид үздэг.",
+        title: "Найдвартай",
+        body: "Бид үндэсний уламжлалт болон шинжлэх ухаанд суурилсан судалгаа шинжилгээ бүхий бүтээгдэхүүн үйлдвэрлэгч байна.",
       },
       {
-        title: "Монгол ахуйгаас сэдэвлэсэн",
-        body:
-          "Манай найрлага, бүтээгдэхүүний хандлага нь нутгийн өнгө төрх, өдөр тутмын хэрэгцээ, SAVANA-г тодорхойлдог цэвэр минимал мэдрэмжээс сэдэвлэдэг. Энгийн, хэрэгцээтэй, санаатай бүтээгдсэн бүтээгдэхүүнд төвлөрдөг.",
-      },
-      {
-        title: "Тогтвортой хандлага",
-        body:
-          "Бид байгаль орчинд үзүүлэх нөлөөгөө бууруулахыг зорьдог. Минимал савлагаанаас эхлээд задрах боломжтой найрлага хүртэл дэлхийд ээлтэй шийдлийг сонгохыг хичээдэг.",
+        title: "Нөлөөлөгч, хөтлөгч",
+        body: "Бид хэрэглэгчдийнхээ амьдралын чанарыг дээшлүүлэх, мэдлэгийг түгээж, өдөр тутмын сонголтод нь эерэгээр нөлөөлөгч,хөтлөгч нь байна.",
       },
     ],
     steps: [
@@ -142,6 +151,11 @@ export default function About() {
               <h2>{visibleSettings.aboutIntroTitle}</h2>
               <p>{t.brandStoryBody1}</p>
               <p>{t.brandStoryBody2}</p>
+              <p>{t.brandStoryBody3}</p>
+              <div className="about-badge">
+                <img src={womenOwnedLogo} alt="Women Owned" className="about-badge-logo" />
+                <span>{t.womanOwned}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -154,10 +168,9 @@ export default function About() {
           </div>
           <div className="about-values-grid">
             {[
-              { icon: Leaf, content: copy.values[0] },
-              { icon: Heart, content: copy.values[1] },
-              { icon: Sun, content: copy.values[2] },
-              { icon: Sprout, content: copy.values[3] },
+              { icon: Award, content: copy.coreValues[0] },
+              { icon: ShieldCheck, content: copy.coreValues[1] },
+              { icon: HeartHandshake, content: copy.coreValues[2] },
             ].map(({ icon: Icon, content }) => (
               <div key={content.title} className="about-value">
                 <div className="about-value-icon">
@@ -167,6 +180,27 @@ export default function About() {
                 <p>{content.body}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="about-vmc section">
+        <div className="container">
+          <div className="about-vmc-grid">
+            <div className="about-vmc-card">
+              <div className="about-vmc-icon">
+                <Eye size={32} strokeWidth={1.2} />
+              </div>
+              <h3>{copy.visionHeading}</h3>
+              <p>{copy.vision}</p>
+            </div>
+            <div className="about-vmc-card">
+              <div className="about-vmc-icon">
+                <Target size={32} strokeWidth={1.2} />
+              </div>
+              <h3>{copy.missionHeading}</h3>
+              <p>{copy.mission}</p>
+            </div>
           </div>
         </div>
       </section>
