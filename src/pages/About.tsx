@@ -62,7 +62,7 @@ const aboutSectionCopy = {
   },
   MN: {
     valuesHeading: "Бидний үнэт зүйлс",
-    visionHeading: "Алсан хараа",
+    visionHeading: "Алсын хараа",
     missionHeading: "Эрхэм зорилго",
     coreValuesHeading: "Үнэт зүйл",
     processHeading: "Бидний үйл явц",
@@ -161,6 +161,27 @@ export default function About() {
         </div>
       </section>
 
+      <section className="about-vmc section">
+        <div className="container">
+          <div className="about-vmc-grid">
+            <div className="about-vmc-card">
+              <div className="about-vmc-icon">
+                <Eye size={32} strokeWidth={1.2} />
+              </div>
+              <h3>{copy.visionHeading}</h3>
+              <p>{copy.vision}</p>
+            </div>
+            <div className="about-vmc-card">
+              <div className="about-vmc-icon">
+                <Target size={32} strokeWidth={1.2} />
+              </div>
+              <h3>{copy.missionHeading}</h3>
+              <p>{copy.mission}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="about-values section">
         <div className="container">
           <div className="section-header">
@@ -180,27 +201,6 @@ export default function About() {
                 <p>{content.body}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="about-vmc section">
-        <div className="container">
-          <div className="about-vmc-grid">
-            <div className="about-vmc-card">
-              <div className="about-vmc-icon">
-                <Eye size={32} strokeWidth={1.2} />
-              </div>
-              <h3>{copy.visionHeading}</h3>
-              <p>{copy.vision}</p>
-            </div>
-            <div className="about-vmc-card">
-              <div className="about-vmc-icon">
-                <Target size={32} strokeWidth={1.2} />
-              </div>
-              <h3>{copy.missionHeading}</h3>
-              <p>{copy.mission}</p>
-            </div>
           </div>
         </div>
       </section>

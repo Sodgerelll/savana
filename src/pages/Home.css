@@ -832,15 +832,18 @@
 }
 
 .brand-story-image-bg {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   background-color: #efe4d7;
 }
 
 .brand-story-photo {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center bottom;
   display: block;
 }
 
