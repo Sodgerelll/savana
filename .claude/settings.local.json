@@ -10,7 +10,12 @@
       "Bash(gh api:*)",
       "Bash(where gh:*)",
       "Bash(git add:*)",
-      "Bash(npx firebase:*)"
+      "Bash(npx firebase:*)",
+      "WebFetch(domain:potagersoap.com)",
+      "Bash(xargs grep:*)",
+      "Bash(npx vite:*)",
+      "Bash(curl -sI \"http://localhost:5173\")",
+      "Bash(pkill -f \"vite\")"
     ]
   }
 }

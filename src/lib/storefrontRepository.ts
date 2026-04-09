@@ -45,6 +45,56 @@ const productsRef = collection(db, "products");
 const bannersRef = collection(db, "sites", STOREFRONT_SITE_ID, "heroBanners");
 const marketsRef = collection(db, "sites", STOREFRONT_SITE_ID, "markets");
 const testimonialsRef = collection(db, "sites", STOREFRONT_SITE_ID, "testimonials");
+const packagingRef = collection(db, "packaging");
+
+export interface PackagingItem {
+  id: number;
+  name: string;
+  size: string;
+  remaining: number;
+  sortOrder: number;
+}
+
+function serializePackaging(item: PackagingItem): DocumentData {
+  return {
+    name: item.name,
+    size: item.size,
+    remaining: item.remaining,
+    sortOrder: item.sortOrder,
+    _schemaVersion: STOREFRONT_SCHEMA_VERSION,
+    _updatedAt: serverTimestamp(),
+  };
+}
+
+function deserializePackaging(docSnap: QueryDocumentSnapshot): PackagingItem {
+  const data = docSnap.data();
+  return {
+    id: Number(docSnap.id),
+    name: String(data.name ?? ""),
+    size: String(data.size ?? ""),
+    remaining: Number(data.remaining ?? 0),
+    sortOrder: Number(data.sortOrder ?? 0),
+  };
+}
+
+export function subscribeToPackaging(
+  onData: (items: PackagingItem[]) => void,
+  onError: (error: FirestoreError) => void,
+): Unsubscribe {
+  return onSnapshot(packagingRef, (snapshot) => {
+    const items = snapshot.docs.map((d) => deserializePackaging(d));
+    items.sort((a, b) => a.sortOrder - b.sortOrder);
+    onData(items);
+  }, onError);
+}
+
+export async function savePackaging(item: PackagingItem) {
+  await setDoc(doc(packagingRef, String(item.id)), serializePackaging(item), { merge: true });
+}
+
+export async function deletePackaging(itemId: number) {
+  await deleteDoc(doc(packagingRef, String(itemId)));
+}
 
 function deserializeStatus(value: unknown) {
   return value === "inactive" ? "inactive" : "active";
@@ -130,6 +180,7 @@ function deserializeCollection(snapshot: QueryDocumentSnapshot<DocumentData>): C
     description: String(data.description ?? ""),
     gradient: String(data.gradient ?? ""),
     image: String(data.image ?? ""),
+    featuredProductId: data.featuredProductId ? Number(data.featuredProductId) : undefined,
     status: deserializeStatus(data.status),
   };
 }

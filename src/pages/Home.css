@@ -25,9 +25,6 @@
   background:
     linear-gradient(135deg, rgba(227, 218, 197, 0.7) 0%, rgba(176, 156, 130, 0.35) 100%),
     linear-gradient(135deg, #ddd2be 0%, #baa686 100%);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
   opacity: 0;
   transform: scale(1.08);
   transition: opacity 1s ease, transform 6s ease;
@@ -36,6 +33,15 @@
 .hero-slide.active {
   opacity: 1;
   transform: scale(1);
+}
+
+.hero-slide-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 .hero-overlay {
@@ -57,7 +63,7 @@
 .hero-stage {
   display: grid;
   gap: 1.4rem;
-  width: min(100%, 760px);
+  width: min(100%, 1160px);
 }
 
 .hero-meta {
@@ -83,6 +89,318 @@
   border: none;
   backdrop-filter: none;
   box-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 4.75rem;
+}
+
+.hero-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hero floating product + ingredients wrapper */
+.hero-product-float {
+  flex: 0 0 500px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 600px;
+}
+
+.hero-product-scale-shell {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  transition: transform 0.6s ease;
+}
+
+.hero-product-glow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: heroProductFloat 3s ease-in-out infinite alternate;
+}
+
+.hero-product-glow::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(ellipse at center,
+    rgba(255,255,255,0.18) 0%,
+    rgba(255,255,255,0.10) 40%,
+    rgba(255,255,255,0) 70%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+
+.hero-product-img {
+  max-height: 500px;
+  max-width: 380px;
+  width: auto;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  background: transparent;
+  filter: drop-shadow(0 18px 30px rgba(32, 24, 9, 0.22));
+}
+
+.hero-product-img-blend {
+  mix-blend-mode: screen;
+}
+
+@keyframes heroProductFloat {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-10px); }
+}
+
+/* Text fade on hover */
+.hero-text {
+  transition: opacity 0.5s ease;
+}
+
+.hero-product-hovered .hero-text {
+  opacity: 0.35;
+}
+
+/* Product highlight on hover */
+.hero-product-hovered .hero-product-scale-shell {
+  transform: scale(1.5);
+}
+
+.hero-product-hovered .hero-product-glow {
+  animation-play-state: paused;
+}
+
+/* ── Ingredients orbit ── */
+.hero-ingredients-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Each node: icon + label, hidden by default */
+.hero-ingredient-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  opacity: 0;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+  pointer-events: none;
+}
+
+/* Show on hover with staggered delay */
+.hero-product-hovered .hero-ingredient-node {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hero-product-hovered .hero-ingredient-pos-0 { transition-delay: 0.1s; }
+.hero-product-hovered .hero-ingredient-pos-1 { transition-delay: 0.22s; }
+.hero-product-hovered .hero-ingredient-pos-2 { transition-delay: 0.34s; }
+.hero-product-hovered .hero-ingredient-pos-3 { transition-delay: 0.46s; }
+
+/* Position: top-left — label on left, icon closer to product */
+.hero-ingredient-pos-0 {
+  top: 7%;
+  right: 88%;
+  flex-direction: row-reverse;
+  transform: translateX(-24px);
+}
+.hero-product-hovered .hero-ingredient-pos-0 { transform: translateX(0); }
+
+/* Position: top-right */
+.hero-ingredient-pos-1 {
+  top: 7%;
+  left: 88%;
+  transform: translateX(24px);
+}
+.hero-product-hovered .hero-ingredient-pos-1 { transform: translateX(0); }
+
+/* Position: bottom-left */
+.hero-ingredient-pos-2 {
+  bottom: 24%;
+  right: 88%;
+  flex-direction: row-reverse;
+  transform: translateX(-24px);
+}
+.hero-product-hovered .hero-ingredient-pos-2 { transform: translateX(0); }
+
+/* Position: bottom-right */
+.hero-ingredient-pos-3 {
+  bottom: 24%;
+  left: 88%;
+  transform: translateX(24px);
+}
+.hero-product-hovered .hero-ingredient-pos-3 { transform: translateX(0); }
+
+/* Icon circle */
+.hero-ingredient-icon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(20, 16, 12, 0.14);
+  overflow: visible;
+}
+
+.hero-ingredient-icon svg {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+}
+
+.hero-ingredient-icon::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--hero-connector-length, 110px);
+  height: 1.5px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0.72;
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.16);
+}
+
+.hero-ingredient-pos-0 .hero-ingredient-icon::after,
+.hero-ingredient-pos-2 .hero-ingredient-icon::after {
+  left: calc(100% - 2px);
+  transform-origin: left center;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.16), transparent);
+}
+
+.hero-ingredient-pos-1 .hero-ingredient-icon::after,
+.hero-ingredient-pos-3 .hero-ingredient-icon::after {
+  right: calc(100% - 2px);
+  transform-origin: right center;
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.16), transparent);
+}
+
+.hero-ingredient-pos-0 .hero-ingredient-icon::after {
+  transform: translateY(-50%) rotate(18deg);
+}
+
+.hero-ingredient-pos-1 .hero-ingredient-icon::after {
+  transform: translateY(-50%) rotate(-18deg);
+}
+
+.hero-ingredient-pos-2 .hero-ingredient-icon::after {
+  transform: translateY(-50%) rotate(-14deg);
+}
+
+.hero-ingredient-pos-3 .hero-ingredient-icon::after {
+  transform: translateY(-50%) rotate(14deg);
+}
+
+.hero-ingredient-pos-0,
+.hero-ingredient-pos-1 {
+  --hero-connector-length: 96px;
+}
+
+.hero-ingredient-pos-2,
+.hero-ingredient-pos-3 {
+  --hero-connector-length: 104px;
+}
+
+.hero-ingredient-icon-olive,
+.hero-ingredient-label-olive {
+  background: rgba(155, 186, 106, 0.2);
+  border-color: rgba(208, 230, 165, 0.42);
+  color: #edf7cf;
+}
+
+.hero-ingredient-icon-sun,
+.hero-ingredient-label-sun {
+  background: rgba(233, 191, 88, 0.2);
+  border-color: rgba(255, 221, 128, 0.42);
+  color: #fff1b8;
+}
+
+.hero-ingredient-icon-nut,
+.hero-ingredient-label-nut {
+  background: rgba(188, 145, 102, 0.22);
+  border-color: rgba(231, 197, 162, 0.38);
+  color: #fde3c0;
+}
+
+.hero-ingredient-icon-flower,
+.hero-ingredient-label-flower {
+  background: rgba(197, 154, 191, 0.2);
+  border-color: rgba(233, 204, 228, 0.38);
+  color: #fbe6f7;
+}
+
+.hero-ingredient-icon-herb,
+.hero-ingredient-label-herb {
+  background: rgba(120, 171, 127, 0.22);
+  border-color: rgba(182, 224, 188, 0.4);
+  color: #def7df;
+}
+
+.hero-ingredient-icon-seed,
+.hero-ingredient-icon-grain,
+.hero-ingredient-label-seed,
+.hero-ingredient-label-grain {
+  background: rgba(196, 169, 113, 0.2);
+  border-color: rgba(234, 212, 164, 0.38);
+  color: #f9edc8;
+}
+
+.hero-ingredient-icon-fruit,
+.hero-ingredient-label-fruit {
+  background: rgba(206, 121, 118, 0.2);
+  border-color: rgba(241, 188, 185, 0.42);
+  color: #ffe0df;
+}
+
+.hero-ingredient-icon-earth,
+.hero-ingredient-label-earth {
+  background: rgba(151, 156, 127, 0.22);
+  border-color: rgba(205, 210, 180, 0.38);
+  color: #edf0d9;
+}
+
+.hero-ingredient-icon-dew,
+.hero-ingredient-label-dew {
+  background: rgba(134, 171, 201, 0.2);
+  border-color: rgba(188, 221, 243, 0.4);
+  color: #e3f3ff;
+}
+
+/* Label pill */
+.hero-ingredient-label {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0.58rem 1.2rem;
+  white-space: nowrap;
+}
+
+.hero-ingredient-label strong {
+  font-family: var(--font-body);
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: inherit;
+  line-height: 1;
+  letter-spacing: 0.02em;
 }
 
 .hero-label {
@@ -97,7 +415,7 @@
 
 .hero-heading {
   font-family: var(--font-heading);
-  font-size: clamp(2.25rem, 4.5vw, 4.25rem);
+  font-size: clamp(1.95rem, 3.9vw, 3.6rem);
   font-weight: 400;
   color: #fff;
   margin-bottom: 1rem;
@@ -182,11 +500,11 @@
 
 .category-tile {
   flex: 0 0 calc(20% - 1rem);
-  min-width: 160px;
+  min-width: 180px;
   display: flex;
   flex-direction: column;
   text-decoration: none;
-  transition: transform 0.3s ease;
+  transition: transform 0.4s ease;
 }
 
 .category-tile:hover {
@@ -194,30 +512,32 @@
 }
 
 .category-tile-bg {
-  height: 180px;
+  height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--color-border-light);
-  border-radius: 0.5rem;
-  transition: border-color 0.3s ease;
+  border-radius: 0.75rem;
+  transition: border-color 0.3s ease, box-shadow 0.4s ease;
   overflow: hidden;
   position: relative;
 }
 
 .category-tile:hover .category-tile-bg {
   border-color: var(--color-border);
+  box-shadow: 0 8px 32px rgba(90, 81, 3, 0.10), 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .category-tile-photo {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  transition: transform 0.6s ease, filter 0.4s ease;
 }
 
 .category-tile:hover .category-tile-photo {
   transform: scale(1.06);
+  filter: brightness(0.75);
 }
 
 .category-tile-icon {
@@ -255,17 +575,69 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: linear-gradient(to top, rgba(20, 14, 4, 0.78) 0%, rgba(20, 14, 4, 0.2) 55%, transparent 100%);
+  gap: 0.6rem;
+  padding: 0.85rem;
+  background: linear-gradient(to top, rgba(20, 14, 4, 0.82) 0%, rgba(20, 14, 4, 0.45) 50%, rgba(20, 14, 4, 0.15) 100%);
   opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(8px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .category-tile:hover .category-tile-overlay {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Ingredients overlay */
+.category-tile-ingredients {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.category-tile-ingredients-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.category-tile-ingredients-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.category-tile-ingredient-tag {
+  padding: 0.25rem 0.6rem;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  color: #fff;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.category-tile:hover .category-tile-ingredient-tag:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.category-tile-ingredient-more {
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 600;
 }
 
 .category-tile-overlay-btn {
@@ -280,6 +652,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  border-radius: 0.25rem;
   transition: background 0.2s ease, color 0.2s ease;
   white-space: nowrap;
 }
@@ -1012,6 +1385,58 @@
 @media (max-width: 1024px) {
   .hero-content-card {
     max-width: 100%;
+    gap: 3.4rem;
+  }
+
+  .hero-product-float {
+    flex: 0 0 400px;
+    min-height: 470px;
+  }
+
+  .hero-product-img {
+    max-height: 390px;
+    max-width: 290px;
+  }
+
+  .hero-ingredient-node {
+    gap: 0.6rem;
+  }
+
+  .hero-ingredient-pos-0,
+  .hero-ingredient-pos-2 {
+    right: 86%;
+  }
+
+  .hero-ingredient-pos-1,
+  .hero-ingredient-pos-3 {
+    left: 86%;
+  }
+
+  .hero-ingredient-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .hero-ingredient-icon::after {
+    width: var(--hero-connector-length, 92px);
+  }
+
+  .hero-ingredient-pos-0,
+  .hero-ingredient-pos-1 {
+    --hero-connector-length: 82px;
+  }
+
+  .hero-ingredient-pos-2,
+  .hero-ingredient-pos-3 {
+    --hero-connector-length: 88px;
+  }
+
+  .hero-ingredient-label {
+    padding: 0.52rem 1rem;
+  }
+
+  .hero-ingredient-label strong {
+    font-size: 0.86rem;
   }
 
   .collections-grid-card {
@@ -1038,6 +1463,86 @@
   }
 
   .hero-content-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 2rem;
+  }
+
+  .hero-subtext {
+    max-width: none;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .hero-product-float {
+    flex: 0 0 auto;
+    min-height: auto;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .hero-product-img {
+    max-height: 260px;
+    max-width: 190px;
+  }
+
+  .hero-ingredients-orbit {
+    position: static;
+    inset: auto;
+    display: grid;
+    gap: 0.7rem;
+    width: min(100%, 320px);
+    margin-top: 0.35rem;
+    pointer-events: auto;
+  }
+
+  .hero-product-hovered .hero-text {
+    opacity: 1;
+  }
+
+  .hero-product-hovered .hero-product-scale-shell {
+    transform: none;
+  }
+
+  .hero-product-hovered .hero-product-glow {
+    animation-play-state: running;
+  }
+
+  .hero-ingredient-node {
+    position: static;
+    width: 100%;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    justify-content: flex-start;
+    gap: 0.75rem;
+  }
+
+  .hero-ingredient-pos-0,
+  .hero-ingredient-pos-1,
+  .hero-ingredient-pos-2,
+  .hero-ingredient-pos-3 {
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    flex-direction: row;
+    --hero-connector-length: 0px;
+  }
+
+  .hero-ingredient-icon::after {
+    display: none;
+  }
+
+  .hero-ingredient-label {
+    flex: 1;
+    text-align: left;
+    padding: 0.6rem 0.95rem;
+  }
+
+  .hero-content-card {
     padding: 2rem 1.4rem;
   }
 
@@ -1059,8 +1564,17 @@
   }
 
   .category-tile {
-    flex: 0 0 140px;
-    min-width: 140px;
+    flex: 0 0 160px;
+    min-width: 160px;
+  }
+
+  .category-tile-bg {
+    height: 220px;
+  }
+
+  .category-tile-ingredient-tag {
+    font-size: 0.58rem;
+    padding: 0.2rem 0.45rem;
   }
 
   .best-sellers-header {

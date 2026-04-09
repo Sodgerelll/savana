@@ -29,6 +29,7 @@ export interface Collection {
   description: string;
   gradient: string;
   image: string;
+  featuredProductId?: number;
   status: EntityStatus;
 }
 

@@ -131,6 +131,11 @@ service cloud.firestore {
       allow create, update, delete: if canWriteStorefront();
     }
 
+    match /packaging/{documentId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if canWriteStorefront();
+    }
+
     match /orders/{orderId} {
       allow get: if isOrderOwner() || hasPrivilegedProfileRole();
       allow list: if hasPrivilegedProfileRole()

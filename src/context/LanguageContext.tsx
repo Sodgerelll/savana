@@ -41,6 +41,8 @@ export interface Translations {
   brandStoryHeading: string;
   brandStoryBody1: string;
   brandStoryBody2: string;
+  brandStoryBody3: string;
+  womanOwned: string;
   learnOurStory: string;
   // Collections grid
   collectionsHeading: string;
@@ -189,6 +191,9 @@ const en: Translations = {
     "Savana Organica LLC has been producing eco-friendly, zero-waste organic beauty, household cleaning and traditional medicine-based health products that meet international standards for 7 years.",
   brandStoryBody2:
     "We use juniper, thyme, nettle, sea buckthorn oil, Shuden mountain rock salt, natural soda, honey, purified tallow, lard, and ghee from Mongolian pasture livestock to handcraft each product with care and dedication.",
+  brandStoryBody3:
+    "We are committed to the UN Sustainable Development Goals (SDGs), aligning our work with responsible consumption, climate action, and sustainable communities to create lasting positive impact.",
+  womanOwned: "Woman-Owned Business",
   learnOurStory: "Learn Our Story",
   collectionsHeading: "Our Collections",
   testimonialsHeading: "What Our Customers Are Saying",
@@ -327,6 +332,9 @@ const mn: Translations = {
     "Савана органика ХХК нь байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан эрүүл мэндийг дэмжих, ОУ-ын стандартад нийцсэн чанартай бүтээгдэхүүнийг 7 жилийн турш хэрэглэгчиддээ үйлдвэрлэн хүргэсээр байна.",
   brandStoryBody2:
     "Бид Монгол орны хөрсөнд ургасан арц, ганга, халгай, чацаргана жимсний охь тос, шүдэн уулын жамц давс, байгалийн цэвэр хужир, зөгийн бал, Монгол бэлчээрийн малын цэвэршүүлсэн сүүлэн тос, өөхөн тос, шар тосыг ашиглан бүтээгдэхүүн нэг бүрийг гар аргаар сэтгэлээ шингээн үйлдвэрлэдэг.",
+  brandStoryBody3:
+    "Бид НҮБ-ын Тогтвортой хөгжлийн зорилтуудыг (SDGs) баримтлан, хариуцлагатай хэрэглээ, уур амьсгалын арга хэмжээ, тогтвортой нийгэмлэгийг дэмжих замаар урт хугацааны эерэг нөлөөг бий болгохыг зорьдог.",
+  womanOwned: "Эмэгтэй бизнес эрхлэгчийн компани",
   learnOurStory: "Бидний тухай",
   collectionsHeading: "Цуглуулга",
   testimonialsHeading: "Хэрэглэгчдийн сэтгэгдэл",

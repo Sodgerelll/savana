@@ -14,6 +14,8 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Search,
+  SlidersHorizontal,
   Store,
   Trash2,
   UserCircle2,
@@ -21,8 +23,8 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -63,6 +65,7 @@ import {
   isSystemCollection,
 } from "../lib/storefrontHelpers";
 import { uploadStorefrontImage } from "../lib/storageUpload";
+import { subscribeToPackaging, savePackaging, deletePackaging, type PackagingItem } from "../lib/storefrontRepository";
 import logoBlack from "../assets/logoBlack.png";
 import "./Auth.css";
 
@@ -149,6 +152,11 @@ interface OrderModalState {
 
 interface UserProfileModalState {
   draft: UserProfile;
+}
+
+interface PackagingModalState {
+  mode: ModalMode;
+  draft: PackagingItem;
 }
 
 interface AdminModuleHighlight {
@@ -389,8 +397,18 @@ function StatusBadge({
   );
 }
 
+const VALID_SECTIONS = new Set<string>([
+  "dashboard", "website", "categories", "products", "messages", "orders", "users",
+  "commonSettings", "activityLog",
+  "crmOverview", "crmCustomers", "crmService",
+  "financeOverview", "financePayments", "financeReconciliation", "financeReports",
+  "factoryOverview", "factoryProduction", "factoryInventory", "factoryDispatch",
+]);
+
 export default function Account() {
   const navigate = useNavigate();
+  const { section: urlSection } = useParams<{ section?: string }>();
+  const resolvedSection: AdminSection = (urlSection && VALID_SECTIONS.has(urlSection) ? urlSection : "dashboard") as AdminSection;
   const { user, profile, role, authMethod, isPrivilegedUser, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
   const { items: cartItems, totalItems: cartTotalItems, totalPrice: cartTotalPrice, updateQuantity: updateCartQuantity, removeItem: removeCartItem } = useCart();
@@ -438,6 +456,12 @@ export default function Account() {
           categoriesText: "Ангилал нэмэх, засах, идэвхжүүлэх, идэвхгүй болгох бүх үйлдэл modal-оор хийгдэнэ.",
           productsTitle: "Бүтээгдэхүүний удирдлага",
           productsText: "Бүх бүтээгдэхүүний статус, үнэ, ангилал, тайлбар, variant-ийг modal-аар удирдана.",
+          searchByName: "Нэрээр хайх...",
+          allCategories: "Бүх ангилал",
+          priceMin: "Үнэ (мин)",
+          priceMax: "Үнэ (макс)",
+          clearFilters: "Цэвэрлэх",
+          showingResults: "үр дүн",
           messagesTitle: "Ирсэн мессежүүд",
           messagesText: "Contact page-ийн form-оор илгээсэн мессежүүдийг эндээс харна.",
           ordersTitle: "Захиалгын удирдлага",
@@ -540,6 +564,8 @@ export default function Account() {
           productImagesHelp: "Ихдээ 3 зураг upload хийж болно.",
           addImage: "Зураг нэмэх",
           ingredientsLabel: "Орц найрлага",
+          addIngredient: "Орц нэмэх",
+          ingredientPlaceholder: "Орцын нэр",
           usageLabel: "Үйлчилгээ",
           howToUseLabel: "Хэрэглэх заавар",
           cautionLabel: "Анхаар зүйлс",
@@ -684,8 +710,22 @@ export default function Account() {
           marketSummary: "Find Us page дээрх мэдээлэл.",
           testimonialSummary: "Home page дээрх customer review.",
           categorySummary: "Header, filter, storefront cards дээр ашиглагдана.",
+          featuredProduct: "Онцлох бүтээгдэхүүн",
+          featuredProductHelp: "Нүүр хуудсанд онцлох бүтээгдэхүүний орц найрлагыг харуулна.",
+          featuredProductNone: "Автомат (эхний бүтээгдэхүүн)",
           productSummary: "Collections page, home page, detail page дээр ашиглагдана.",
           statusSummary: "Status active үед selection болон public web дээр харагдана.",
+          inventoryTitle: "Нөөц ба агуулах",
+          inventoryText: "Сав, баглаа боодол болон түүхий эдийн нөөцийг удирдана.",
+          packagingTitle: "Сав, баглаа боодол",
+          packagingName: "Нэр",
+          packagingSize: "Хэмжээ",
+          packagingRemaining: "Үлдэгдэл",
+          packagingModalCreate: "Сав нэмэх",
+          packagingModalEdit: "Сав засах",
+          deletePackagingDescription: "Энэ савыг устгах уу?",
+          packagingEmpty: "Бүртгэгдсэн сав байхгүй байна.",
+          packagingSummary: "Үйлдвэрлэлд хэрэглэгдэх сав, баглаа боодлын бүртгэл.",
         }
       : {
           dashboard: "Dashboard",
@@ -805,6 +845,8 @@ export default function Account() {
           productImagesHelp: "Upload up to 3 images.",
           addImage: "Add image",
           ingredientsLabel: "Ingredients",
+          addIngredient: "Add ingredient",
+          ingredientPlaceholder: "Ingredient name",
           usageLabel: "Usage",
           howToUseLabel: "How to use",
           cautionLabel: "Caution",
@@ -949,15 +991,43 @@ export default function Account() {
           marketSummary: "Displayed on the Find Us page.",
           testimonialSummary: "Displayed on the homepage.",
           categorySummary: "Used in header navigation, filters, and storefront cards.",
+          featuredProduct: "Featured product",
+          featuredProductHelp: "Displays the featured product's ingredients on the homepage.",
+          featuredProductNone: "Auto (first product)",
           productSummary: "Used across collections, homepage, and product detail pages.",
           statusSummary: "Only active items appear in selections and on the public website.",
+          searchByName: "Search by name...",
+          allCategories: "All categories",
+          priceMin: "Price (min)",
+          priceMax: "Price (max)",
+          clearFilters: "Clear",
+          showingResults: "results",
+          inventoryTitle: "Inventory & warehouse",
+          inventoryText: "Manage packaging, raw materials, and finished goods inventory.",
+          packagingTitle: "Packaging",
+          packagingName: "Name",
+          packagingSize: "Size",
+          packagingRemaining: "Remaining",
+          packagingModalCreate: "Add packaging",
+          packagingModalEdit: "Edit packaging",
+          deletePackagingDescription: "Delete this packaging item?",
+          packagingEmpty: "No packaging items registered.",
+          packagingSummary: "Packaging materials used in production.",
         };
 
-  const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
+  const activeSection = resolvedSection;
+  const setActiveSection = (section: AdminSection) => {
+    navigate(section === "dashboard" ? "/account" : `/account/${section}`, { replace: true });
+  };
+  const [productSearchName, setProductSearchName] = useState("");
+  const [productFilterCategory, setProductFilterCategory] = useState("");
+  const [productFilterPriceMin, setProductFilterPriceMin] = useState("");
+  const [productFilterPriceMax, setProductFilterPriceMax] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [settingsModal, setSettingsModal] = useState<SettingsModalState | null>(null);
   const [collectionModal, setCollectionModal] = useState<CollectionModalState | null>(null);
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
   const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
@@ -967,6 +1037,8 @@ export default function Account() {
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+  const [packagingItems, setPackagingItems] = useState<PackagingItem[]>([]);
+  const [packagingModal, setPackagingModal] = useState<PackagingModalState | null>(null);
   const [navigationBannerUploadError, setNavigationBannerUploadError] = useState<string | null>(null);
   const [navigationBannerUploading, setNavigationBannerUploading] = useState(false);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
@@ -975,6 +1047,8 @@ export default function Account() {
   const [journalImageUploading, setJournalImageUploading] = useState(false);
   const [productImageUploading, setProductImageUploading] = useState(false);
   const [productImageUploadError, setProductImageUploadError] = useState<string | null>(null);
+  const [collectionImageUploading, setCollectionImageUploading] = useState(false);
+  const [collectionImageUploadError, setCollectionImageUploadError] = useState<string | null>(null);
   const [savingUserProfile, setSavingUserProfile] = useState(false);
   const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [savingOrderModal, setSavingOrderModal] = useState(false);
@@ -1051,6 +1125,18 @@ export default function Account() {
     () => new Map(collections.map((collection) => [collection.slug, collection.name])),
     [collections]
   );
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      if (productSearchName && !product.name.toLowerCase().includes(productSearchName.toLowerCase())) return false;
+      if (productFilterCategory && product.category !== productFilterCategory) return false;
+      const minPrice = Number(productFilterPriceMin);
+      if (minPrice > 0 && product.price < minPrice) return false;
+      const maxPrice = Number(productFilterPriceMax);
+      if (maxPrice > 0 && product.price > maxPrice) return false;
+      return true;
+    });
+  }, [products, productSearchName, productFilterCategory, productFilterPriceMin, productFilterPriceMax]);
+
   const regularCollectionCount = useMemo(
     () => collections.filter((collection) => !isSystemCollection(collection)).length,
     [collections]
@@ -1071,6 +1157,12 @@ export default function Account() {
     [collections, productCountByCategory]
   );
   const bestSellerCount = useMemo(() => products.filter((product) => product.bestSeller).length, [products]);
+  const totalStockSum = useMemo(() => products.reduce((sum, p) => {
+    const hasVariants = (p.variants ?? []).length > 0;
+    return sum + (hasVariants ? p.variants!.reduce((s, v) => s + (v.quantity || 0), 0) : (p.totalStock ?? 0));
+  }, 0), [products]);
+  const totalSoldSum = useMemo(() => products.reduce((sum, p) => sum + (p.soldCount ?? 0), 0), [products]);
+  const totalRemainingSum = totalStockSum - totalSoldSum;
   const currentRegistrationMethod = profile?.registrationMethod ?? authMethod;
   const userRoleCounts = useMemo(
     () =>
@@ -1128,6 +1220,7 @@ export default function Account() {
     "messages",
     "orders",
     "users",
+    "factoryInventory",
   ]);
   const adminMenuGroups: AdminMenuGroup[] =
     language === "MN"
@@ -1405,6 +1498,7 @@ export default function Account() {
                 label: "Нөөц ба агуулах",
                 description: "Raw material, packaging, finished goods inventory.",
                 icon: <Store size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryDispatch",
@@ -1689,6 +1783,7 @@ export default function Account() {
                 label: "Inventory",
                 description: "Raw material, packaging, and finished goods stock.",
                 icon: <Store size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryDispatch",
@@ -1744,6 +1839,17 @@ export default function Account() {
         setOrdersError(subscriptionError.message);
       },
     });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setPackagingItems([]);
+      return;
+    }
+    return subscribeToPackaging(
+      (items) => setPackagingItems(items),
+      () => {},
+    );
   }, [isPrivilegedUser]);
 
   useEffect(() => {
@@ -1987,6 +2093,38 @@ export default function Account() {
     setProductModal({
       ...productModal,
       draft: { ...productModal.draft, images: nextImages.length > 0 ? nextImages : [""] },
+    });
+  };
+
+  const handleCollectionImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !collectionModal) return;
+
+    setCollectionImageUploadError(null);
+    setCollectionImageUploading(true);
+
+    try {
+      const uploadedImageUrl = await uploadStorefrontImage(file, "collection-images");
+      setCollectionModal((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          draft: { ...current.draft, image: uploadedImageUrl },
+        };
+      });
+    } catch {
+      setCollectionImageUploadError(copy.bannerUploadFailed);
+    } finally {
+      setCollectionImageUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeCollectionImage = () => {
+    if (!collectionModal) return;
+    setCollectionModal({
+      ...collectionModal,
+      draft: { ...collectionModal.draft, image: "" },
     });
   };
 
@@ -4025,6 +4163,104 @@ export default function Account() {
                 </div>
               </div>
             </>
+          ) : activeSection === "factoryInventory" ? (
+            <>
+              <div className="admin-topbar">
+                <div>
+                  <p className="admin-kicker">{language === "MN" ? "Factory" : "Factory"}</p>
+                  <h1>{copy.inventoryTitle}</h1>
+                  <p>{copy.inventoryText}</p>
+                </div>
+              </div>
+
+              <div className="admin-summary-grid" style={{ marginBottom: "1.5rem" }}>
+                <div className="admin-summary-card">
+                  <span>{language === "MN" ? "Нийт төрөл" : "Total types"}</span>
+                  <strong>{packagingItems.length}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{language === "MN" ? "Нийт үлдэгдэл" : "Total remaining"}</span>
+                  <strong>{packagingItems.reduce((s, p) => s + p.remaining, 0)}</strong>
+                </div>
+              </div>
+
+              <div className="admin-data-card">
+                <div className="admin-data-card-head">
+                  <div>
+                    <h2>{copy.packagingTitle}</h2>
+                    <p>{copy.packagingSummary}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() =>
+                      setPackagingModal({
+                        mode: "create",
+                        draft: { id: Date.now(), name: "", size: "", remaining: 0, sortOrder: packagingItems.length },
+                      })
+                    }
+                  >
+                    <Plus size={16} /> {copy.packagingModalCreate}
+                  </button>
+                </div>
+
+                <div className="admin-data-table-wrap">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{copy.packagingName}</th>
+                        <th>{copy.packagingSize}</th>
+                        <th>{copy.packagingRemaining}</th>
+                        <th>{copy.actions}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {packagingItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="admin-table-empty">{copy.packagingEmpty}</td>
+                        </tr>
+                      ) : (
+                        packagingItems.map((item, idx) => (
+                          <tr key={item.id}>
+                            <td>{idx + 1}</td>
+                            <td><strong>{item.name}</strong></td>
+                            <td>{item.size || "—"}</td>
+                            <td>{item.remaining}</td>
+                            <td>
+                              <div className="admin-table-actions">
+                                <button
+                                  type="button"
+                                  className="admin-icon-btn admin-icon-btn-neutral"
+                                  onClick={() => setPackagingModal({ mode: "edit", draft: { ...item } })}
+                                >
+                                  <Pencil size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="admin-icon-btn"
+                                  onClick={() =>
+                                    setConfirmModal({
+                                      message: copy.deletePackagingDescription,
+                                      onConfirm: async () => {
+                                        await deletePackaging(item.id);
+                                        setConfirmModal(null);
+                                      },
+                                    })
+                                  }
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           ) : (
             <>
               <div className="admin-topbar">
@@ -4068,6 +4304,75 @@ export default function Account() {
                   <strong>{bestSellerCount}</strong>
                   <small>{copy.bestSeller}</small>
                 </div>
+                <div className="admin-summary-card">
+                  <span>{copy.totalStock}</span>
+                  <strong>{totalStockSum}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{copy.soldCount}</span>
+                  <strong>{totalSoldSum}</strong>
+                </div>
+                <div className="admin-summary-card">
+                  <span>{copy.stockRemaining}</span>
+                  <strong>{totalRemainingSum}</strong>
+                </div>
+              </div>
+
+              <div className="admin-filter-bar">
+                <div className="admin-filter-search">
+                  <Search size={16} className="admin-filter-search-icon" />
+                  <input
+                    type="text"
+                    placeholder={copy.searchByName}
+                    value={productSearchName}
+                    onChange={(e) => setProductSearchName(e.target.value)}
+                  />
+                </div>
+                <div className="admin-filter-group">
+                  <SlidersHorizontal size={14} className="admin-filter-group-icon" />
+                  <select
+                    value={productFilterCategory}
+                    onChange={(e) => setProductFilterCategory(e.target.value)}
+                  >
+                    <option value="">{copy.allCategories}</option>
+                    {selectableCategories.map((cat) => (
+                      <option key={cat.slug} value={cat.slug}>{cat.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    placeholder={copy.priceMin}
+                    value={productFilterPriceMin}
+                    onChange={(e) => setProductFilterPriceMin(e.target.value)}
+                  />
+                  <span className="admin-filter-divider">–</span>
+                  <input
+                    type="number"
+                    placeholder={copy.priceMax}
+                    value={productFilterPriceMax}
+                    onChange={(e) => setProductFilterPriceMax(e.target.value)}
+                  />
+                </div>
+                <div className="admin-filter-meta">
+                  {(productSearchName || productFilterCategory || productFilterPriceMin || productFilterPriceMax) && (
+                    <button
+                      type="button"
+                      className="admin-filter-clear"
+                      onClick={() => {
+                        setProductSearchName("");
+                        setProductFilterCategory("");
+                        setProductFilterPriceMin("");
+                        setProductFilterPriceMax("");
+                      }}
+                    >
+                      <X size={14} />
+                      {copy.clearFilters}
+                    </button>
+                  )}
+                  <span className="admin-filter-count">
+                    {filteredProducts.length} / {products.length} {copy.showingResults}
+                  </span>
+                </div>
               </div>
 
               <div className="admin-data-card">
@@ -4088,76 +4393,181 @@ export default function Account() {
                         <th>{copy.stockRemaining}</th>
                         <th>{copy.status}</th>
                         <th>{copy.actions}</th>
+                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {products.length === 0 ? (
+                      {filteredProducts.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="admin-table-empty">
+                          <td colSpan={8} className="admin-table-empty">
                             {copy.emptyProducts}
                           </td>
                         </tr>
                       ) : (
-                        products.map((product) => (
-                          <tr key={product.id}>
-                            <td>
-                              <div className="admin-table-primary-row">
-                                <div className="admin-product-thumb">
-                                  {getProductPrimaryImage(product) ? (
-                                    <img src={getProductPrimaryImage(product)} alt={product.name} />
-                                  ) : (
-                                    <span>{product.name.slice(0, 1)}</span>
-                                  )}
-                                </div>
-                                <div className="admin-table-primary">
-                                  <strong>{product.name || "Product"}</strong>
-                                  <small>
-                                    #{product.id}
-                                    {product.bestSeller ? ` • ${copy.bestSeller}` : ""}
-                                  </small>
-                                </div>
-                              </div>
-                            </td>
-                            <td>{collectionNameBySlug.get(product.category) ?? product.category}</td>
-                            <td>{formatStorePrice(product.price)}</td>
-                            <td>{product.compareAtPrice ? formatStorePrice(product.compareAtPrice) : "-"}</td>
-                            <td>
-                              {(() => {
-                                const stock = product.variants?.length
-                                  ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
-                                  : (product.totalStock ?? 0);
-                                return `${product.soldCount ?? 0}/${stock}`;
+                        filteredProducts.map((product) => {
+                          const isExpanded = expandedProductId === product.id;
+                          const stock = product.variants?.length
+                            ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
+                            : (product.totalStock ?? 0);
+                          const sold = product.soldCount ?? 0;
+                          const remaining = stock - sold;
+                          return (
+                            <React.Fragment key={product.id}>
+                              <tr
+                                className={`admin-product-row-clickable ${isExpanded ? "admin-product-row-expanded" : ""}`}
+                                onClick={() => setExpandedProductId(isExpanded ? null : product.id)}
+                              >
+                                <td>
+                                  <div className="admin-table-primary-row">
+                                    <div className="admin-product-thumb">
+                                      {getProductPrimaryImage(product) ? (
+                                        <img src={getProductPrimaryImage(product)} alt={product.name} />
+                                      ) : (
+                                        <span>{product.name.slice(0, 1)}</span>
+                                      )}
+                                    </div>
+                                    <div className="admin-table-primary">
+                                      <strong>{product.name || "Product"}</strong>
+                                      <small>
+                                        #{product.id}
+                                        {product.bestSeller ? ` • ${copy.bestSeller}` : ""}
+                                      </small>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>{collectionNameBySlug.get(product.category) ?? product.category}</td>
+                                <td>{formatStorePrice(product.price)}</td>
+                                <td>{product.compareAtPrice ? formatStorePrice(product.compareAtPrice) : "-"}</td>
+                                <td>{remaining}/{stock}</td>
+                                <td>
+                                  <StatusBadge
+                                    status={product.status}
+                                    activeLabel={copy.active}
+                                    inactiveLabel={copy.inactive}
+                                  />
+                                </td>
+                                <td>
+                                  <div className="admin-table-actions">
+                                    <button
+                                      type="button"
+                                      className="admin-icon-btn admin-icon-btn-neutral"
+                                      onClick={(e) => { e.stopPropagation(); openProductModal(product); }}
+                                      aria-label={`${copy.edit} ${product.name}`}
+                                    >
+                                      <Pencil size={15} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="admin-icon-btn"
+                                      onClick={(e) => { e.stopPropagation(); handleProductDeleteRequest(product); }}
+                                      aria-label={`${copy.delete} ${product.name}`}
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                                <td>
+                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </td>
+                              </tr>
+                              {isExpanded && (() => {
+                                const productOrders = orders
+                                  .filter((o) => o.items.some((it) => it.productId === product.id))
+                                  .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+                                return (
+                                  <tr className="admin-product-expand-row">
+                                    <td colSpan={8}>
+                                      <div className="admin-product-expand">
+                                        <div className="admin-product-expand-top">
+                                          <div className="admin-product-expand-stats">
+                                            <div className="admin-expand-stat">
+                                              <small>{copy.totalStock}</small>
+                                              <strong>{stock}</strong>
+                                            </div>
+                                            <div className="admin-expand-stat">
+                                              <small>{copy.soldCount}</small>
+                                              <strong>{sold}</strong>
+                                            </div>
+                                            <div className="admin-expand-stat">
+                                              <small>{copy.stockRemaining}</small>
+                                              <strong>{remaining}</strong>
+                                            </div>
+                                          </div>
+                                          {product.variants?.length ? (
+                                            <div className="admin-product-expand-variants">
+                                              {product.variants.map((v, i) => {
+                                                const vRemaining = (v.quantity || 0) - (v.soldCount ?? 0);
+                                                return (
+                                                  <div key={i} className="admin-product-expand-variant">
+                                                    <span className="admin-expand-variant-name">{v.name}</span>
+                                                    <span>{formatStorePrice(v.price)}</span>
+                                                    <span className="admin-expand-variant-stock">{v.soldCount ?? 0}/{vRemaining}</span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        <div className="admin-product-expand-section">
+                                          <h4>{language === "MN" ? "Борлуулалтын түүх" : "Sales history"}</h4>
+                                          {productOrders.length === 0 ? (
+                                            <p className="admin-expand-empty">{language === "MN" ? "Борлуулалт байхгүй" : "No sales yet"}</p>
+                                          ) : (
+                                            <div className="admin-expand-sales-table-wrap">
+                                              <table className="admin-expand-sales-table">
+                                                <thead>
+                                                  <tr>
+                                                    <th>{language === "MN" ? "Огноо" : "Date"}</th>
+                                                    <th>{language === "MN" ? "Захиалга" : "Order"}</th>
+                                                    <th>{language === "MN" ? "Variant" : "Variant"}</th>
+                                                    <th>{language === "MN" ? "Тоо" : "Qty"}</th>
+                                                    <th>{language === "MN" ? "Үнэ" : "Price"}</th>
+                                                    <th>{language === "MN" ? "Нийт" : "Total"}</th>
+                                                    <th>{language === "MN" ? "Төлөв" : "Status"}</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {productOrders.map((o) =>
+                                                    o.items
+                                                      .filter((it) => it.productId === product.id)
+                                                      .map((it, idx) => (
+                                                        <tr key={`${o.id}-${idx}`}>
+                                                          <td>{formatAdminDateTime(o.createdAt, language)}</td>
+                                                          <td><small>#{o.orderNumber}</small></td>
+                                                          <td>{it.variant || "—"}</td>
+                                                          <td>{it.quantity}</td>
+                                                          <td>{formatStorePrice(it.unitPrice)}</td>
+                                                          <td><strong>{formatStorePrice(it.lineTotal)}</strong></td>
+                                                          <td>
+                                                            <span className={`admin-expand-order-status admin-expand-order-${o.status}`}>
+                                                              {o.status}
+                                                            </span>
+                                                          </td>
+                                                        </tr>
+                                                      ))
+                                                  )}
+                                                </tbody>
+                                                <tfoot>
+                                                  <tr>
+                                                    <td colSpan={3}><strong>{language === "MN" ? "Нийт" : "Total"}</strong></td>
+                                                    <td><strong>{productOrders.reduce((s, o) => s + o.items.filter((it) => it.productId === product.id).reduce((a, it) => a + it.quantity, 0), 0)}</strong></td>
+                                                    <td></td>
+                                                    <td><strong>{formatStorePrice(productOrders.reduce((s, o) => s + o.items.filter((it) => it.productId === product.id).reduce((a, it) => a + it.lineTotal, 0), 0))}</strong></td>
+                                                    <td></td>
+                                                  </tr>
+                                                </tfoot>
+                                              </table>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
                               })()}
-                            </td>
-                            <td>
-                              <StatusBadge
-                                status={product.status}
-                                activeLabel={copy.active}
-                                inactiveLabel={copy.inactive}
-                              />
-                            </td>
-                            <td>
-                              <div className="admin-table-actions">
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn admin-icon-btn-neutral"
-                                  onClick={() => openProductModal(product)}
-                                  aria-label={`${copy.edit} ${product.name}`}
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn"
-                                  onClick={() => handleProductDeleteRequest(product)}
-                                  aria-label={`${copy.delete} ${product.name}`}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                            </React.Fragment>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -4890,11 +5300,13 @@ export default function Account() {
           title={collectionModal.mode === "create" ? copy.collectionModalCreate : copy.collectionModalEdit}
           description={copy.statusSummary}
           onClose={() => setCollectionModal(null)}
+          disableClose={collectionImageUploading}
         >
           <form
             className="admin-modal-form"
             onSubmit={(event) => {
               event.preventDefault();
+              if (collectionImageUploading) return;
               saveCollectionDraft(collectionModal.draft);
               setCollectionModal(null);
             }}
@@ -4930,36 +5342,62 @@ export default function Account() {
                   }
                 />
               </label>
-              <label className="admin-field admin-field-wide">
+              <div className="admin-field admin-field-wide">
                 <span>{copy.image}</span>
-                <input
-                  type="url"
-                  value={collectionModal.draft.image}
-                  placeholder="https://..."
+                <div className="admin-product-images">
+                  {collectionModal.draft.image ? (
+                    <div className="admin-product-image-item">
+                      <img
+                        src={collectionModal.draft.image}
+                        alt={collectionModal.draft.name || copy.collections}
+                        className="admin-product-image-preview"
+                      />
+                      <button type="button" className="admin-product-image-remove" onClick={removeCollectionImage}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="admin-product-image-add">
+                      <Plus size={20} />
+                      <span>{copy.addImage}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCollectionImageUpload}
+                        disabled={collectionImageUploading}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  )}
+                </div>
+                {collectionImageUploading && <small>{copy.bannerUploadProgress}</small>}
+                {collectionImageUploadError && <small className="admin-field-error">{collectionImageUploadError}</small>}
+              </div>
+              <label className="admin-field admin-field-wide">
+                <span>{copy.featuredProduct}</span>
+                <select
+                  value={collectionModal.draft.featuredProductId ?? ""}
                   onChange={(event) =>
                     setCollectionModal({
                       ...collectionModal,
-                      draft: { ...collectionModal.draft, image: event.target.value },
+                      draft: {
+                        ...collectionModal.draft,
+                        featuredProductId: event.target.value ? Number(event.target.value) : undefined,
+                      },
                     })
                   }
-                />
-                <small>{copy.imageHelp}</small>
+                >
+                  <option value="">{copy.featuredProductNone}</option>
+                  {products
+                    .filter((p) => p.category === collectionModal.draft.slug)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+                <small>{copy.featuredProductHelp}</small>
               </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.imagePreview}</span>
-                <div className="admin-collection-preview">
-                  {getCollectionPrimaryImage(collectionModal.draft) ? (
-                    <img
-                      src={getCollectionPrimaryImage(collectionModal.draft)}
-                      alt={collectionModal.draft.name || copy.collections}
-                    />
-                  ) : (
-                    <div className="admin-collection-preview-empty">
-                      {collectionModal.draft.name.slice(0, 1) || "C"}
-                    </div>
-                  )}
-                </div>
-              </div>
               <label className="admin-field admin-field-wide">
                 <span>{copy.description}</span>
                 <textarea
@@ -4981,7 +5419,7 @@ export default function Account() {
               <button type="button" className="btn btn-outline" onClick={() => setCollectionModal(null)}>
                 {copy.cancel}
               </button>
-              <button type="submit" className="btn btn-primary">
+              <button type="submit" className="btn btn-primary" disabled={collectionImageUploading}>
                 {copy.save}
               </button>
             </div>
@@ -5284,19 +5722,77 @@ export default function Account() {
                   }
                 />
               </label>
-              <label className="admin-field admin-field-wide">
+              <div className="admin-field admin-field-wide">
                 <span>{copy.ingredientsLabel}</span>
-                <textarea
-                  rows={4}
-                  value={productModal.draft.ingredients ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, ingredients: event.target.value || undefined },
-                    })
-                  }
-                />
-              </label>
+                <div className="admin-ingredients-list">
+                  {(productModal.draft.ingredients ?? "")
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .map((ingredient, iIdx, arr) => (
+                      <div key={iIdx} className="admin-ingredient-tag">
+                        <span>{ingredient}</span>
+                        <button
+                          type="button"
+                          className="admin-ingredient-remove"
+                          onClick={() => {
+                            const next = arr.filter((_, i) => i !== iIdx).join(", ");
+                            setProductModal({
+                              ...productModal,
+                              draft: { ...productModal.draft, ingredients: next || undefined },
+                            });
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  <div className="admin-ingredient-add">
+                    <input
+                      placeholder={copy.ingredientPlaceholder}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const val = event.currentTarget.value.trim();
+                          if (!val) return;
+                          const existing = (productModal.draft.ingredients ?? "")
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean);
+                          existing.push(val);
+                          setProductModal({
+                            ...productModal,
+                            draft: { ...productModal.draft, ingredients: existing.join(", ") },
+                          });
+                          event.currentTarget.value = "";
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={(event) => {
+                        const input = (event.currentTarget.previousElementSibling as HTMLInputElement);
+                        const val = input.value.trim();
+                        if (!val) return;
+                        const existing = (productModal.draft.ingredients ?? "")
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean);
+                        existing.push(val);
+                        setProductModal({
+                          ...productModal,
+                          draft: { ...productModal.draft, ingredients: existing.join(", ") },
+                        });
+                        input.value = "";
+                        input.focus();
+                      }}
+                    >
+                      <Plus size={14} /> {copy.addIngredient}
+                    </button>
+                  </div>
+                </div>
+              </div>
               <label className="admin-field admin-field-wide">
                 <span>{copy.usageLabel}</span>
                 <textarea
@@ -5366,6 +5862,15 @@ export default function Account() {
               <div className="admin-field admin-field-wide">
                 <span>{copy.variants}</span>
                 <div className="admin-variants-list">
+                  {(productModal.draft.variants ?? []).length > 0 && (
+                    <div className="admin-variant-row admin-variant-header">
+                      <span>{copy.variantName}</span>
+                      <span>{copy.variantPrice}</span>
+                      <span>{copy.variantQuantity}</span>
+                      <span>{copy.soldCount}/{copy.stockRemaining}</span>
+                      <span></span>
+                    </div>
+                  )}
                   {(productModal.draft.variants ?? []).map((variant, vIndex) => (
                     <div key={vIndex} className="admin-variant-row">
                       <input
@@ -5397,13 +5902,9 @@ export default function Account() {
                           setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
                         }}
                       />
-                      {(variant.soldCount ?? 0) > 0 && (
-                        <span className="admin-variant-sold">
-                          {language === "MN"
-                            ? `${variant.soldCount} зарагдсан · ${variant.quantity - (variant.soldCount ?? 0)} үлдсэн`
-                            : `${variant.soldCount} sold · ${variant.quantity - (variant.soldCount ?? 0)} left`}
-                        </span>
-                      )}
+                      <span className="admin-variant-sold">
+                        {variant.soldCount ?? 0}/{(variant.quantity || 0) - (variant.soldCount ?? 0)}
+                      </span>
                       <button
                         type="button"
                         className="admin-icon-btn"
@@ -5694,6 +6195,57 @@ export default function Account() {
               <button type="submit" className="btn btn-primary">
                 {copy.save}
               </button>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {packagingModal && (
+        <AdminModal
+          title={packagingModal.mode === "create" ? copy.packagingModalCreate : copy.packagingModalEdit}
+          onClose={() => setPackagingModal(null)}
+        >
+          <form
+            onSubmit={async (e: FormEvent) => {
+              e.preventDefault();
+              await savePackaging(packagingModal.draft);
+              setPackagingModal(null);
+            }}
+          >
+            <label className="admin-field admin-field-wide">
+              <span>{copy.packagingName}</span>
+              <input
+                value={packagingModal.draft.name}
+                onChange={(e) =>
+                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, name: e.target.value } })
+                }
+                required
+              />
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{copy.packagingSize}</span>
+              <input
+                value={packagingModal.draft.size}
+                onChange={(e) =>
+                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, size: e.target.value } })
+                }
+              />
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{copy.packagingRemaining}</span>
+              <input
+                type="number"
+                value={packagingModal.draft.remaining}
+                onChange={(e) =>
+                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, remaining: Number(e.target.value) || 0 } })
+                }
+              />
+            </label>
+            <div className="admin-modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setPackagingModal(null)}>
+                {copy.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary">{copy.save}</button>
             </div>
           </form>
         </AdminModal>

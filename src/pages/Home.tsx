@@ -1,6 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, BadgeCheck, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, Palette, UserCircle2, X } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Bean,
+  BriefcaseBusiness,
+  CalendarDays,
+  Cherry,
+  ChevronLeft,
+  ChevronRight,
+  Droplets,
+  Flower2,
+  Leaf,
+  type LucideIcon,
+  Nut,
+  Palette,
+  Shell,
+  Sprout,
+  SunMedium,
+  UserCircle2,
+  Wheat,
+  X,
+} from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
 import { useStorefront } from "../context/StorefrontContext";
@@ -25,6 +46,14 @@ import "./Journal.css";
 
 const HERO_ROTATION_INTERVAL = 5000;
 const PRODUCT_IMAGE_ROTATION_INTERVAL = 3000;
+
+function parseIngredients(ingredients?: string): string[] {
+  if (!ingredients) return [];
+  return ingredients
+    .split(/,\s*/)
+    .map((s) => s.replace(/\.\s*$/, "").trim())
+    .filter(Boolean);
+}
 
 function ProductCardHome({ product, gradient }: { product: Product; gradient: string }) {
   const { addItem } = useCart();
@@ -84,14 +113,160 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
 }
 
 function resolveCollectionImage(collection: Collection, products: Product[]) {
-  const previewProduct = products.find((product) => product.category === collection.slug);
-  return getCollectionPrimaryImage(collection) || (previewProduct ? getProductPrimaryImage(previewProduct) : "");
+  const collectionImage = getCollectionPrimaryImage(collection);
+  if (collectionImage) return collectionImage;
+
+  const collectionProducts = products.filter((product) => product.category === collection.slug);
+  const featuredProduct =
+    (collection.featuredProductId
+      ? collectionProducts.find((p) => p.id === collection.featuredProductId)
+      : undefined) ?? collectionProducts[0];
+
+  return featuredProduct ? getProductPrimaryImage(featuredProduct) : "";
+}
+
+function isLikelyTransparentProductAsset(imageUrl: string) {
+  const trimmedUrl = imageUrl.trim();
+
+  if (!trimmedUrl) {
+    return false;
+  }
+
+  const assetPath = trimmedUrl.split(/[?#]/)[0]?.toLowerCase() ?? "";
+  return assetPath.endsWith(".png");
+}
+
+function isEmbeddedJpegDataUrl(imageUrl: string) {
+  return imageUrl.trim().startsWith("data:image/jpeg");
+}
+
+function getHeroBackdropImage(imageUrl: string) {
+  const trimmedUrl = imageUrl.trim();
+
+  if (!trimmedUrl || isLikelyTransparentProductAsset(trimmedUrl)) {
+    return "";
+  }
+
+  return trimmedUrl;
+}
+
+function getHeroProductImage(
+  bannerImage: string,
+  collectionImage: string,
+  featuredProductImage: string,
+  fallbackProductImage: string,
+) {
+  const trimmedBannerImage = bannerImage.trim();
+
+  if (isLikelyTransparentProductAsset(trimmedBannerImage)) {
+    return trimmedBannerImage;
+  }
+
+  return collectionImage || featuredProductImage || fallbackProductImage || "";
+}
+
+function getIngredientVisual(ingredient: string): { icon: LucideIcon; tone: string } {
+  const normalizedIngredient = ingredient.toLowerCase();
+
+  if (normalizedIngredient.includes("олив") || normalizedIngredient.includes("olive")) {
+    return { icon: Leaf, tone: "olive" };
+  }
+
+  if (normalizedIngredient.includes("наранцэцэг") || normalizedIngredient.includes("sunflower")) {
+    return { icon: SunMedium, tone: "sun" };
+  }
+
+  if (
+    normalizedIngredient.includes("наргил") ||
+    normalizedIngredient.includes("coconut") ||
+    normalizedIngredient.includes("самар") ||
+    normalizedIngredient.includes("nut") ||
+    normalizedIngredient.includes("almond") ||
+    normalizedIngredient.includes("shea")
+  ) {
+    return { icon: Nut, tone: "nut" };
+  }
+
+  if (
+    normalizedIngredient.includes("цэцэг") ||
+    normalizedIngredient.includes("flower") ||
+    normalizedIngredient.includes("lavender") ||
+    normalizedIngredient.includes("лаванда") ||
+    normalizedIngredient.includes("calendula") ||
+    normalizedIngredient.includes("chamomile") ||
+    normalizedIngredient.includes("rose")
+  ) {
+    return { icon: Flower2, tone: "flower" };
+  }
+
+  if (
+    normalizedIngredient.includes("ганга") ||
+    normalizedIngredient.includes("thyme") ||
+    normalizedIngredient.includes("mint") ||
+    normalizedIngredient.includes("nettle") ||
+    normalizedIngredient.includes("халгай") ||
+    normalizedIngredient.includes("rosemary") ||
+    normalizedIngredient.includes("sage") ||
+    normalizedIngredient.includes("арц") ||
+    normalizedIngredient.includes("herb") ||
+    normalizedIngredient.includes("өвс") ||
+    normalizedIngredient.includes("leaf") ||
+    normalizedIngredient.includes("ургам")
+  ) {
+    return { icon: Sprout, tone: "herb" };
+  }
+
+  if (
+    normalizedIngredient.includes("буурц") ||
+    normalizedIngredient.includes("bean") ||
+    normalizedIngredient.includes("mung")
+  ) {
+    return { icon: Bean, tone: "seed" };
+  }
+
+  if (
+    normalizedIngredient.includes("арвай") ||
+    normalizedIngredient.includes("oat") ||
+    normalizedIngredient.includes("wheat") ||
+    normalizedIngredient.includes("grain") ||
+    normalizedIngredient.includes("буудай")
+  ) {
+    return { icon: Wheat, tone: "grain" };
+  }
+
+  if (
+    normalizedIngredient.includes("чацарган") ||
+    normalizedIngredient.includes("berry") ||
+    normalizedIngredient.includes("fruit") ||
+    normalizedIngredient.includes("жимс") ||
+    normalizedIngredient.includes("orange") ||
+    normalizedIngredient.includes("lemon") ||
+    normalizedIngredient.includes("citrus") ||
+    normalizedIngredient.includes("cherry")
+  ) {
+    return { icon: Cherry, tone: "fruit" };
+  }
+
+  if (
+    normalizedIngredient.includes("давс") ||
+    normalizedIngredient.includes("salt") ||
+    normalizedIngredient.includes("clay") ||
+    normalizedIngredient.includes("charcoal") ||
+    normalizedIngredient.includes("coal") ||
+    normalizedIngredient.includes("mineral")
+  ) {
+    return { icon: Shell, tone: "earth" };
+  }
+
+  return { icon: Droplets, tone: "dew" };
 }
 
 export default function Home() {
   const { language, t } = useLanguage();
   const { collections, heroBanners, products, settings, testimonials } = useStorefront();
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const [heroHovered, setHeroHovered] = useState(false);
+  const [heroProductHovered, setHeroProductHovered] = useState(false);
   const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
 
   const visibleSettings = getRenderableSettings(settings);
@@ -134,14 +309,31 @@ export default function Home() {
           return null;
         }
 
-        const fallbackImage = resolveCollectionImage(collection, activeProducts);
+        const collectionImage = getCollectionPrimaryImage(collection);
+        const collectionProducts = activeProducts.filter((p) => p.category === collection.slug);
+        const featuredProd =
+          (collection.featuredProductId
+            ? collectionProducts.find((p) => p.id === collection.featuredProductId)
+            : undefined) ?? collectionProducts[0];
+        const featuredProductImage = featuredProd ? getProductPrimaryImage(featuredProd) : "";
+        const firstProductImage = collectionProducts[0] ? getProductPrimaryImage(collectionProducts[0]) : "";
+        const productImage = getHeroProductImage(
+          heroBanner.image,
+          collectionImage,
+          featuredProductImage,
+          firstProductImage,
+        );
+        const ingredients = featuredProd ? parseIngredients(featuredProd.ingredients) : [];
 
         return {
           id: heroBanner.id,
           collectionSlug: heroBanner.collectionSlug,
           title: collection.name || visibleSettings.brandName,
           description: collection.description || visibleSettings.heroSubtext,
-          image: heroBanner.image || fallbackImage,
+          image: getHeroBackdropImage(heroBanner.image),
+          productImage,
+          productImageNeedsBlend: isEmbeddedJpegDataUrl(productImage),
+          ingredients,
         };
       })
       .filter((slide): slide is NonNullable<typeof slide> => slide !== null);
@@ -160,9 +352,21 @@ export default function Home() {
           title: visibleSettings.heroHeading,
           description: visibleSettings.heroSubtext,
           image: "",
+          productImage: "",
+          productImageNeedsBlend: false,
+          ingredients: [] as string[],
         },
       ];
     }
+
+    const fbCollectionImage = getCollectionPrimaryImage(fallbackCollection);
+    const fbProducts = activeProducts.filter((p) => p.category === fallbackCollection.slug);
+    const fbFeaturedProd =
+      (fallbackCollection.featuredProductId
+        ? fbProducts.find((p) => p.id === fallbackCollection.featuredProductId)
+        : undefined) ?? fbProducts[0];
+    const fbFeaturedProductImage = fbFeaturedProd ? getProductPrimaryImage(fbFeaturedProd) : "";
+    const fbFirstProductImage = fbProducts[0] ? getProductPrimaryImage(fbProducts[0]) : "";
 
     return [
       {
@@ -170,13 +374,18 @@ export default function Home() {
         collectionSlug: fallbackCollection.slug,
         title: fallbackCollection.name,
         description: fallbackCollection.description || visibleSettings.heroSubtext,
-        image: resolveCollectionImage(fallbackCollection, activeProducts),
+        image: "",
+        productImage: getHeroProductImage("", fbCollectionImage, fbFeaturedProductImage, fbFirstProductImage),
+        productImageNeedsBlend: isEmbeddedJpegDataUrl(
+          getHeroProductImage("", fbCollectionImage, fbFeaturedProductImage, fbFirstProductImage),
+        ),
+        ingredients: fbFeaturedProd ? parseIngredients(fbFeaturedProd.ingredients) : [],
       },
     ];
   })();
 
   useEffect(() => {
-    if (heroSlides.length <= 1) {
+    if (heroSlides.length <= 1 || heroHovered) {
       return undefined;
     }
 
@@ -185,7 +394,7 @@ export default function Home() {
     }, HERO_ROTATION_INTERVAL);
 
     return () => window.clearInterval(interval);
-  }, [heroSlides.length]);
+  }, [heroSlides.length, heroHovered]);
 
   const resolvedHeroIndex = heroSlides.length > 0 ? activeHeroIndex % heroSlides.length : 0;
   const currentHero = heroSlides[resolvedHeroIndex] ?? heroSlides[0];
@@ -228,27 +437,75 @@ export default function Home() {
 
   return (
     <div className="home">
-      <section className="hero hero-showcase">
+      <section
+        className={`hero hero-showcase ${heroProductHovered ? "hero-product-hovered" : ""}`}
+        onMouseEnter={() => setHeroHovered(true)}
+        onMouseLeave={() => {
+          setHeroHovered(false);
+          setHeroProductHovered(false);
+        }}
+      >
         <div className="hero-slide-stack">
           {heroSlides.map((heroSlide, index) => (
             <div
               key={heroSlide.id}
               className={`hero-slide ${index === activeHeroIndex ? "active" : ""}`}
-              style={heroSlide.image ? { backgroundImage: `url(${heroSlide.image})` } : undefined}
-            />
+            >
+              {heroSlide.image && (
+                <img src={heroSlide.image} alt="" className="hero-slide-img" />
+              )}
+            </div>
           ))}
         </div>
         <div className="hero-overlay" />
           <div className="hero-shell container">
           <div className="hero-stage">
             <div key={currentHero.id} className="hero-content hero-content-card">
-              <h1 className="hero-heading">{currentHero.title}</h1>
-              <p className="hero-subtext">{currentHero.description}</p>
-              <div className="hero-actions">
-                <Link to="/collections" className="btn btn-outline-white">
-                  {heroSecondaryAction}
-                </Link>
+              <div className="hero-text">
+                <h1 className="hero-heading">{currentHero.title}</h1>
+                <p className="hero-subtext">{currentHero.description}</p>
+                <div className="hero-actions">
+                  <Link to="/collections" className="btn btn-outline-white">
+                    {heroSecondaryAction}
+                  </Link>
+                </div>
               </div>
+              {currentHero.productImage && (
+                <div
+                  className="hero-product-float"
+                  onMouseEnter={() => setHeroProductHovered(true)}
+                  onMouseLeave={() => setHeroProductHovered(false)}
+                >
+                  <div className="hero-product-scale-shell">
+                    <div className="hero-product-glow">
+                      <img
+                        src={currentHero.productImage}
+                        alt={currentHero.title}
+                        className={`hero-product-img${currentHero.productImageNeedsBlend ? " hero-product-img-blend" : ""}`}
+                      />
+                    </div>
+                  </div>
+                  {currentHero.ingredients.length > 0 && (
+                    <div className="hero-ingredients-orbit">
+                      {currentHero.ingredients.slice(0, 4).map((ingredient, i) => {
+                        const ingredientVisual = getIngredientVisual(ingredient);
+                        const IngredientIcon = ingredientVisual.icon;
+
+                        return (
+                          <div key={ingredient} className={`hero-ingredient-node hero-ingredient-pos-${i}`}>
+                            <div className={`hero-ingredient-icon hero-ingredient-icon-${ingredientVisual.tone}`}>
+                              <IngredientIcon size={22} strokeWidth={1.9} />
+                            </div>
+                            <div className={`hero-ingredient-label hero-ingredient-label-${ingredientVisual.tone}`}>
+                              <strong>{ingredient}</strong>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="hero-meta">
               <span>{heroEyebrow}</span>
@@ -290,7 +547,14 @@ export default function Home() {
           </div>
           <div className="categories-row">
             {featuredCollections.map((collection) => {
-              const previewImage = resolveCollectionImage(collection, activeProducts);
+              const collectionProducts = activeProducts.filter((p) => p.category === collection.slug);
+              const featuredProduct =
+                (collection.featuredProductId
+                  ? collectionProducts.find((p) => p.id === collection.featuredProductId)
+                  : undefined) ?? collectionProducts[0];
+              const featuredProductImage = featuredProduct ? getProductPrimaryImage(featuredProduct) : "";
+              const previewImage = featuredProductImage || getCollectionPrimaryImage(collection) || resolveCollectionImage(collection, activeProducts);
+              const ingredients: string[] = [];
 
               return (
                 <Link key={collection.id} to={`/collections/${collection.slug}`} className="category-tile">
@@ -314,7 +578,27 @@ export default function Home() {
                       <p className="category-tile-name">{collection.name}</p>
                     </div>
                     <div className="category-tile-overlay">
-                      <p className="category-tile-name">{collection.name}</p>
+                      {ingredients.length > 0 ? (
+                        <div className="category-tile-ingredients">
+                          <p className="category-tile-ingredients-title">
+                            {language === "MN" ? "Орц найрлага" : "Ingredients"}
+                          </p>
+                          <ul className="category-tile-ingredients-list">
+                            {ingredients.slice(0, 5).map((ingredient) => (
+                              <li key={ingredient} className="category-tile-ingredient-tag">
+                                {ingredient}
+                              </li>
+                            ))}
+                            {ingredients.length > 5 && (
+                              <li className="category-tile-ingredient-tag category-tile-ingredient-more">
+                                +{ingredients.length - 5}
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      ) : (
+                        <p className="category-tile-name">{collection.name}</p>
+                      )}
                       <span className="category-tile-overlay-btn">
                         {t.shopNow} <ArrowRight size={12} />
                       </span>

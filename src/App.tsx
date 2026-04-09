@@ -34,8 +34,8 @@ function AppShell() {
   const { pathname } = useLocation();
   const { settings } = useStorefront();
   const { isPrivilegedUser } = useAuth();
-  const hideHeader = pathname === "/account" && isPrivilegedUser;
-  const hideFooter = (pathname === "/account" && isPrivilegedUser) || pathname === "/checkout";
+  const hideHeader = pathname.startsWith("/account") && isPrivilegedUser;
+  const hideFooter = (pathname.startsWith("/account") && isPrivilegedUser) || pathname === "/checkout";
   const visibleSettings = getRenderableSettings(settings);
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, pathname);
   const hasHeroHeaderOffset = pathname === "/" || Boolean(pageBanner?.pageBannerImage.trim());
@@ -66,6 +66,14 @@ function AppShell() {
           <Route path="/checkout" element={<Checkout />} />
           <Route
             path="/account"
+            element={
+              <ProtectedRoute>
+                <Account />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/account/:section"
             element={
               <ProtectedRoute>
                 <Account />

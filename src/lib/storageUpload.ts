@@ -31,6 +31,11 @@ function loadImage(sourceUrl: string) {
   });
 }
 
+function isTransparencySensitiveImage(file: File) {
+  const mimeType = file.type.toLowerCase();
+  return mimeType === "image/png" || mimeType === "image/webp";
+}
+
 async function createEmbeddedImageDataUrl(file: File) {
   const objectUrl = URL.createObjectURL(file);
 
@@ -49,6 +54,7 @@ async function createEmbeddedImageDataUrl(file: File) {
     }
 
     let bestCandidate = "";
+    const preserveTransparency = isTransparencySensitiveImage(file);
 
     while (scale > 0) {
       const width = Math.max(1, Math.round(originalWidth * scale));
@@ -59,12 +65,36 @@ async function createEmbeddedImageDataUrl(file: File) {
       context.clearRect(0, 0, width, height);
       context.drawImage(image, 0, 0, width, height);
 
-      for (const quality of EMBEDDED_IMAGE_QUALITIES) {
-        const candidate = canvas.toDataURL("image/jpeg", quality);
-        bestCandidate = candidate;
+      if (preserveTransparency) {
+        const losslessCandidate = canvas.toDataURL("image/png");
+        bestCandidate =
+          bestCandidate.length === 0 || losslessCandidate.length < bestCandidate.length
+            ? losslessCandidate
+            : bestCandidate;
 
-        if (candidate.length <= MAX_EMBEDDED_IMAGE_LENGTH) {
-          return candidate;
+        if (losslessCandidate.length <= MAX_EMBEDDED_IMAGE_LENGTH) {
+          return losslessCandidate;
+        }
+
+        for (const quality of EMBEDDED_IMAGE_QUALITIES) {
+          const candidate = canvas.toDataURL("image/webp", quality);
+          bestCandidate =
+            bestCandidate.length === 0 || candidate.length < bestCandidate.length
+              ? candidate
+              : bestCandidate;
+
+          if (candidate.length <= MAX_EMBEDDED_IMAGE_LENGTH) {
+            return candidate;
+          }
+        }
+      } else {
+        for (const quality of EMBEDDED_IMAGE_QUALITIES) {
+          const candidate = canvas.toDataURL("image/jpeg", quality);
+          bestCandidate = candidate;
+
+          if (candidate.length <= MAX_EMBEDDED_IMAGE_LENGTH) {
+            return candidate;
+          }
         }
       }
 
