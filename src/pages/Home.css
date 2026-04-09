@@ -824,7 +824,6 @@
 .brand-story-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  min-height: 520px;
 }
 
 .brand-story-image {
@@ -835,14 +834,12 @@
 .brand-story-image-bg {
   width: 100%;
   height: 100%;
-  min-height: 520px;
   background-color: #efe4d7;
 }
 
 .brand-story-photo {
   width: 100%;
   height: 100%;
-  min-height: 520px;
   object-fit: cover;
   display: block;
 }
@@ -856,6 +853,9 @@
 
 .brand-story-text {
   max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .brand-story-text h2 {
@@ -874,6 +874,34 @@
 
 .brand-story-text .btn {
   margin-top: 0.75rem;
+}
+
+.brand-story-text .about-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 2rem;
+  color: var(--color-accent);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+}
+
+.brand-story-text .about-badge span {
+  white-space: nowrap;
+}
+
+.brand-story-text .about-badge-logo {
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
 }
 
 /* ========================

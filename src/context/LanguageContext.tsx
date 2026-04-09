@@ -193,7 +193,7 @@ const en: Translations = {
     "We use juniper, thyme, nettle, sea buckthorn oil, Shuden mountain rock salt, natural soda, honey, purified tallow, lard, and ghee from Mongolian pasture livestock to handcraft each product with care and dedication.",
   brandStoryBody3:
     "We are committed to the UN Sustainable Development Goals (SDGs), aligning our work with responsible consumption, climate action, and sustainable communities to create lasting positive impact.",
-  womanOwned: "Woman-Owned Business",
+  womanOwned: "Women-Owned Business",
   learnOurStory: "Learn Our Story",
   collectionsHeading: "Our Collections",
   testimonialsHeading: "What Our Customers Are Saying",

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
-import { Instagram, Facebook, Mail } from "lucide-react";
+import { Instagram, Facebook, Mail, Phone, MapPin } from "lucide-react";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import { getActiveCollections, getRenderableSettings } from "../lib/storefrontHelpers";
+import womenOwnedLogo from "../assets/women-owned.png";
 import "./Footer.css";
 
 export default function Footer() {
@@ -34,6 +35,25 @@ export default function Footer() {
                 <a href={`mailto:${visibleSettings.contactEmail}`} aria-label="Email">
                   <Mail size={18} />
                 </a>
+                {contactPhone ? (
+                  <a href={`tel:${contactPhoneHref}`} aria-label={contactPhone}>
+                    <Phone size={18} />
+                  </a>
+                ) : null}
+                {visibleSettings.location ? (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(visibleSettings.location)}`}
+                    aria-label={visibleSettings.location}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <MapPin size={18} />
+                  </a>
+                ) : null}
+              </div>
+              <div className="about-badge">
+                <img src={womenOwnedLogo} alt="Women Owned" className="about-badge-logo" />
+                <span>{t.womanOwned}</span>
               </div>
             </div>
 

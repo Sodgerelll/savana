@@ -41,6 +41,7 @@ import {
   SYSTEM_COLLECTION_SLUG,
 } from "../lib/storefrontHelpers";
 import brandStorySoapImage from "../assets/brand-story-soap.jpg";
+import womenOwnedLogo from "../assets/women-owned.png";
 import "./Home.css";
 import "./Journal.css";
 
@@ -644,6 +645,10 @@ export default function Home() {
             <h2>{t.brandStoryHeading}</h2>
             <p>{t.brandStoryBody1}</p>
             <p>{t.brandStoryBody2}</p>
+            <div className="about-badge">
+              <img src={womenOwnedLogo} alt="Women Owned" className="about-badge-logo" />
+              <span>{t.womanOwned}</span>
+            </div>
             <Link to="/about" className="btn btn-outline">
               {t.learnOurStory}
             </Link>
