@@ -6,7 +6,6 @@ import {
   Globe,
   LayoutDashboard,
   LogOut,
-  MapPin,
   Menu,
   MessageSquareQuote,
   Package,
