@@ -15,7 +15,15 @@
       "Bash(xargs grep:*)",
       "Bash(npx vite:*)",
       "Bash(curl -sI \"http://localhost:5173\")",
-      "Bash(pkill -f \"vite\")"
+      "Bash(pkill -f \"vite\")",
+      "Bash(firebase deploy:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(grep -n \"^          \\)}$\\\\|^          \\)\\\\s*$\\\\|{confirmModal && \\(\\\\|{settingsModal && \\(\\\\|{collectionModal && \\(\\\\|{productModal && \\(\\\\|{heroBannerModal && \\(\\\\|{navigationModal && \\(\\\\|{journalSettingsModal && \\(\\\\|{journalEntryModal && \\(\\\\|{marketModal && \\(\\\\|{testimonialModal && \\(\\\\|{orderModal && \\(\\\\|{userProfileModal && \\(\\\\|{packagingModal && \\(\\\\|{rawMaterialModal && \\(\\\\|{productionBatchModal && \\(\\\\|{productionAdvanceModal && \\(\\\\|{customerModal && \\(\\\\|{transactionModal && \\(\" \"e:/AI/Projects/savana/src/pages/Account.tsx\")",
+      "Bash(wc -l e:/AI/Projects/savana/src/pages/Account.tsx e:/AI/Projects/savana/src/pages/admin/*.tsx)",
+      "Bash(python3)",
+      "Bash(python)",
+      "Bash(grep -n \"^  const copy\\\\|^  }\\\\s*:\\\\s*{\\\\s*$\\\\|^  };\\\\s*$\\\\|^  const \\\\[activeSection\\\\|^  const navigate\" e:/AI/Projects/savana/src/pages/Account.tsx)",
+      "Bash(python -)"
     ]
   }
 }

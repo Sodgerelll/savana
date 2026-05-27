@@ -72,7 +72,7 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
       setActiveImage(allImages[imageIndexRef.current]);
     }, PRODUCT_IMAGE_ROTATION_INTERVAL);
     return () => window.clearInterval(interval);
-  }, [hasMultiple, allImages.length]);
+  }, [hasMultiple, allImages]);
 
   return (
     <div

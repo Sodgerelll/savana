@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { CartProvider } from "./context/CartContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StorefrontProvider } from "./context/StorefrontContext";
@@ -7,6 +7,7 @@ import { LanguageProvider } from "./context/LanguageContext";
 import { useStorefront } from "./context/StorefrontContext";
 import "./App.css";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import CartDrawer from "./components/CartDrawer";
@@ -22,6 +23,9 @@ import Checkout from "./pages/Checkout";
 import Partnerships from "./pages/Partnerships";
 import { getPageBannerNavigationItem, getRenderableSettings } from "./lib/storefrontHelpers";
 
+const CustomerListPage = lazy(() => import("./pages/admin/CustomerListPage"));
+const CustomerProfilePage = lazy(() => import("./pages/admin/CustomerProfilePage"));
+
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -34,8 +38,9 @@ function AppShell() {
   const { pathname } = useLocation();
   const { settings } = useStorefront();
   const { isPrivilegedUser } = useAuth();
-  const hideHeader = pathname.startsWith("/account") && isPrivilegedUser;
-  const hideFooter = (pathname.startsWith("/account") && isPrivilegedUser) || pathname === "/checkout";
+  const isAdminPath = pathname.startsWith("/account") || pathname.startsWith("/admin");
+  const hideHeader = isAdminPath && isPrivilegedUser;
+  const hideFooter = (isAdminPath && isPrivilegedUser) || pathname === "/checkout";
   const visibleSettings = getRenderableSettings(settings);
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, pathname);
   const hasHeroHeaderOffset = pathname === "/" || Boolean(pageBanner?.pageBannerImage.trim());
@@ -80,6 +85,26 @@ function AppShell() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/customers"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" /></div>}>
+                  <CustomerListPage />
+                </Suspense>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/customers/:id"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" /></div>}>
+                  <CustomerProfilePage />
+                </Suspense>
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </main>
       {!hideFooter && <Footer />}
@@ -90,17 +115,21 @@ function AppShell() {
 
 function App() {
   return (
-    <Router>
-      <LanguageProvider>
-        <AuthProvider>
-          <StorefrontProvider>
-            <CartProvider>
-              <AppShell />
-            </CartProvider>
-          </StorefrontProvider>
-        </AuthProvider>
-      </LanguageProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <LanguageProvider>
+          <AuthProvider>
+            <StorefrontProvider>
+              <CartProvider>
+                <ErrorBoundary>
+                  <AppShell />
+                </ErrorBoundary>
+              </CartProvider>
+            </StorefrontProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </Router>
+    </ErrorBoundary>
   );
 }
 

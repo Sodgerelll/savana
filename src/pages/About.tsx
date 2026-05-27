@@ -9,8 +9,8 @@ import "./About.css";
 const aboutSectionCopy = {
   EN: {
     valuesHeading: "What We Believe In",
-    visionHeading: "Our Vision",
-    missionHeading: "Our Mission",
+    visionHeading: "Vision Statement",
+    missionHeading: "Mission Statement",
     coreValuesHeading: "Our Values",
     processHeading: "Our Process",
     processSubtext: "From ingredient to finished product, every step is done with care.",
@@ -20,21 +20,21 @@ const aboutSectionCopy = {
         "We're committed to reducing our environmental footprint. From minimal packaging to biodegradable formulas, we strive to make choices that are kind to the planet.",
     },
     vision:
-      "We will create a globally recognized brand by offering skin care and household products made from Mongolian-sourced, natural ingredients.",
+      "We will build a globally recognized brand offering natural, high-quality personal care and household products made from Mongolia’s pure, nature-derived ingredients.",
     mission:
-      "We offer products that meet the needs and requirements of consumers with skin allergies, sensitive skin, or those seeking healthy, organic products to support their healthy lifestyle.",
+      "Our mission is to develop safe, effective, and environmentally responsible products for both personal care and everyday household use. Our products are designed for consumers who value health, sustainability, and quality—supporting a lifestyle that is both clean and conscious.",
     coreValues: [
       {
         title: "Back to nature",
-        body: "We will manufacture our products using technology that meets international standards, and we will work responsibly and humanely throughout the production process.",
+        body: "We are committed to producing high-quality products using internationally compliant technologies, while ensuring every step of our process respects both people and the environment.",
       },
       {
-        title: "Honesty",
-        body: "We are a manufacturer of products based on national tradition and science-based research.",
+        title: "Reliable",
+        body: "We are a local manufacturer developing research-based products grounded in national traditions and scientific principles.",
       },
       {
-        title: "Care",
-        body: "Бид хэрэглэгчдийнхээ амьдралын чанарыг дээшлүүлэх, мэдлэгийг түгээж, өдөр тутмын сонголтод нь эерэгээр нөлөөлөгч,хөтлөгч нь байна.",
+        title: "Influencer and Guide",
+        body: "We share knowledge that enhances our customers’ quality of life and act as both a positive influencer and a trusted guide in their everyday choices.",
       },
     ],
     steps: [

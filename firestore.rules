@@ -136,6 +136,22 @@ service cloud.firestore {
       allow create, update, delete: if canWriteStorefront();
     }
 
+    match /rawMaterials/{documentId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /productionBatches/{documentId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /rawMaterialPurchases/{documentId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, delete: if hasPrivilegedProfileRole();
+      allow update: if false;
+    }
+
     match /orders/{orderId} {
       allow get: if isOrderOwner() || hasPrivilegedProfileRole();
       allow list: if hasPrivilegedProfileRole()
@@ -158,12 +174,13 @@ service cloud.firestore {
         && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
-        && request.resource.data.payment.method == "qpay"
-        && request.resource.data.payment.provider == "qpay"
+        && request.resource.data.payment.method == "bonum"
+        && request.resource.data.payment.provider == "bonum"
         && request.resource.data.payment.status == "pending"
         && request.resource.data.payment.amount == request.resource.data.totals.grandTotal
         && request.resource.data.payment.qrPayload is string
         && request.resource.data.payment.qrPayload.size() > 0
+        && (request.resource.data.payment.invoiceId == null || request.resource.data.payment.invoiceId is string)
         && request.resource.data.payment.paidAt == null
         && request.resource.data.totals.shippingFee == 8000
         && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal + 8000;
@@ -175,6 +192,7 @@ service cloud.firestore {
         && request.resource.data.payment.provider == resource.data.payment.provider
         && request.resource.data.payment.amount == resource.data.payment.amount
         && request.resource.data.payment.qrPayload == resource.data.payment.qrPayload
+        && request.resource.data.payment.invoiceId == resource.data.payment.invoiceId
         && resource.data.payment.status == "pending"
         && request.resource.data.payment.status == "paid"
         && request.resource.data.payment.paidAt is string
@@ -196,10 +214,9 @@ service cloud.firestore {
         && request.resource.data.address.streetAddress is string
         && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.address.additionalAddress is string
-        && request.resource.data.payment.method == resource.data.payment.method
-        && request.resource.data.payment.provider == resource.data.payment.provider
+        && request.resource.data.payment.method is string
+        && request.resource.data.payment.method.size() > 0
         && request.resource.data.payment.amount == resource.data.payment.amount
-        && request.resource.data.payment.qrPayload == resource.data.payment.qrPayload
         && (
           (request.resource.data.status == "new"
             && request.resource.data.payment.status == "pending"
@@ -210,6 +227,56 @@ service cloud.firestore {
             && request.resource.data.payment.paidAt.size() > 0)
         );
       allow delete: if false;
+    }
+
+    match /customers/{customerId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /customerTransactions/{transactionId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    // CRM: Transfers
+    match /transfers/{transferId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update: if hasPrivilegedProfileRole();
+      allow delete: if false;
+    }
+
+    // CRM: Payments
+    match /payments/{paymentId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create: if hasPrivilegedProfileRole();
+      allow update, delete: if false;
+    }
+
+    // CRM: Stock Movements
+    match /stockMovements/{movementId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create: if hasPrivilegedProfileRole();
+      allow update, delete: if false;
+    }
+
+    // CRM: Customer Pricing
+    match /customerPricing/{pricingId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update: if hasPrivilegedProfileRole();
+      allow delete: if false;
+    }
+
+    // CRM: Customer Timeline
+    match /customerTimeline/{eventId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create: if hasPrivilegedProfileRole();
+      allow update, delete: if false;
+    }
+
+    // CRM: Counters (sequence generation) — only "transfers" document is valid
+    match /counters/{counterId} {
+      allow read, write: if hasPrivilegedProfileRole() && counterId == "transfers";
     }
 
     match /users/{userId} {

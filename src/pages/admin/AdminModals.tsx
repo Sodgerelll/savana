@@ -1,0 +1,3721 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { type FormEvent } from "react";
+import { Plus, Trash2, X } from "lucide-react";
+import { AdminModal } from "./AdminModal";
+import type { AdminCtx } from "./adminShellTypes";
+import type { EntityStatus } from "../../data/products";
+import type { SiteNavigationItem } from "../../data/storefront";
+import type { RawMaterialCategory } from "../../lib/rawMaterials";
+import type { CustomerType } from "../../lib/customers";
+import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
+import type { UserRole } from "../../lib/userProfiles";
+
+export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
+  const {
+    copy,
+    language,
+    customers,
+    products,
+    selectableCategories,
+    bannerCategories,
+    rawMaterials,
+    orderStatusOptions,
+    user,
+    isSystemCollection,
+    formatAdminDateTime,
+    formatStorePrice,
+    getOrderTotalQuantity,
+    // storefront operations
+    saveSettingsDraft,
+    saveCollectionDraft,
+    saveProductDraft,
+    saveHeroBannerDraft,
+    saveMarketDraft,
+    saveTestimonialDraft,
+    saveSettingsSection,
+    savePackaging,
+    saveRawMaterial,
+    createProductionBatch,
+    updateProductionBatch,
+    advanceProductionBatch,
+    createCustomer,
+    updateCustomer,
+    createCustomerTransaction,
+    updateCustomerTransaction,
+    getManageableRoleOptions,
+    getUserProviderSummary,
+    getAuthMethodLabel,
+    getRoleLabel,
+    getProductPrimaryImage,
+    getManagedJournalTitle,
+    getManagedJournalCategory,
+    collectionNameBySlug,
+    // modal state
+    settingsModal,
+    setSettingsModal,
+    navigationModal,
+    setNavigationModal,
+    closeNavigationModal,
+    handleNavigationBannerFileChange,
+    navigationBannerUploading,
+    navigationBannerUploadError,
+    setNavigationBannerUploadError,
+    journalSettingsModal,
+    setJournalSettingsModal,
+    journalEntryModal,
+    setJournalEntryModal,
+    closeJournalEntryModal,
+    handleJournalEntryFileChange,
+    journalImageUploading,
+    journalImageUploadError,
+    setJournalImageUploadError,
+    setJournalImageUploading,
+    collectionModal,
+    setCollectionModal,
+    collectionImageUploading,
+    collectionImageUploadError,
+    handleCollectionImageUpload,
+    removeCollectionImage,
+    heroBannerModal,
+    setHeroBannerModal,
+    closeHeroBannerModal,
+    handleHeroBannerFileChange,
+    bannerUploading,
+    bannerUploadError,
+    setBannerUploadError,
+    productModal,
+    setProductModal,
+    productImageUploading,
+    productImageUploadError,
+    handleProductImageUpload,
+    removeProductImage,
+    marketModal,
+    setMarketModal,
+    testimonialModal,
+    setTestimonialModal,
+    packagingModal,
+    setPackagingModal,
+    rawMaterialModal,
+    setRawMaterialModal,
+    rawMaterialSaving,
+    setRawMaterialSaving,
+    rawMaterialError,
+    setRawMaterialError,
+    rawMaterialPurchaseModal,
+    setRawMaterialPurchaseModal,
+    rawMaterialPurchaseSaving,
+    setRawMaterialPurchaseSaving,
+    rawMaterialPurchaseError,
+    setRawMaterialPurchaseError,
+    addRawMaterialPurchase,
+    productionBatchModal,
+    setProductionBatchModal,
+    productionBatchSaving,
+    setProductionBatchSaving,
+    productionBatchError,
+    setProductionBatchError,
+    productionAdvanceModal,
+    setProductionAdvanceModal,
+    productionAdvanceSaving,
+    setProductionAdvanceSaving,
+    productionAdvanceError,
+    setProductionAdvanceError,
+    customerModal,
+    setCustomerModal,
+    customerSavingState,
+    setCustomerSavingState,
+    customerError,
+    setCustomerError,
+    transactionModal,
+    setTransactionModal,
+    transactionSavingState,
+    setTransactionSavingState,
+    transactionError,
+    setTransactionError,
+    orderModal,
+    closeOrderModal,
+    handleOrderCustomerChange,
+    handleOrderAddressChange,
+    handleOrderStatusChange,
+    handleOrderPaymentMethodChange,
+    handleOrderModalSubmit,
+    orderModalError,
+    savingOrderModal,
+    userProfileModal,
+    setUserProfileModal,
+    closeUserProfileModal,
+    handleUserProfileSubmit,
+    userProfileError,
+    savingUserProfile,
+    confirmModal,
+    setConfirmModal,
+    confirmModalLoading,
+    confirmModalError,
+    setConfirmModalLoading,
+    setConfirmModalError,
+  } = ctx;
+
+  return (
+    <>
+{settingsModal && (
+  <AdminModal
+    title={copy.settingsModalTitle}
+    description={copy.settingsModalText}
+    onClose={() => setSettingsModal(null)}
+    wide
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+        saveSettingsDraft(settingsModal.draft);
+        setSettingsModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={settingsModal.draft.status}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: {
+                  ...settingsModal.draft,
+                  status: event.target.value as EntityStatus,
+                },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.brandName}</span>
+          <input
+            value={settingsModal.draft.brandName}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, brandName: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.brandDescription}</span>
+          <textarea
+            value={settingsModal.draft.brandDescription}
+            rows={3}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, brandDescription: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.heroHeading}</span>
+          <input
+            value={settingsModal.draft.heroHeading}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, heroHeading: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.heroSubtext}</span>
+          <textarea
+            value={settingsModal.draft.heroSubtext}
+            rows={2}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, heroSubtext: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.aboutTitle}</span>
+          <input
+            value={settingsModal.draft.aboutIntroTitle}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, aboutIntroTitle: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.aboutBody}</span>
+          <textarea
+            value={settingsModal.draft.aboutIntroBody}
+            rows={6}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, aboutIntroBody: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.contactPhone}</span>
+          <input
+            value={settingsModal.draft.contactPhone}
+            onChange={(event: any)=>
+              setSettingsModal({
+                ...settingsModal,
+                draft: { ...settingsModal.draft, contactPhone: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.contactEmail}</span>
+          <input
+            value={settingsModal.draft.contactEmail}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, contactEmail: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.location}</span>
+          <input
+            value={settingsModal.draft.location}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, location: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.responseTime}</span>
+          <input
+            value={settingsModal.draft.responseTime}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, responseTime: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.facebookUrl}</span>
+          <input
+            value={settingsModal.draft.facebookUrl}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, facebookUrl: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.instagramHandle}</span>
+          <input
+            value={settingsModal.draft.instagramHandle}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, instagramHandle: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.instagramUrl}</span>
+          <input
+            value={settingsModal.draft.instagramUrl}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, instagramUrl: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.mapNote}</span>
+          <textarea
+            value={settingsModal.draft.mapNote}
+            rows={3}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, mapNote: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.marketIntro}</span>
+          <textarea
+            value={settingsModal.draft.marketIntro}
+            rows={3}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, marketIntro: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.storeHoursText}</span>
+          <textarea
+            value={settingsModal.draft.storeHoursText}
+            rows={3}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, storeHoursText: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.wholesaleHeading}</span>
+          <input
+            value={settingsModal.draft.wholesaleHeading}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, wholesaleHeading: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.wholesaleEmail}</span>
+          <input
+            value={settingsModal.draft.wholesaleEmail}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, wholesaleEmail: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.wholesaleText}</span>
+          <textarea
+            value={settingsModal.draft.wholesaleText}
+            rows={3}
+            onChange={(event: any)=>
+              setSettingsModal({
+                draft: { ...settingsModal.draft, wholesaleText: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+      <p className="admin-inline-note">{copy.settingsInactiveNote}</p>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setSettingsModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{navigationModal && (
+  <AdminModal
+    title={navigationModal.mode === "create" ? copy.navigationModalCreate : copy.navigationModalEdit}
+    description={copy.navigationSummary}
+    onClose={closeNavigationModal}
+    disableClose={navigationBannerUploading}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+
+        if (navigationBannerUploading) {
+          return;
+        }
+
+        saveSettingsSection((draft: any)=> ({
+          ...draft,
+          navigationItems: draft.navigationItems.map((item: any)=>
+            item.id === navigationModal.draft.id ? navigationModal.draft : item
+          ),
+        }));
+        setNavigationModal(null);
+        setNavigationBannerUploadError(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={navigationModal.draft.status}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: { ...navigationModal.draft, status: event.target.value as EntityStatus },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.group}</span>
+          <select
+            value={navigationModal.draft.group}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: {
+                  ...navigationModal.draft,
+                  group: event.target.value as SiteNavigationItem["group"],
+                },
+              })
+            }
+          >
+            <option value="left">{copy.leftGroup}</option>
+            <option value="right">{copy.rightGroup}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.sortOrder}</span>
+          <input
+            type="number"
+            value={navigationModal.draft.sortOrder}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: { ...navigationModal.draft, sortOrder: Number(event.target.value) || 0 },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>ID</span>
+          <input value={navigationModal.draft.id} disabled />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.labelMn}</span>
+          <input
+            value={navigationModal.draft.labelMn}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: { ...navigationModal.draft, labelMn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.labelEn}</span>
+          <input
+            value={navigationModal.draft.labelEn}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: { ...navigationModal.draft, labelEn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.pageBanner}</span>
+          <input
+            type="url"
+            placeholder="https://..."
+            value={navigationModal.draft.pageBannerImage}
+            onChange={(event: any)=>
+              setNavigationModal({
+                ...navigationModal,
+                draft: { ...navigationModal.draft, pageBannerImage: event.target.value },
+              })
+            }
+          />
+          <small>{copy.pageBannerHelp}</small>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.bannerUpload}</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleNavigationBannerFileChange}
+            disabled={navigationBannerUploading}
+          />
+          {navigationBannerUploading && <small>{copy.bannerUploadProgress}</small>}
+          {navigationBannerUploadError && (
+            <small className="admin-field-error">{navigationBannerUploadError}</small>
+          )}
+        </label>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.imagePreview}</span>
+          <div className="admin-collection-preview admin-banner-preview">
+            {navigationModal.draft.pageBannerImage ? (
+              <img
+                src={navigationModal.draft.pageBannerImage}
+                alt={navigationModal.draft.labelEn || navigationModal.draft.labelMn || navigationModal.draft.id}
+              />
+            ) : (
+              <div className="admin-collection-preview-empty">N</div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="admin-modal-footer">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={closeNavigationModal}
+          disabled={navigationBannerUploading}
+        >
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={navigationBannerUploading}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{journalSettingsModal && (
+  <AdminModal
+    title={copy.journalSettingsModalTitle}
+    description={copy.journalSummary}
+    onClose={() => setJournalSettingsModal(null)}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+        saveSettingsSection((draft: any)=> ({
+          ...draft,
+          journalHeadingMn: journalSettingsModal.journalHeadingMn,
+          journalHeadingEn: journalSettingsModal.journalHeadingEn,
+          journalSubtextMn: journalSettingsModal.journalSubtextMn,
+          journalSubtextEn: journalSettingsModal.journalSubtextEn,
+        }));
+        setJournalSettingsModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.journalHeadingMn}</span>
+          <input
+            value={journalSettingsModal.journalHeadingMn}
+            onChange={(event: any)=>
+              setJournalSettingsModal({
+                ...journalSettingsModal,
+                journalHeadingMn: event.target.value,
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.journalHeadingEn}</span>
+          <input
+            value={journalSettingsModal.journalHeadingEn}
+            onChange={(event: any)=>
+              setJournalSettingsModal({
+                ...journalSettingsModal,
+                journalHeadingEn: event.target.value,
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.journalSubtextMn}</span>
+          <textarea
+            rows={3}
+            value={journalSettingsModal.journalSubtextMn}
+            onChange={(event: any)=>
+              setJournalSettingsModal({
+                ...journalSettingsModal,
+                journalSubtextMn: event.target.value,
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.journalSubtextEn}</span>
+          <textarea
+            rows={3}
+            value={journalSettingsModal.journalSubtextEn}
+            onChange={(event: any)=>
+              setJournalSettingsModal({
+                ...journalSettingsModal,
+                journalSubtextEn: event.target.value,
+              })
+            }
+          />
+        </label>
+      </div>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setJournalSettingsModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{journalEntryModal && (
+  <AdminModal
+    title={journalEntryModal.mode === "create" ? copy.journalModalCreate : copy.journalModalEdit}
+    description={copy.journalSummary}
+    onClose={closeJournalEntryModal}
+    disableClose={journalImageUploading}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+
+        if (journalImageUploading) {
+          return;
+        }
+
+        saveSettingsSection((draft: any)=> ({
+          ...draft,
+          journalEntries:
+            journalEntryModal.mode === "create"
+              ? [...draft.journalEntries, journalEntryModal.draft]
+              : draft.journalEntries.map((entry: any)=>
+                  entry.id === journalEntryModal.draft.id ? journalEntryModal.draft : entry
+                ),
+        }));
+        setJournalEntryModal(null);
+        setJournalImageUploadError(null);
+        setJournalImageUploading(false);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={journalEntryModal.draft.status}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, status: event.target.value as EntityStatus },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.author}</span>
+          <input
+            value={journalEntryModal.draft.author}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, author: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.publishedAt}</span>
+          <input
+            type="date"
+            value={journalEntryModal.draft.publishedAt}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, publishedAt: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.journalImage}</span>
+          <input
+            type="url"
+            placeholder="https://..."
+            value={journalEntryModal.draft.image}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, image: event.target.value },
+              })
+            }
+          />
+          <small>{copy.journalImageHelp}</small>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.bannerUpload}</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleJournalEntryFileChange}
+            disabled={journalImageUploading}
+          />
+          {journalImageUploading && <small>{copy.bannerUploadProgress}</small>}
+          {journalImageUploadError && <small className="admin-field-error">{journalImageUploadError}</small>}
+        </label>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.imagePreview}</span>
+          <div className="admin-collection-preview admin-banner-preview">
+            {journalEntryModal.draft.image ? (
+              <img
+                src={journalEntryModal.draft.image}
+                alt={getManagedJournalTitle(journalEntryModal.draft, language) || `${copy.journal} preview`}
+              />
+            ) : (
+              <div className="admin-collection-preview-empty">
+                {(getManagedJournalTitle(journalEntryModal.draft, language) ||
+                  getManagedJournalCategory(journalEntryModal.draft, language) ||
+                  "J"
+                )
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </div>
+            )}
+          </div>
+        </div>
+        <label className="admin-field">
+          <span>{copy.categoryMn}</span>
+          <input
+            value={journalEntryModal.draft.categoryMn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, categoryMn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.categoryEn}</span>
+          <input
+            value={journalEntryModal.draft.categoryEn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, categoryEn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.titleMn}</span>
+          <input
+            value={journalEntryModal.draft.titleMn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, titleMn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.titleEn}</span>
+          <input
+            value={journalEntryModal.draft.titleEn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, titleEn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.excerptMn}</span>
+          <textarea
+            rows={3}
+            value={journalEntryModal.draft.excerptMn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, excerptMn: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.excerptEn}</span>
+          <textarea
+            rows={3}
+            value={journalEntryModal.draft.excerptEn}
+            onChange={(event: any)=>
+              setJournalEntryModal({
+                ...journalEntryModal,
+                draft: { ...journalEntryModal.draft, excerptEn: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+      <div className="admin-modal-footer">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={closeJournalEntryModal}
+          disabled={journalImageUploading}
+        >
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={journalImageUploading}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{collectionModal && (
+  <AdminModal
+    title={collectionModal.mode === "create" ? copy.collectionModalCreate : copy.collectionModalEdit}
+    description={copy.statusSummary}
+    onClose={() => setCollectionModal(null)}
+    disableClose={collectionImageUploading}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+        if (collectionImageUploading) return;
+        saveCollectionDraft(collectionModal.draft);
+        setCollectionModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={collectionModal.draft.status}
+            onChange={(event: any)=>
+              setCollectionModal({
+                ...collectionModal,
+                draft: {
+                  ...collectionModal.draft,
+                  status: event.target.value as EntityStatus,
+                },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.name}</span>
+          <input
+            value={collectionModal.draft.name}
+            onChange={(event: any)=>
+              setCollectionModal({
+                ...collectionModal,
+                draft: { ...collectionModal.draft, name: event.target.value },
+              })
+            }
+          />
+        </label>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.image}</span>
+          <div className="admin-product-images">
+            {collectionModal.draft.image ? (
+              <div className="admin-product-image-item">
+                <img
+                  src={collectionModal.draft.image}
+                  alt={collectionModal.draft.name || copy.collections}
+                  className="admin-product-image-preview"
+                />
+                <button type="button" className="admin-product-image-remove" onClick={removeCollectionImage}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ) : (
+              <label className="admin-product-image-add">
+                <Plus size={20} />
+                <span>{copy.addImage}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCollectionImageUpload}
+                  disabled={collectionImageUploading}
+                  style={{ display: "none" }}
+                />
+              </label>
+            )}
+          </div>
+          {collectionImageUploading && <small>{copy.bannerUploadProgress}</small>}
+          {collectionImageUploadError && <small className="admin-field-error">{collectionImageUploadError}</small>}
+        </div>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.featuredProduct}</span>
+          <select
+            value={collectionModal.draft.featuredProductId ?? ""}
+            onChange={(event: any)=>
+              setCollectionModal({
+                ...collectionModal,
+                draft: {
+                  ...collectionModal.draft,
+                  featuredProductId: event.target.value ? Number(event.target.value) : undefined,
+                },
+              })
+            }
+          >
+            <option value="">{copy.featuredProductNone}</option>
+            {products
+              .filter((p: any)=> p.category === collectionModal.draft.slug)
+              .map((p: any)=> (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+          <small>{copy.featuredProductHelp}</small>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.description}</span>
+          <textarea
+            rows={3}
+            value={collectionModal.draft.description}
+            onChange={(event: any)=>
+              setCollectionModal({
+                ...collectionModal,
+                draft: { ...collectionModal.draft, description: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+      <p className="admin-inline-note">
+        {isSystemCollection(collectionModal.draft) ? copy.categorySystemNote : copy.categorySummary}
+      </p>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setCollectionModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={collectionImageUploading}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{heroBannerModal && (
+  <AdminModal
+    title={heroBannerModal.mode === "create" ? copy.bannerModalCreate : copy.bannerModalEdit}
+    description={copy.bannerSummary}
+    onClose={closeHeroBannerModal}
+    disableClose={bannerUploading}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+
+        if (bannerUploading) {
+          return;
+        }
+
+        saveHeroBannerDraft(heroBannerModal.draft);
+        setHeroBannerModal(null);
+        setBannerUploadError(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={heroBannerModal.draft.status}
+            onChange={(event: any)=>
+              setHeroBannerModal({
+                ...heroBannerModal,
+                draft: {
+                  ...heroBannerModal.draft,
+                  status: event.target.value as EntityStatus,
+                },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.bannerCollection}</span>
+          <select
+            value={heroBannerModal.draft.collectionSlug}
+            onChange={(event: any)=>
+              setHeroBannerModal({
+                ...heroBannerModal,
+                draft: {
+                  ...heroBannerModal.draft,
+                  collectionSlug: event.target.value,
+                },
+              })
+            }
+          >
+            {bannerCategories.map((collection: any)=> (
+              <option key={collection.id} value={collection.slug}>
+                {collection.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.bannerImage}</span>
+          <input
+            type="url"
+            value={heroBannerModal.draft.image}
+            placeholder="https://..."
+            onChange={(event: any)=>
+              setHeroBannerModal({
+                ...heroBannerModal,
+                draft: {
+                  ...heroBannerModal.draft,
+                  image: event.target.value,
+                  source: event.target.value ? "admin" : heroBannerModal.draft.source,
+                },
+              })
+            }
+          />
+          <small>{copy.bannerImageHelp}</small>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.bannerUpload}</span>
+          <input type="file" accept="image/*" onChange={handleHeroBannerFileChange} disabled={bannerUploading} />
+          {bannerUploading && <small>{copy.bannerUploadProgress}</small>}
+          {bannerUploadError && <small className="admin-field-error">{bannerUploadError}</small>}
+        </label>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.bannerAspectTitle}</span>
+          <div className="admin-inline-card admin-banner-spec">
+            <div className="admin-banner-spec-visual" aria-hidden="true">
+              <span>16:9</span>
+            </div>
+            <div className="admin-banner-spec-copy">
+              <strong>{copy.bannerAspectValue}</strong>
+              <small>{copy.bannerAspectHelp}</small>
+            </div>
+          </div>
+        </div>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.imagePreview}</span>
+          <div className="admin-collection-preview admin-banner-preview">
+            {heroBannerModal.draft.image ? (
+              <img
+                src={heroBannerModal.draft.image}
+                alt={collectionNameBySlug.get(heroBannerModal.draft.collectionSlug) ?? copy.banners}
+              />
+            ) : (
+              <div className="admin-collection-preview-empty">B</div>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="admin-inline-note">
+        {heroBannerModal.draft.source === "prairiesoapshack.com"
+          ? copy.bannerImportedSource
+          : copy.bannerUploadedSource}
+      </p>
+      <div className="admin-modal-footer">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={closeHeroBannerModal}
+          disabled={bannerUploading}
+        >
+          {copy.cancel}
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={bannerCategories.length === 0 || bannerUploading}
+        >
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{productModal && (
+  <AdminModal
+    title={productModal.mode === "create" ? copy.productModalCreate : copy.productModalEdit}
+    description={copy.productSummary}
+    onClose={() => setProductModal(null)}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+
+        if (selectableCategories.length === 0) {
+          return;
+        }
+
+        const cleanedVariants = productModal.draft.variants?.filter((v: any)=> v.name.trim()) ?? [];
+        const hasVariants = cleanedVariants.length > 0;
+        const computedStock = hasVariants
+          ? cleanedVariants.reduce((sum: any, v: any)=> sum + (v.quantity || 0), 0)
+          : (productModal.draft.totalStock ?? 0);
+        saveProductDraft({
+          ...productModal.draft,
+          category: productModal.draft.category || selectableCategories[0].slug,
+          variants: hasVariants ? cleanedVariants : undefined,
+          totalStock: computedStock,
+        });
+        setProductModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={productModal.draft.status}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  status: event.target.value as EntityStatus,
+                },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.name}</span>
+          <input
+            value={productModal.draft.name}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, name: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.category}</span>
+          <select
+            value={productModal.draft.category}
+            disabled={selectableCategories.length === 0}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, category: event.target.value },
+              })
+            }
+          >
+            {selectableCategories.map((collection: any)=> (
+              <option key={collection.id} value={collection.slug}>
+                {collection.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.price}</span>
+          <input
+            type="number"
+            step="0.01"
+            value={productModal.draft.price}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  price: Number(event.target.value) || 0,
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.badge}</span>
+          <input
+            value={productModal.draft.badge ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  badge: event.target.value || undefined,
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-toggle">
+          <span>{copy.bestSeller}</span>
+          <input
+            type="checkbox"
+            checked={Boolean(productModal.draft.bestSeller)}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  bestSeller: event.target.checked,
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.description}</span>
+          <textarea
+            rows={5}
+            value={productModal.draft.description}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, description: event.target.value },
+              })
+            }
+          />
+        </label>
+        <div className="admin-field admin-field-wide">
+          <span>{copy.ingredientsLabel}</span>
+          <div className="admin-ingredients-list">
+            {(productModal.draft.ingredients ?? "")
+              .split(",")
+              .map((s: any)=> s.trim())
+              .filter(Boolean)
+              .map((ingredient: any, iIdx: any, arr: any)=> (
+                <div key={iIdx} className="admin-ingredient-tag">
+                  <span>{ingredient}</span>
+                  <button
+                    type="button"
+                    className="admin-ingredient-remove"
+                    onClick={() => {
+                      const next = arr.filter((_: any, i: any)=> i !== iIdx).join(", ");
+                      setProductModal({
+                        ...productModal,
+                        draft: { ...productModal.draft, ingredients: next || undefined },
+                      });
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            <div className="admin-ingredient-add">
+              <input
+                placeholder={copy.ingredientPlaceholder}
+                onKeyDown={(event: any)=> {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const val = event.currentTarget.value.trim();
+                    if (!val) return;
+                    const existing = (productModal.draft.ingredients ?? "")
+                      .split(",")
+                      .map((s: any)=> s.trim())
+                      .filter(Boolean);
+                    existing.push(val);
+                    setProductModal({
+                      ...productModal,
+                      draft: { ...productModal.draft, ingredients: existing.join(", ") },
+                    });
+                    event.currentTarget.value = "";
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={(event: any)=> {
+                  const input = (event.currentTarget.previousElementSibling as HTMLInputElement);
+                  const val = input.value.trim();
+                  if (!val) return;
+                  const existing = (productModal.draft.ingredients ?? "")
+                    .split(",")
+                    .map((s: any)=> s.trim())
+                    .filter(Boolean);
+                  existing.push(val);
+                  setProductModal({
+                    ...productModal,
+                    draft: { ...productModal.draft, ingredients: existing.join(", ") },
+                  });
+                  input.value = "";
+                  input.focus();
+                }}
+              >
+                <Plus size={14} /> {copy.addIngredient}
+              </button>
+            </div>
+          </div>
+        </div>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.usageLabel}</span>
+          <textarea
+            rows={4}
+            value={productModal.draft.usage ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, usage: event.target.value || undefined },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.howToUseLabel}</span>
+          <textarea
+            rows={4}
+            value={productModal.draft.howToUse ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, howToUse: event.target.value || undefined },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.cautionLabel}</span>
+          <textarea
+            rows={4}
+            value={productModal.draft.caution ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, caution: event.target.value || undefined },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.shelfLifeLabel}</span>
+          <input
+            value={productModal.draft.shelfLife ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, shelfLife: event.target.value || undefined },
+              })
+            }
+          />
+        </label>
+        {!(productModal.draft.variants?.length) && (
+          <label className="admin-field admin-field-wide">
+            <span>{copy.sizeLabelField}</span>
+            <input
+              value={productModal.draft.sizeLabel ?? ""}
+              placeholder={copy.sizeLabelHelp}
+              onChange={(event: any)=>
+                setProductModal({
+                  ...productModal,
+                  draft: { ...productModal.draft, sizeLabel: event.target.value || undefined },
+                })
+              }
+            />
+          </label>
+        )}
+        <div className="admin-field admin-field-wide">
+          <span>{copy.variants}</span>
+          <div className="admin-variants-list">
+            {(productModal.draft.variants ?? []).length > 0 && (
+              <div className="admin-variant-row admin-variant-header">
+                <span>{copy.variantName}</span>
+                <span>{copy.variantPrice}</span>
+                <span>{copy.variantQuantity}</span>
+                <span>{copy.soldCount}/{copy.stockRemaining}</span>
+                <span></span>
+              </div>
+            )}
+            {(productModal.draft.variants ?? []).map((variant: any, vIndex: any)=> (
+              <div key={vIndex} className="admin-variant-row">
+                <input
+                  placeholder={copy.variantName}
+                  value={variant.name}
+                  onChange={(event: any)=> {
+                    const next = [...(productModal.draft.variants ?? [])];
+                    next[vIndex] = { ...next[vIndex], name: event.target.value };
+                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                  }}
+                />
+                <input
+                  type="number"
+                  placeholder={copy.variantPrice}
+                  value={variant.price || ""}
+                  onChange={(event: any)=> {
+                    const next = [...(productModal.draft.variants ?? [])];
+                    next[vIndex] = { ...next[vIndex], price: Number(event.target.value) || 0 };
+                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                  }}
+                />
+                <input
+                  type="number"
+                  placeholder={copy.variantQuantity}
+                  value={variant.quantity || ""}
+                  onChange={(event: any)=> {
+                    const next = [...(productModal.draft.variants ?? [])];
+                    next[vIndex] = { ...next[vIndex], quantity: Number(event.target.value) || 0 };
+                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                  }}
+                />
+                <span className="admin-variant-sold">
+                  {(variant.quantity || 0) - (variant.soldCount ?? 0)}/{variant.quantity || 0} - {variant.soldCount ?? 0}
+                </span>
+                <button
+                  type="button"
+                  className="admin-icon-btn"
+                  onClick={() => {
+                    const next = (productModal.draft.variants ?? []).filter((_: any, i: any)=> i !== vIndex);
+                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next.length > 0 ? next : undefined } });
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                const next = [...(productModal.draft.variants ?? []), { name: "", price: 0, quantity: 0 }];
+                setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+              }}
+            >
+              <Plus size={14} /> {copy.addVariant}
+            </button>
+          </div>
+        </div>
+        {(() => {
+          const hasVariants = (productModal.draft.variants ?? []).length > 0;
+          const variantTotal = hasVariants
+            ? (productModal.draft.variants ?? []).reduce((sum: any, v: any)=> sum + (v.quantity || 0), 0)
+            : 0;
+          const currentStock = hasVariants ? variantTotal : (productModal.draft.totalStock ?? 0);
+          const sold = productModal.draft.soldCount ?? 0;
+          return (
+            <div className="admin-field admin-field-wide">
+              <span>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</span>
+              <div className="admin-stock-row">
+                {hasVariants ? (
+                  <div className="admin-stock-remaining">
+                    <small>{copy.totalStock}</small>
+                    <strong>{variantTotal}</strong>
+                  </div>
+                ) : (
+                  <label className="admin-field">
+                    <small>{copy.totalStock}</small>
+                    <input
+                      type="number"
+                      value={productModal.draft.totalStock ?? 0}
+                      onChange={(event: any)=>
+                        setProductModal({
+                          ...productModal,
+                          draft: { ...productModal.draft, totalStock: Number(event.target.value) || 0 },
+                        })
+                      }
+                    />
+                  </label>
+                )}
+                <label className="admin-field">
+                  <small>{copy.soldCount}</small>
+                  <input
+                    type="number"
+                    value={sold}
+                    onChange={(event: any)=>
+                      setProductModal({
+                        ...productModal,
+                        draft: { ...productModal.draft, soldCount: Number(event.target.value) || 0 },
+                      })
+                    }
+                  />
+                </label>
+                <div className="admin-stock-remaining">
+                  <small>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</small>
+                  <strong>{currentStock - sold}/{currentStock} - {sold}</strong>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+        <div className="admin-field admin-field-wide">
+          <span>{copy.productImages}</span>
+          <small>{copy.productImagesHelp}</small>
+          <div className="admin-product-images">
+            {productModal.draft.images.map((image: any, index: any)=>
+              image ? (
+                <div key={index} className="admin-product-image-item">
+                  <img src={image} alt={`Product ${index + 1}`} className="admin-product-image-preview" />
+                  <button type="button" className="admin-product-image-remove" onClick={() => removeProductImage(index)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ) : null
+            )}
+            {productModal.draft.images.filter(Boolean).length < 3 && (
+              <label className="admin-product-image-add">
+                <Plus size={20} />
+                <span>{copy.addImage}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event: any)=> {
+                    const nextIndex = productModal.draft.images.filter(Boolean).length;
+                    handleProductImageUpload(event, nextIndex);
+                  }}
+                  disabled={productImageUploading}
+                  style={{ display: "none" }}
+                />
+              </label>
+            )}
+          </div>
+          {productImageUploading && <small>{copy.bannerUploadProgress}</small>}
+          {productImageUploadError && <small className="admin-field-error">{productImageUploadError}</small>}
+        </div>
+      </div>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setProductModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={selectableCategories.length === 0}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{marketModal && (
+  <AdminModal
+    title={marketModal.mode === "create" ? copy.marketModalCreate : copy.marketModalEdit}
+    description={copy.marketSummary}
+    onClose={() => setMarketModal(null)}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+        saveMarketDraft(marketModal.draft);
+        setMarketModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={marketModal.draft.status}
+            onChange={(event: any)=>
+              setMarketModal({
+                ...marketModal,
+                draft: { ...marketModal.draft, status: event.target.value as EntityStatus },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.name}</span>
+          <input
+            value={marketModal.draft.name}
+            onChange={(event: any)=>
+              setMarketModal({
+                ...marketModal,
+                draft: { ...marketModal.draft, name: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.schedule}</span>
+          <input
+            value={marketModal.draft.schedule}
+            onChange={(event: any)=>
+              setMarketModal({
+                ...marketModal,
+                draft: { ...marketModal.draft, schedule: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.season}</span>
+          <input
+            value={marketModal.draft.season}
+            onChange={(event: any)=>
+              setMarketModal({
+                ...marketModal,
+                draft: { ...marketModal.draft, season: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.address}</span>
+          <textarea
+            rows={3}
+            value={marketModal.draft.address}
+            onChange={(event: any)=>
+              setMarketModal({
+                ...marketModal,
+                draft: { ...marketModal.draft, address: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setMarketModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{testimonialModal && (
+  <AdminModal
+    title={testimonialModal.mode === "create" ? copy.testimonialModalCreate : copy.testimonialModalEdit}
+    description={copy.testimonialSummary}
+    onClose={() => setTestimonialModal(null)}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any)=> {
+        event.preventDefault();
+        saveTestimonialDraft(testimonialModal.draft);
+        setTestimonialModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={testimonialModal.draft.status}
+            onChange={(event: any)=>
+              setTestimonialModal({
+                ...testimonialModal,
+                draft: { ...testimonialModal.draft, status: event.target.value as EntityStatus },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.author}</span>
+          <input
+            value={testimonialModal.draft.author}
+            onChange={(event: any)=>
+              setTestimonialModal({
+                ...testimonialModal,
+                draft: { ...testimonialModal.draft, author: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.location}</span>
+          <input
+            value={testimonialModal.draft.location}
+            onChange={(event: any)=>
+              setTestimonialModal({
+                ...testimonialModal,
+                draft: { ...testimonialModal.draft, location: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.quote}</span>
+          <textarea
+            rows={5}
+            value={testimonialModal.draft.text}
+            onChange={(event: any)=>
+              setTestimonialModal({
+                ...testimonialModal,
+                draft: { ...testimonialModal.draft, text: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setTestimonialModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{packagingModal && (
+  <AdminModal
+    title={packagingModal.mode === "create" ? copy.packagingModalCreate : copy.packagingModalEdit}
+    onClose={() => setPackagingModal(null)}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        await savePackaging(packagingModal.draft);
+        setPackagingModal(null);
+      }}
+    >
+      <label className="admin-field admin-field-wide">
+        <span>{copy.packagingName}</span>
+        <input
+          value={packagingModal.draft.name}
+          onChange={(e: any)=>
+            setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, name: e.target.value } })
+          }
+          required
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.packagingSize}</span>
+        <input
+          value={packagingModal.draft.size}
+          onChange={(e: any)=>
+            setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, size: e.target.value } })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.packagingRemaining}</span>
+        <input
+          type="number"
+          value={packagingModal.draft.remaining}
+          onChange={(e: any)=>
+            setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, remaining: Number(e.target.value) || 0 } })
+          }
+        />
+      </label>
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setPackagingModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{rawMaterialModal && (
+  <AdminModal
+    title={rawMaterialModal.mode === "create" ? copy.rawMaterialModalCreate : copy.rawMaterialModalEdit}
+    onClose={() => setRawMaterialModal(null)}
+    disableClose={rawMaterialSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        setRawMaterialSaving(true);
+        setRawMaterialError(null);
+        try {
+          await saveRawMaterial(rawMaterialModal.draft);
+          setRawMaterialModal(null);
+        } catch (err) {
+          setRawMaterialError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setRawMaterialSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialName}</span>
+        <input
+          value={rawMaterialModal.draft.name}
+          onChange={(e: any)=>
+            setRawMaterialModal({ ...rawMaterialModal, draft: { ...rawMaterialModal.draft, name: e.target.value } })
+          }
+          required
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialCategory}</span>
+        <select
+          value={rawMaterialModal.draft.category}
+          onChange={(e: any)=>
+            setRawMaterialModal({
+              ...rawMaterialModal,
+              draft: { ...rawMaterialModal.draft, category: e.target.value as RawMaterialCategory },
+            })
+          }
+        >
+          <option value="oil">{copy.rawMaterialCategoryOil}</option>
+          <option value="lye">{copy.rawMaterialCategoryLye}</option>
+          <option value="fragrance">{copy.rawMaterialCategoryFragrance}</option>
+          <option value="colorant">{copy.rawMaterialCategoryColorant}</option>
+          <option value="additive">{copy.rawMaterialCategoryAdditive}</option>
+          <option value="other">{copy.rawMaterialCategoryOther}</option>
+        </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialUnit}</span>
+        <input
+          value={rawMaterialModal.draft.unit}
+          onChange={(e: any)=>
+            setRawMaterialModal({ ...rawMaterialModal, draft: { ...rawMaterialModal.draft, unit: e.target.value } })
+          }
+          placeholder="g, ml, kg..."
+          required
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialRemaining}</span>
+        <input
+          type="number"
+          min="0"
+          value={rawMaterialModal.draft.remaining}
+          onChange={(e: any)=>
+            setRawMaterialModal({
+              ...rawMaterialModal,
+              draft: { ...rawMaterialModal.draft, remaining: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialUnitCost}</span>
+        <input
+          type="number"
+          min="0"
+          value={rawMaterialModal.draft.unitCost ?? ""}
+          onChange={(e: any)=>
+            setRawMaterialModal({
+              ...rawMaterialModal,
+              draft: {
+                ...rawMaterialModal.draft,
+                unitCost: e.target.value === "" ? null : Number(e.target.value),
+              },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialNotes}</span>
+        <textarea
+          rows={2}
+          value={rawMaterialModal.draft.notes}
+          onChange={(e: any)=>
+            setRawMaterialModal({ ...rawMaterialModal, draft: { ...rawMaterialModal.draft, notes: e.target.value } })
+          }
+        />
+      </label>
+      {rawMaterialError && <div className="admin-modal-error">{rawMaterialError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setRawMaterialModal(null)} disabled={rawMaterialSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={rawMaterialSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{rawMaterialPurchaseModal && (
+  <AdminModal
+    title={`${copy.rawMaterialPurchaseModalTitle} — ${rawMaterialPurchaseModal.rawMaterialName}`}
+    onClose={() => setRawMaterialPurchaseModal(null)}
+    disableClose={rawMaterialPurchaseSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!rawMaterialPurchaseModal) return;
+        const { draft } = rawMaterialPurchaseModal;
+        if (!draft.quantity || draft.quantity <= 0) return;
+        setRawMaterialPurchaseSaving(true);
+        setRawMaterialPurchaseError(null);
+        try {
+          await addRawMaterialPurchase(rawMaterialPurchaseModal.rawMaterialId, {
+            quantity: draft.quantity,
+            unitCost: draft.unitCost,
+            supplier: draft.supplier,
+            purchasedAt: draft.purchasedAt,
+            notes: draft.notes,
+            createdByUid: user?.uid ?? "",
+          });
+          setRawMaterialPurchaseModal(null);
+        } catch (err) {
+          setRawMaterialPurchaseError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setRawMaterialPurchaseSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchasedAt}</span>
+        <input
+          type="date"
+          required
+          value={rawMaterialPurchaseModal.draft.purchasedAt}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, purchasedAt: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseQty} ({rawMaterialPurchaseModal.unit})</span>
+        <input
+          type="number"
+          min="0.001"
+          step="any"
+          required
+          value={rawMaterialPurchaseModal.draft.quantity || ""}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, quantity: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseUnitCost}</span>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={rawMaterialPurchaseModal.draft.unitCost ?? ""}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: {
+                ...rawMaterialPurchaseModal.draft,
+                unitCost: e.target.value === "" ? null : Number(e.target.value),
+              },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialPurchaseSupplier}</span>
+        <input
+          value={rawMaterialPurchaseModal.draft.supplier}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, supplier: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialPurchaseNotes}</span>
+        <textarea
+          rows={2}
+          value={rawMaterialPurchaseModal.draft.notes}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, notes: e.target.value },
+            })
+          }
+        />
+      </label>
+      {rawMaterialPurchaseError && <div className="admin-modal-error">{rawMaterialPurchaseError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setRawMaterialPurchaseModal(null)} disabled={rawMaterialPurchaseSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={rawMaterialPurchaseSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{productionBatchModal && (
+  <AdminModal
+    title={productionBatchModal.mode === "create" ? copy.productionBatchModalCreate : copy.productionBatchModalEdit}
+    onClose={() => setProductionBatchModal(null)}
+    disableClose={productionBatchSaving}
+    wide
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!productionBatchModal) return;
+        const draft = productionBatchModal.draft;
+        if (draft.supplies.length === 0 && productionBatchModal.mode === "create") {
+          setProductionBatchError(copy.productionBatchEmptySupplies);
+          return;
+        }
+        setProductionBatchSaving(true);
+        setProductionBatchError(null);
+        try {
+          const selectedProduct = products.find((p: any)=> p.id === draft.productId);
+          const productName = selectedProduct ? selectedProduct.name : draft.productName;
+          if (productionBatchModal.mode === "create") {
+            await createProductionBatch({
+              productId: draft.productId,
+              productName,
+              plannedQuantity: draft.plannedQuantity,
+              expectedReadyAt: draft.expectedReadyAt,
+              supplies: draft.supplies,
+              totalCost: draft.totalCost,
+              notes: draft.notes,
+              createdByUid: user?.uid ?? "",
+            });
+          } else if (productionBatchModal.previous) {
+            await updateProductionBatch(draft.id, productionBatchModal.previous, {
+              productId: draft.productId,
+              productName,
+              plannedQuantity: draft.plannedQuantity,
+              expectedReadyAt: draft.expectedReadyAt,
+              startedAt: draft.startedAt,
+              readyAt: draft.readyAt,
+              supplies: draft.supplies,
+              totalCost: draft.totalCost,
+              notes: draft.notes,
+            });
+          }
+          setProductionBatchModal(null);
+        } catch (err) {
+          setProductionBatchError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setProductionBatchSaving(false);
+        }
+      }}
+    >
+      {productionBatchModal.draft.batchCode && (
+        <div className="admin-field admin-field-wide">
+          <span>{copy.productionBatchCode}</span>
+          <strong>{productionBatchModal.draft.batchCode}</strong>
+        </div>
+      )}
+      <label className="admin-field admin-field-wide">
+        <span>{copy.productionBatchProduct}</span>
+        <select
+          value={productionBatchModal.draft.productId}
+          disabled={productionBatchModal.mode === "edit" && productionBatchModal.previous?.status !== "planning"}
+          onChange={(e: any)=> {
+            const pid = Number(e.target.value);
+            const selected = products.find((p: any)=> p.id === pid);
+            setProductionBatchModal({
+              ...productionBatchModal,
+              draft: {
+                ...productionBatchModal.draft,
+                productId: pid,
+                productName: selected ? selected.name : "",
+              },
+            });
+          }}
+          required
+        >
+          <option value={0} disabled>—</option>
+          {products.map((p: any)=> (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.productionBatchPlannedQty}</span>
+        <input
+          type="number"
+          min="1"
+          value={productionBatchModal.draft.plannedQuantity}
+          disabled={productionBatchModal.mode === "edit" && productionBatchModal.previous?.status !== "planning"}
+          onChange={(e: any)=>
+            setProductionBatchModal({
+              ...productionBatchModal,
+              draft: { ...productionBatchModal.draft, plannedQuantity: Number(e.target.value) || 0 },
+            })
+          }
+          required
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.productionBatchExpectedReadyAt}</span>
+        <input
+          type="date"
+          value={productionBatchModal.draft.expectedReadyAt ?? ""}
+          onChange={(e: any)=>
+            setProductionBatchModal({
+              ...productionBatchModal,
+              draft: { ...productionBatchModal.draft, expectedReadyAt: e.target.value || null },
+            })
+          }
+        />
+      </label>
+      <p className="admin-field-hint" style={{ gridColumn: "1 / -1", color: "#64748b", fontSize: "0.8rem" }}>
+        {copy.productionBatchCuringHint}
+      </p>
+
+      <div className="admin-field admin-field-wide">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+          <strong>{copy.productionBatchSupplies}</strong>
+          {(productionBatchModal.mode === "create" || productionBatchModal.previous?.status === "planning") && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                const firstRm = rawMaterials[0];
+                if (!firstRm) return;
+                const nextSupplies = [
+                  ...productionBatchModal.draft.supplies,
+                  {
+                    rawMaterialId: firstRm.id,
+                    rawMaterialName: firstRm.name,
+                    quantity: 0,
+                    unit: firstRm.unit,
+                    unitCost: firstRm.unitCost,
+                  },
+                ];
+                const calcTotalCost = (sups: any[]) =>
+                  sups.reduce((s: number, sup: any) =>
+                    sup.unitCost != null ? s + sup.quantity * sup.unitCost : s, 0);
+                setProductionBatchModal({
+                  ...productionBatchModal,
+                  draft: {
+                    ...productionBatchModal.draft,
+                    supplies: nextSupplies,
+                    totalCost: calcTotalCost(nextSupplies),
+                  },
+                });
+              }}
+            >
+              <Plus size={14} /> {copy.productionBatchAddSupply}
+            </button>
+          )}
+        </div>
+        {(() => {
+          const editableSupply = productionBatchModal.mode === "create" || productionBatchModal.previous?.status === "planning";
+          const calcTotalCost = (sups: any[]) =>
+            sups.reduce((s: number, sup: any) =>
+              sup.unitCost != null ? s + sup.quantity * sup.unitCost : s, 0);
+          const computedTotal = calcTotalCost(productionBatchModal.draft.supplies);
+          return productionBatchModal.draft.supplies.length === 0 ? (
+            <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{copy.productionBatchEmptySupplies}</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>Материал</th>
+                    <th style={{ textAlign: "right", padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>Хэмжээ</th>
+                    <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>Нэгж</th>
+                    <th style={{ textAlign: "right", padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>Үлдэгдэл</th>
+                    <th style={{ textAlign: "right", padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>Нэгж үнэ</th>
+                    <th style={{ textAlign: "right", padding: "4px 0   6px 0", color: "#6b7280", fontWeight: 500 }}>Нийлбэр</th>
+                    {editableSupply && <th style={{ width: 36 }} />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {productionBatchModal.draft.supplies.map((supply: any, idx: any) => {
+                    const rm = rawMaterials.find((r: any) => r.id === supply.rawMaterialId);
+                    const remaining = rm ? rm.remaining : null;
+                    const lineTotal = supply.unitCost != null ? supply.quantity * supply.unitCost : null;
+                    const lowStock = remaining !== null && remaining < supply.quantity;
+                    return (
+                      <tr key={idx} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <td style={{ padding: "5px 8px 5px 0" }}>
+                          <select
+                            value={supply.rawMaterialId}
+                            disabled={!editableSupply}
+                            style={{ width: "100%" }}
+                            onChange={(e: any) => {
+                              const rmId = Number(e.target.value);
+                              const newRm = rawMaterials.find((r: any) => r.id === rmId);
+                              if (!newRm) return;
+                              const nextSupplies = [...productionBatchModal.draft.supplies];
+                              nextSupplies[idx] = {
+                                rawMaterialId: newRm.id,
+                                rawMaterialName: newRm.name,
+                                quantity: supply.quantity,
+                                unit: newRm.unit,
+                                unitCost: newRm.unitCost,
+                              };
+                              setProductionBatchModal({
+                                ...productionBatchModal,
+                                draft: { ...productionBatchModal.draft, supplies: nextSupplies, totalCost: calcTotalCost(nextSupplies) },
+                              });
+                            }}
+                          >
+                            {rawMaterials.map((r: any) => (
+                              <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: "5px 8px 5px 0" }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={supply.quantity}
+                            disabled={!editableSupply}
+                            style={{ width: "100%", textAlign: "right" }}
+                            onChange={(e: any) => {
+                              const nextSupplies = [...productionBatchModal.draft.supplies];
+                              nextSupplies[idx] = { ...supply, quantity: Number(e.target.value) || 0 };
+                              setProductionBatchModal({
+                                ...productionBatchModal,
+                                draft: { ...productionBatchModal.draft, supplies: nextSupplies, totalCost: calcTotalCost(nextSupplies) },
+                              });
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: "5px 8px 5px 0", color: "#64748b", whiteSpace: "nowrap" }}>{supply.unit}</td>
+                        <td style={{ padding: "5px 8px 5px 0", textAlign: "right", color: lowStock ? "#dc2626" : "#6b7280", fontWeight: lowStock ? 600 : 400 }}>
+                          {remaining !== null ? remaining.toLocaleString() : "—"}
+                        </td>
+                        <td style={{ padding: "5px 8px 5px 0", textAlign: "right", color: "#6b7280" }}>
+                          {supply.unitCost != null ? supply.unitCost.toLocaleString() : "—"}
+                        </td>
+                        <td style={{ padding: "5px 0 5px 0", textAlign: "right", fontWeight: 500, color: "#374151" }}>
+                          {lineTotal !== null ? lineTotal.toLocaleString() : "—"}
+                        </td>
+                        {editableSupply && (
+                          <td style={{ padding: "5px 0 5px 8px", textAlign: "right" }}>
+                            <button
+                              type="button"
+                              className="admin-icon-btn"
+                              onClick={() => {
+                                const nextSupplies = productionBatchModal.draft.supplies.filter((_: any, i: any) => i !== idx);
+                                setProductionBatchModal({
+                                  ...productionBatchModal,
+                                  draft: { ...productionBatchModal.draft, supplies: nextSupplies, totalCost: calcTotalCost(nextSupplies) },
+                                });
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid #e5e7eb" }}>
+                    <td colSpan={5} style={{ paddingTop: 8, textAlign: "right", fontWeight: 600, color: "#374151", fontSize: "0.82rem" }}>Нийт өртөг:</td>
+                    <td style={{ paddingTop: 8, textAlign: "right", fontWeight: 700, color: "#111827" }}>
+                      {computedTotal > 0 ? computedTotal.toLocaleString() : "—"}
+                    </td>
+                    {editableSupply && <td />}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          );
+        })()}
+      </div>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.productionBatchNotes}</span>
+        <textarea
+          rows={2}
+          value={productionBatchModal.draft.notes}
+          onChange={(e: any)=>
+            setProductionBatchModal({
+              ...productionBatchModal,
+              draft: { ...productionBatchModal.draft, notes: e.target.value },
+            })
+          }
+        />
+      </label>
+      {productionBatchError && <div className="admin-modal-error">{productionBatchError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setProductionBatchModal(null)} disabled={productionBatchSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={productionBatchSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{productionAdvanceModal && (
+  <AdminModal
+    title={copy.productionAdvanceTitle}
+    onClose={() => setProductionAdvanceModal(null)}
+    disableClose={productionAdvanceSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!productionAdvanceModal) return;
+        setProductionAdvanceSaving(true);
+        setProductionAdvanceError(null);
+        try {
+          const { batch, targetStatus, startedAt, expectedReadyAt, readyAt, actualQuantity } = productionAdvanceModal;
+          await advanceProductionBatch(batch.id, batch, targetStatus, {
+            startedAt: startedAt || null,
+            expectedReadyAt: expectedReadyAt || null,
+            readyAt: readyAt || null,
+            actualQuantity,
+          });
+          setProductionAdvanceModal(null);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.startsWith("INSUFFICIENT:")) {
+            setProductionAdvanceError(`${copy.productionAdvanceInsufficient} ${msg.slice("INSUFFICIENT:".length)}`);
+          } else {
+            setProductionAdvanceError(msg);
+          }
+        } finally {
+          setProductionAdvanceSaving(false);
+        }
+      }}
+    >
+      {productionAdvanceModal.targetStatus === "curing" && (
+        <>
+          <p style={{ marginBottom: "0.75rem" }}>{copy.productionAdvanceConfirmStart}</p>
+          <div className="admin-data-table-wrap" style={{ marginBottom: "0.75rem" }}>
+            <table className="admin-data-table">
+              <thead>
+                <tr>
+                  <th>{copy.rawMaterialName}</th>
+                  <th>{copy.productionAdvanceRequired}</th>
+                  <th>{copy.productionAdvanceAvailable}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productionAdvanceModal.batch.supplies.map((supply: any, i: any) => {
+                  const rm = rawMaterials.find((r: any) => r.id === supply.rawMaterialId);
+                  const available = rm ? rm.remaining : 0;
+                  const insufficient = available < supply.quantity;
+                  return (
+                    <tr key={i}>
+                      <td>{supply.rawMaterialName}</td>
+                      <td>{supply.quantity} {supply.unit}</td>
+                      <td style={{ color: insufficient ? "#dc2626" : undefined }}>
+                        {available} {supply.unit}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.productionBatchStartedAt}</span>
+            <input
+              type="date"
+              value={productionAdvanceModal.startedAt}
+              onChange={(e: any) =>
+                setProductionAdvanceModal({ ...productionAdvanceModal, startedAt: e.target.value })
+              }
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.productionBatchExpectedReadyAt}</span>
+            <input
+              type="date"
+              value={productionAdvanceModal.expectedReadyAt}
+              onChange={(e: any) =>
+                setProductionAdvanceModal({ ...productionAdvanceModal, expectedReadyAt: e.target.value })
+              }
+            />
+          </label>
+          <p style={{ color: "#64748b", fontSize: "0.85rem" }}>
+            {copy.productionBatchCuringHint}
+          </p>
+        </>
+      )}
+      {productionAdvanceModal.targetStatus === "ready" && (
+        <>
+          <p style={{ marginBottom: "0.75rem" }}>{copy.productionAdvanceConfirmReady}</p>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.productionAdvanceActualQtyLabel}</span>
+            <input
+              type="number"
+              min="1"
+              value={productionAdvanceModal.actualQuantity}
+              onChange={(e: any)=>
+                setProductionAdvanceModal({
+                  ...productionAdvanceModal,
+                  actualQuantity: Number(e.target.value) || 0,
+                })
+              }
+              required
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.productionBatchReadyAt}</span>
+            <input
+              type="date"
+              value={productionAdvanceModal.readyAt}
+              onChange={(e: any)=>
+                setProductionAdvanceModal({ ...productionAdvanceModal, readyAt: e.target.value })
+              }
+            />
+          </label>
+        </>
+      )}
+      {productionAdvanceError && <div className="admin-modal-error">{productionAdvanceError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setProductionAdvanceModal(null)} disabled={productionAdvanceSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={productionAdvanceSaving}>
+          {productionAdvanceModal.targetStatus === "curing"
+            ? copy.productionAdvanceStart
+            : copy.productionAdvanceReady}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{customerModal && (
+  <AdminModal
+    title={customerModal.mode === "create" ? copy.newCustomer : copy.editCustomer}
+    onClose={() => setCustomerModal(null)}
+    disableClose={customerSavingState}
+    wide
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={async (event: FormEvent) => {
+        event.preventDefault();
+        if (!customerModal) return;
+        setCustomerSavingState(true);
+        setCustomerError(null);
+        try {
+          const draft = customerModal.draft;
+          const input = {
+            code: draft.code,
+            type: draft.type,
+            name: draft.name,
+            displayName: draft.displayName,
+            registrationNumber: draft.registrationNumber,
+            contactPerson: draft.contactPerson,
+            phoneNumber: draft.phoneNumber,
+            secondaryPhone: draft.secondaryPhone,
+            email: draft.email,
+            address: draft.address,
+            note: draft.note,
+            tags: draft.tags,
+            status: draft.status,
+          };
+          if (customerModal.mode === "create") {
+            await createCustomer(input);
+          } else {
+            await updateCustomer(draft.id, input);
+          }
+          setCustomerModal(null);
+        } catch (err) {
+          setCustomerError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setCustomerSavingState(false);
+        }
+      }}
+    >
+      {customerError && <div className="admin-sync-error">{customerError}</div>}
+
+      <div className="admin-form-grid">
+        <label className="admin-field admin-field-wide">
+          <span>{copy.customerNameLabel}</span>
+          <input
+            value={customerModal.draft.name}
+            onChange={(event: any)=>
+              setCustomerModal({
+                ...customerModal,
+                draft: { ...customerModal.draft, name: event.target.value },
+              })
+            }
+            required
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.txType}</span>
+          <select
+            value={customerModal.draft.type}
+            onChange={(event: any)=>
+              setCustomerModal({
+                ...customerModal,
+                draft: { ...customerModal.draft, type: event.target.value as CustomerType },
+              })
+            }
+          >
+            <option value="individual">{copy.customerTypeInd}</option>
+            <option value="organization">{copy.customerTypeOrg}</option>
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.customerPhone}</span>
+          <input
+            value={customerModal.draft.phoneNumber}
+            onChange={(event: any)=>
+              setCustomerModal({
+                ...customerModal,
+                draft: { ...customerModal.draft, phoneNumber: event.target.value },
+              })
+            }
+            required
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.customerAddress}</span>
+          <textarea
+            value={customerModal.draft.address?.streetAddress ?? ""}
+            rows={2}
+            onChange={(event: any)=>
+              setCustomerModal({
+                ...customerModal,
+                draft: {
+                  ...customerModal.draft,
+                  address: {
+                    region: customerModal.draft.address?.region ?? "",
+                    districtOrSoum: customerModal.draft.address?.districtOrSoum ?? "",
+                    khorooOrBag: customerModal.draft.address?.khorooOrBag ?? "",
+                    streetAddress: event.target.value,
+                  },
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.active}</span>
+          <select
+            value={customerModal.draft.status}
+            onChange={(event: any)=>
+              setCustomerModal({
+                ...customerModal,
+                draft: {
+                  ...customerModal.draft,
+                  status: event.target.value as EntityStatus,
+                },
+              })
+            }
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="admin-modal-footer">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={() => setCustomerModal(null)}
+          disabled={customerSavingState}
+        >
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={customerSavingState}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{transactionModal && (
+  <AdminModal
+    title={transactionModal.mode === "create" ? copy.newTransaction : copy.editTransaction}
+    onClose={() => setTransactionModal(null)}
+    disableClose={transactionSavingState}
+    wide
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={async (event: FormEvent) => {
+        event.preventDefault();
+        if (!transactionModal) return;
+        const draft = transactionModal.draft;
+        if (!draft.customerId) {
+          setTransactionError(copy.selectCustomerFirst);
+          return;
+        }
+        if (draft.items.length === 0) {
+          setTransactionError(copy.addAtLeastOneItem);
+          return;
+        }
+        for (const txItem of draft.items) {
+          const prod = products.find((p: any)=> p.id === txItem.productId);
+          if (!prod) continue;
+          let sTotal = 0;
+          let sSold = 0;
+          if (txItem.variant && prod.variants) {
+            const sv = prod.variants.find((v: any)=> v.name === txItem.variant);
+            sTotal = sv ? (sv.quantity || 0) : 0;
+            sSold = sv ? (sv.soldCount ?? 0) : 0;
+          } else {
+            sTotal = prod.totalStock ?? 0;
+            sSold = prod.soldCount ?? 0;
+          }
+          // When editing an existing transaction, the previous quantity for this
+          // product/variant is already included in soldCount. Add it back so we
+          // check against the truly available stock.
+          const prevItem = (transactionModal.mode === "edit" || transactionModal.mode === "edit-limited") && transactionModal.previous
+            ? transactionModal.previous.items.find(
+                (pi: any)=> pi.productId === txItem.productId && pi.variant === txItem.variant
+              )
+            : null;
+          const prevQty = prevItem ? prevItem.quantity : 0;
+          const sRemaining = sTotal - sSold + prevQty;
+          if (txItem.quantity > sRemaining) {
+            setTransactionError(
+              language === "MN"
+                ? `"${prod.name}${txItem.variant ? ` (${txItem.variant})` : ""}" — үлдэгдэл ${sRemaining} ширхэг байна. ${txItem.quantity} шилжүүлэх боломжгүй.`
+                : `"${prod.name}${txItem.variant ? ` (${txItem.variant})` : ""}" — only ${sRemaining} in stock. Cannot transfer ${txItem.quantity}.`,
+            );
+            return;
+          }
+        }
+        setTransactionSavingState(true);
+        setTransactionError(null);
+        try {
+          const subtotal = draft.items.reduce((s: any, i: any)=> s + i.lineTotal, 0);
+          const grandTotal = Math.max(0, subtotal - draft.totals.discount);
+          const paymentStatus: CustomerTransactionRecord["payment"]["status"] =
+            draft.payment.paidAmount <= 0
+              ? "unpaid"
+              : draft.payment.paidAmount >= grandTotal
+                ? "paid"
+                : "partial";
+          const input = {
+            type: draft.type,
+            customerId: draft.customerId,
+            customerSnapshot: draft.customerSnapshot,
+            items: draft.items,
+            totals: { subtotal, discount: draft.totals.discount, grandTotal },
+            payment: {
+              ...draft.payment,
+              status: paymentStatus,
+              paidAt:
+                paymentStatus === "unpaid"
+                  ? null
+                  : (draft.payment.paidAt ?? new Date().toISOString()),
+            },
+            relatedTransactionId: draft.relatedTransactionId,
+            transactionDate: (() => {
+              if (!draft.transactionDate) return new Date().toISOString();
+              if (/^\d{4}-\d{2}-\d{2}$/.test(draft.transactionDate)) {
+                const [y, m, d] = draft.transactionDate.split("-").map(Number);
+                const now = new Date();
+                return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+              }
+              return draft.transactionDate;
+            })(),
+            note: draft.note,
+            createdByUid: user?.uid ?? "",
+          };
+          if (transactionModal.mode === "create") {
+            await createCustomerTransaction(input);
+          } else if (transactionModal.previous) {
+            await updateCustomerTransaction(draft.id, transactionModal.previous, input);
+          }
+
+          setTransactionModal(null);
+        } catch (err) {
+          setTransactionError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setTransactionSavingState(false);
+        }
+      }}
+    >
+      {transactionError && <div className="admin-sync-error">{transactionError}</div>}
+
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.txDate}</span>
+          <input
+            type="date"
+            value={(transactionModal.draft.transactionDate ?? "").slice(0, 10)}
+            disabled={transactionModal.mode === "edit-limited"}
+            onChange={(event: any)=>
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  transactionDate: event.target.value || null,
+                },
+              })
+            }
+            required
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.txCustomer}</span>
+          <select
+            value={transactionModal.draft.customerId}
+            disabled={transactionModal.mode === "edit-limited"}
+            onChange={(event: any)=> {
+              const customer = customers.find((c: any)=> c.id === event.target.value);
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  customerId: event.target.value,
+                  customerSnapshot: customer
+                    ? {
+                        code: customer.code,
+                        name: customer.name,
+                        phoneNumber: customer.phoneNumber,
+                      }
+                    : { code: "", name: "", phoneNumber: "" },
+                },
+              });
+            }}
+            required
+          >
+            <option value="">—</option>
+            {customers.map((c: any)=> (
+              <option key={c.id} value={c.id}>
+                {c.name} ({language === "MN" ? "үлдэгдэл" : "bal"}: {formatStorePrice(c.outstandingBalance)})
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {(() => {
+        const selectedCust = customers.find((c: any)=> c.id === transactionModal.draft.customerId);
+        if (!selectedCust) return null;
+        return (
+          <div className="admin-customer-tx-context" style={{ marginTop: "0.75rem" }}>
+            <div className="admin-product-expand-stats">
+              <div className="admin-expand-stat">
+                <small>{copy.customerTotalSales}</small>
+                <strong>{formatStorePrice(selectedCust.totalSales)}</strong>
+              </div>
+              <div className="admin-expand-stat">
+                <small>{copy.customerTotalPaid}</small>
+                <strong>{formatStorePrice(selectedCust.totalPaid)}</strong>
+              </div>
+              <div className="admin-expand-stat">
+                <small>{copy.customerOutstanding}</small>
+                <strong
+                  style={{
+                    color:
+                      selectedCust.outstandingBalance > 0
+                        ? "#b14141"
+                        : selectedCust.outstandingBalance < 0
+                          ? "#2f7a4a"
+                          : "#3a3630",
+                  }}
+                >
+                  {formatStorePrice(selectedCust.outstandingBalance)}
+                </strong>
+              </div>
+              <div className="admin-expand-stat">
+                <small>{language === "MN" ? "Шинэчлэгдсэн" : "Updated"}</small>
+                <strong style={{ fontSize: "var(--fs-sm)" }}>
+                  {selectedCust.lastTransactionAt
+                    ? formatAdminDateTime(selectedCust.lastTransactionAt, language)
+                    : "—"}
+                </strong>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      <div className="admin-data-card" style={{ marginTop: "1rem" }}>
+        <div className="admin-data-card-head">
+          <div>
+            <h3>{copy.txItems}</h3>
+          </div>
+          {transactionModal.mode !== "edit-limited" && <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => {
+              const newItem: CustomerTransactionItem = {
+                productId: 0,
+                productName: "",
+                category: "",
+                image: null,
+                variant: null,
+                quantity: 1,
+                soldQuantity: 0,
+                unitPrice: 0,
+                lineTotal: 0,
+              };
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  items: [...transactionModal.draft.items, newItem],
+                },
+              });
+            }}
+          >
+            <Plus size={14} /> {copy.txAddItem}
+          </button>}
+        </div>
+        <div className="admin-data-table-wrap">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                <th>{copy.txProduct}</th>
+                <th>{copy.txVariant}</th>
+                <th>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</th>
+                <th>{language === "MN" ? "Зарсан" : "Sold"}</th>
+                <th>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</th>
+                <th>{copy.txUnitPrice}</th>
+                <th>{copy.txLineTotal}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactionModal.draft.items.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="admin-table-empty">
+                    {copy.addAtLeastOneItem}
+                  </td>
+                </tr>
+              ) : (
+                transactionModal.draft.items.map((item: any, idx: any)=> {
+                  const selectedProduct = products.find((p: any)=> p.id === item.productId);
+                  return (
+                    <tr key={idx}>
+                      <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                      <td>
+                        <select
+                          value={item.productId || ""}
+                          disabled={transactionModal.mode === "edit-limited"}
+                          onChange={(event: any)=> {
+                            const productId = Number(event.target.value);
+                            const product = products.find((p: any)=> p.id === productId);
+                            const unitPrice = product?.price ?? 0;
+                            const nextItems = [...transactionModal.draft.items];
+                            nextItems[idx] = {
+                              ...item,
+                              productId,
+                              productName: product?.name ?? "",
+                              category: product?.category ?? "",
+                              image: product ? getProductPrimaryImage(product) : null,
+                              unitPrice,
+                              variant: null,
+                              lineTotal: unitPrice * item.quantity,
+                            };
+                            setTransactionModal({
+                              ...transactionModal,
+                              draft: { ...transactionModal.draft, items: nextItems },
+                            });
+                          }}
+                          required
+                        >
+                          <option value="">—</option>
+                          {products
+                            .filter((p: any)=> p.status === "active")
+                            .map((p: any)=> {
+                              const pStock = p.variants?.length
+                                ? p.variants.reduce((s: any, v: any)=> s + (v.quantity || 0), 0)
+                                : (p.totalStock ?? 0);
+                              const pSold = p.soldCount ?? 0;
+                              const pRemaining = pStock - pSold;
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({pRemaining}/{pStock} - {pSold})
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </td>
+                      <td>
+                        {selectedProduct?.variants && selectedProduct.variants.length > 0 ? (
+                          <select
+                            value={item.variant ?? ""}
+                            disabled={transactionModal.mode === "edit-limited"}
+                            onChange={(event: any)=> {
+                              const variantName = event.target.value || null;
+                              const variant = selectedProduct.variants?.find(
+                                (v: any)=> v.name === variantName,
+                              );
+                              const unitPrice = variant?.price ?? selectedProduct.price;
+                              const nextItems = [...transactionModal.draft.items];
+                              nextItems[idx] = {
+                                ...item,
+                                variant: variantName,
+                                unitPrice,
+                                lineTotal: unitPrice * item.quantity,
+                              };
+                              setTransactionModal({
+                                ...transactionModal,
+                                draft: { ...transactionModal.draft, items: nextItems },
+                              });
+                            }}
+                          >
+                            <option value="">—</option>
+                            {selectedProduct.variants.map((v: any)=> {
+                              const vRemaining = (v.quantity || 0) - (v.soldCount ?? 0);
+                              return (
+                                <option key={v.name} value={v.name}>
+                                  {v.name} ({vRemaining}/{v.quantity || 0} - {v.soldCount ?? 0})
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </td>
+                      <td>
+                        {(() => {
+                          let stockTotal = 0;
+                          let stockSold = 0;
+                          if (selectedProduct) {
+                            if (item.variant && selectedProduct.variants) {
+                              const sv = selectedProduct.variants.find((v: any)=> v.name === item.variant);
+                              stockTotal = sv ? (sv.quantity || 0) : 0;
+                              stockSold = sv ? (sv.soldCount ?? 0) : 0;
+                            } else {
+                              stockTotal = selectedProduct.totalStock ?? 0;
+                              stockSold = selectedProduct.soldCount ?? 0;
+                            }
+                          }
+                          const prevEditItem = transactionModal.mode === "edit" && transactionModal.previous
+                            ? transactionModal.previous.items.find(
+                                (pi: any)=> pi.productId === item.productId && pi.variant === item.variant
+                              )
+                            : null;
+                          const stockRemaining = stockTotal - stockSold + (prevEditItem ? prevEditItem.quantity : 0);
+                          const maxQty = Math.max(1, stockRemaining);
+                          const updateQty = (newQty: number) => {
+                            const quantity = Math.max(1, Math.min(newQty, maxQty));
+                            const nextItems = [...transactionModal.draft.items];
+                            nextItems[idx] = {
+                              ...item,
+                              quantity,
+                              lineTotal: item.unitPrice * quantity,
+                            };
+                            setTransactionModal({
+                              ...transactionModal,
+                              draft: { ...transactionModal.draft, items: nextItems },
+                            });
+                          };
+                          const afterQty = stockRemaining - item.quantity;
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                <button
+                                  type="button"
+                                  className="admin-qty-btn"
+                                  disabled={item.quantity <= 1 || transactionModal.mode === "edit-limited"}
+                                  onClick={() => updateQty(item.quantity - 1)}
+                                >
+                                  −
+                                </button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={maxQty}
+                                  value={item.quantity}
+                                  disabled={transactionModal.mode === "edit-limited"}
+                                  onChange={(event: any)=>
+                                    updateQty(Number(event.target.value) || 1)
+                                  }
+                                  style={{ width: "60px", textAlign: "center" }}
+                                />
+                                <button
+                                  type="button"
+                                  className="admin-qty-btn"
+                                  disabled={item.quantity >= maxQty || transactionModal.mode === "edit-limited"}
+                                  onClick={() => updateQty(item.quantity + 1)}
+                                >
+                                  +
+                                </button>
+                              </div>
+                              {selectedProduct && (
+                                <small
+                                  style={{
+                                    fontSize: "0.7rem",
+                                    color: afterQty < 0 ? "#b14141" : "#8a8477",
+                                  }}
+                                >
+                                  {stockRemaining}/{stockTotal} - {stockSold - (prevEditItem ? prevEditItem.quantity : 0)} → {afterQty}/{stockTotal} - {stockSold - (prevEditItem ? prevEditItem.quantity : 0) + item.quantity}
+                                </small>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                          <button
+                            type="button"
+                            className="admin-qty-btn"
+                            disabled={item.soldQuantity <= 0}
+                            onClick={() => {
+                              const nextItems = [...transactionModal.draft.items];
+                              nextItems[idx] = { ...item, soldQuantity: item.soldQuantity - 1 };
+                              setTransactionModal({ ...transactionModal, draft: { ...transactionModal.draft, items: nextItems } });
+                            }}
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            max={item.quantity}
+                            value={item.soldQuantity}
+                            onChange={(event: any)=> {
+                              const val = Math.max(0, Math.min(item.quantity, Number(event.target.value) || 0));
+                              const nextItems = [...transactionModal.draft.items];
+                              nextItems[idx] = { ...item, soldQuantity: val };
+                              setTransactionModal({ ...transactionModal, draft: { ...transactionModal.draft, items: nextItems } });
+                            }}
+                            style={{ width: "60px", textAlign: "center" }}
+                          />
+                          <button
+                            type="button"
+                            className="admin-qty-btn"
+                            disabled={item.soldQuantity >= item.quantity}
+                            onClick={() => {
+                              const nextItems = [...transactionModal.draft.items];
+                              nextItems[idx] = { ...item, soldQuantity: item.soldQuantity + 1 };
+                              setTransactionModal({ ...transactionModal, draft: { ...transactionModal.draft, items: nextItems } });
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <strong
+                          style={{
+                            color: item.quantity - item.soldQuantity > 0 ? "#b14141" : "#2f7a4a",
+                          }}
+                        >
+                          {item.quantity - item.soldQuantity}
+                        </strong>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.unitPrice}
+                          disabled={transactionModal.mode === "edit-limited"}
+                          onChange={(event: any)=> {
+                            const unitPrice = Math.max(0, Number(event.target.value) || 0);
+                            const nextItems = [...transactionModal.draft.items];
+                            nextItems[idx] = {
+                              ...item,
+                              unitPrice,
+                              lineTotal: unitPrice * item.quantity,
+                            };
+                            setTransactionModal({
+                              ...transactionModal,
+                              draft: { ...transactionModal.draft, items: nextItems },
+                            });
+                          }}
+                          style={{ width: "110px" }}
+                        />
+                      </td>
+                      <td>
+                        <strong>{formatStorePrice(item.lineTotal)}</strong>
+                      </td>
+                      <td>
+                        {transactionModal.mode !== "edit-limited" && (
+                          <button
+                            type="button"
+                            className="admin-icon-btn"
+                            onClick={() => {
+                              const nextItems = transactionModal.draft.items.filter(
+                                (_: any, i: any)=> i !== idx,
+                              );
+                              setTransactionModal({
+                                ...transactionModal,
+                                draft: { ...transactionModal.draft, items: nextItems },
+                              });
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="admin-form-grid" style={{ marginTop: "1rem" }}>
+        <label className="admin-field">
+          <span>{copy.txDiscount}</span>
+          <input
+            type="number"
+            min={0}
+            value={transactionModal.draft.totals.discount}
+            onChange={(event: any)=>
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  totals: {
+                    ...transactionModal.draft.totals,
+                    discount: Math.max(0, Number(event.target.value) || 0),
+                  },
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.txGrandTotal}</span>
+          <input
+            type="text"
+            value={formatStorePrice(
+              Math.max(
+                0,
+                transactionModal.draft.items.reduce((s: any, i: any)=> s + i.lineTotal, 0) -
+                  transactionModal.draft.totals.discount,
+              ),
+            )}
+            disabled
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.txPaidAmount}</span>
+          <input
+            type="number"
+            min={0}
+            value={transactionModal.draft.payment.paidAmount}
+            onChange={(event: any)=>
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  payment: {
+                    ...transactionModal.draft.payment,
+                    paidAmount: Math.max(0, Number(event.target.value) || 0),
+                  },
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.txPaymentMethod}</span>
+          <select
+            value={transactionModal.draft.payment.method ?? ""}
+            onChange={(event: any)=>
+              setTransactionModal({
+                ...transactionModal,
+                draft: {
+                  ...transactionModal.draft,
+                  payment: {
+                    ...transactionModal.draft.payment,
+                    method:
+                      (event.target.value as CustomerTransactionPaymentMethod) || null,
+                  },
+                },
+              })
+            }
+          >
+            <option value="">—</option>
+            <option value="cash">{copy.txPaymentCash}</option>
+            <option value="bank">{copy.txPaymentBank}</option>
+            <option value="qpay">{copy.txPaymentQpay}</option>
+            <option value="other">{copy.txPaymentOther}</option>
+          </select>
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.txNote}</span>
+          <textarea
+            value={transactionModal.draft.note}
+            rows={2}
+            onChange={(event: any)=>
+              setTransactionModal({
+                ...transactionModal,
+                draft: { ...transactionModal.draft, note: event.target.value },
+              })
+            }
+          />
+        </label>
+      </div>
+
+      <div className="admin-modal-footer">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={() => setTransactionModal(null)}
+          disabled={transactionSavingState}
+        >
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={transactionSavingState}>
+          {copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{confirmModal && (
+  <AdminModal title={confirmModal.title} onClose={() => { if (!confirmModalLoading) { setConfirmModal(null); setConfirmModalError(null); } }}>
+    <div className="admin-confirm-body">
+      <p>{confirmModal.description}</p>
+      {confirmModalError && (
+        <p style={{ color: "#b14141", fontSize: "0.85rem", marginTop: "0.5rem" }}>{confirmModalError}</p>
+      )}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => { setConfirmModal(null); setConfirmModalError(null); }} disabled={confirmModalLoading}>
+          {copy.cancel}
+        </button>
+        <button
+          type="button"
+          className={confirmModal.destructive ? "btn btn-danger" : "btn btn-primary"}
+          disabled={confirmModalLoading}
+          onClick={async () => {
+            setConfirmModalLoading(true);
+            setConfirmModalError(null);
+            try {
+              await confirmModal.onConfirm();
+              setConfirmModal(null);
+            } catch (err) {
+              setConfirmModalError(err instanceof Error ? err.message : (language === "MN" ? "Алдаа гарлаа. Дахин оролдоно уу." : "An error occurred. Please try again."));
+            } finally {
+              setConfirmModalLoading(false);
+            }
+          }}
+        >
+          {confirmModalLoading ? (language === "MN" ? "Түр хүлээнэ үү..." : "Please wait...") : confirmModal.confirmLabel}
+        </button>
+      </div>
+    </div>
+  </AdminModal>
+)}
+
+{userProfileModal && (
+  <AdminModal
+    title={copy.userModalTitle}
+    description={copy.userModalDescription}
+    onClose={closeUserProfileModal}
+    disableClose={savingUserProfile}
+  >
+    <form className="admin-modal-form" onSubmit={handleUserProfileSubmit}>
+      {userProfileError && <div className="admin-sync-error">{userProfileError}</div>}
+
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.displayName}</span>
+          <input
+            value={userProfileModal.draft.displayName ?? ""}
+            onChange={(event: any)=>
+              setUserProfileModal((current: any)=>
+                current
+                  ? {
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        displayName: event.target.value,
+                      },
+                    }
+                  : current
+              )
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.userRole}</span>
+          <select
+            value={userProfileModal.draft.role}
+            onChange={(event: any)=>
+              setUserProfileModal((current: any)=>
+                current
+                  ? {
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        role: event.target.value as UserRole,
+                      },
+                    }
+                  : current
+              )
+            }
+          >
+            {getManageableRoleOptions(userProfileModal.draft.role).map((roleOption: any)=> (
+              <option key={roleOption} value={roleOption}>
+                {getRoleLabel(roleOption, language)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>{copy.senderEmail}</span>
+          <input
+            type="email"
+            value={userProfileModal.draft.email ?? ""}
+            onChange={(event: any)=>
+              setUserProfileModal((current: any)=>
+                current
+                  ? {
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        email: event.target.value,
+                      },
+                    }
+                  : current
+              )
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.contactPhone}</span>
+          <input
+            type="tel"
+            value={userProfileModal.draft.phoneNumber ?? ""}
+            onChange={(event: any)=>
+              setUserProfileModal((current: any)=>
+                current
+                  ? {
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        phoneNumber: event.target.value,
+                      },
+                    }
+                  : current
+              )
+            }
+          />
+        </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.userUid}</span>
+          <input value={userProfileModal.draft.uid} disabled />
+        </label>
+      </div>
+
+      <div className="admin-inline-card">
+        <div className="admin-inline-card-head">
+          <strong>{language === "MN" ? "Нэвтрэлтийн мэдээлэл" : "Authentication details"}</strong>
+        </div>
+        <div className="admin-form-grid">
+          <label className="admin-field">
+            <span>{copy.registeredVia}</span>
+            <input value={getAuthMethodLabel(userProfileModal.draft.registrationMethod, language)} disabled />
+          </label>
+          <label className="admin-field">
+            <span>{copy.lastAuth}</span>
+            <input value={getAuthMethodLabel(userProfileModal.draft.lastAuthMethod, language)} disabled />
+          </label>
+          <label className="admin-field">
+            <span>{copy.registeredAt}</span>
+            <input value={formatAdminDateTime(userProfileModal.draft.registeredAt, language)} disabled />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Сүүлд нэвтэрсэн огноо" : "Last sign-in at"}</span>
+            <input value={formatAdminDateTime(userProfileModal.draft.lastSignInAt, language)} disabled />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.userProviders}</span>
+            <input value={getUserProviderSummary(userProfileModal.draft)} disabled />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.phoneLoginEmail}</span>
+            <input value={userProfileModal.draft.phoneLoginEmail ?? "-"} disabled />
+          </label>
+        </div>
+      </div>
+
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={closeUserProfileModal} disabled={savingUserProfile}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={savingUserProfile}>
+          {savingUserProfile ? "..." : copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{orderModal && (
+  <AdminModal
+    title={copy.orderDetailsTitle}
+    description={`${copy.orderDetailsText} (${orderModal.draft.orderNumber})`}
+    onClose={closeOrderModal}
+    wide
+    disableClose={savingOrderModal}
+  >
+    <form className="admin-modal-form" onSubmit={handleOrderModalSubmit}>
+      {orderModalError && <div className="admin-sync-error">{orderModalError}</div>}
+
+      <div className="admin-order-meta-grid">
+        <div className="admin-order-meta-card">
+          <span>{language === "MN" ? "Захиалгын дугаар" : "Order number"}</span>
+          <strong>{orderModal.draft.orderNumber}</strong>
+          <small>{formatAdminDateTime(orderModal.draft.createdAt, language)}</small>
+        </div>
+        <div className="admin-order-meta-card">
+          <span>{copy.paymentLabel}</span>
+          <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
+          <small>
+            {orderModal.draft.status === "new"
+              ? language === "MN"
+                ? "Төлбөр хүлээгдэж байна"
+                : "Payment pending"
+              : `${copy.paidAtLabel}: ${formatAdminDateTime(orderModal.draft.payment.paidAt, language)}`}
+          </small>
+        </div>
+      </div>
+
+      {orderModal.draft.payment.status === "paid" && (
+        orderModal.draft.payment.bonumPaymentVendor ||
+        orderModal.draft.payment.bonumCompletedAt ||
+        orderModal.draft.payment.bonumTerminalId ||
+        orderModal.draft.payment.bonumAmount != null
+      ) && (
+        <div className="admin-inline-card">
+          <div className="admin-inline-card-head">
+            <strong>{language === "MN" ? "Bonum гүйлгээний мэдээлэл" : "Bonum transaction details"}</strong>
+          </div>
+          <div className="admin-bonum-txn-grid">
+            {orderModal.draft.payment.bonumPaymentVendor && (
+              <div className="admin-bonum-txn-row">
+                <span>{language === "MN" ? "Төлбөрийн суваг" : "Payment vendor"}</span>
+                <strong>{orderModal.draft.payment.bonumPaymentVendor}</strong>
+              </div>
+            )}
+            {orderModal.draft.payment.bonumAmount != null && (
+              <div className="admin-bonum-txn-row">
+                <span>{language === "MN" ? "Гүйлгээний дүн" : "Transaction amount"}</span>
+                <strong>{formatStorePrice(orderModal.draft.payment.bonumAmount)}</strong>
+              </div>
+            )}
+            {orderModal.draft.payment.bonumCompletedAt && (
+              <div className="admin-bonum-txn-row">
+                <span>{language === "MN" ? "Төлбөр хийгдсэн огноо" : "Completed at"}</span>
+                <strong>{orderModal.draft.payment.bonumCompletedAt}</strong>
+              </div>
+            )}
+            {orderModal.draft.payment.bonumTerminalId && (
+              <div className="admin-bonum-txn-row">
+                <span>{language === "MN" ? "Терминал ID" : "Terminal ID"}</span>
+                <strong>{orderModal.draft.payment.bonumTerminalId}</strong>
+              </div>
+            )}
+            {orderModal.draft.payment.invoiceId && (
+              <div className="admin-bonum-txn-row">
+                <span>{language === "MN" ? "Нэхэмжлэлийн дугаар" : "Invoice ID"}</span>
+                <strong className="admin-bonum-txn-mono">{orderModal.draft.payment.invoiceId}</strong>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select value={orderModal.draft.status} onChange={handleOrderStatusChange}>
+            {orderStatusOptions.map((statusOption: any)=> (
+              <option key={statusOption.value} value={statusOption.value}>
+                {statusOption.label}
+              </option>
+            ))}
+          </select>
+          <small>{copy.orderStatusHelp}</small>
+        </label>
+
+        <label className="admin-field">
+          <span>{language === "MN" ? "Төлбөрийн хэлбэр" : "Payment method"}</span>
+          <select value={orderModal.draft.payment.method} onChange={handleOrderPaymentMethodChange}>
+            <option value="bonum">Bonum</option>
+            <option value="cash">{language === "MN" ? "Бэлэн мөнгө" : "Cash"}</option>
+            <option value="bank_transfer">{language === "MN" ? "Банкны шилжүүлэг" : "Bank transfer"}</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="admin-form-grid">
+        <div className="admin-field">
+          <span>{copy.orderPaymentLabel}</span>
+          <div className="admin-order-static-value">
+            <strong>
+              {orderModal.draft.status === "new"
+                ? language === "MN"
+                  ? "Төлбөр хүлээгдэж байна"
+                  : "Payment pending"
+                : language === "MN"
+                  ? "Төлбөр төлөгдсөн"
+                  : "Payment paid"}
+            </strong>
+            <small>
+              {orderModal.draft.payment.method === "bonum"
+                ? language === "MN"
+                  ? "Bonum системээр баталгаажна — гараар засварлах боломжгүй"
+                  : "Managed by Bonum — cannot be edited manually"
+                : copy.orderStatusHelp}
+            </small>
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-inline-card">
+        <div className="admin-inline-card-head">
+          <strong>{copy.customerInfo}</strong>
+        </div>
+        <div className="admin-form-grid">
+          <label className="admin-field">
+            <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
+            <input
+              type="text"
+              value={orderModal.draft.customer.fullName}
+              onChange={handleOrderCustomerChange("fullName")}
+              required
+            />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Утасны дугаар" : "Phone number"}</span>
+            <input
+              type="tel"
+              value={orderModal.draft.customer.phoneNumber}
+              onChange={handleOrderCustomerChange("phoneNumber")}
+              required
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{copy.note}</span>
+            <textarea value={orderModal.draft.customer.note} onChange={handleOrderCustomerChange("note")} rows={3} />
+          </label>
+        </div>
+      </div>
+
+      <div className="admin-inline-card">
+        <div className="admin-inline-card-head">
+          <strong>{copy.addressInfo}</strong>
+        </div>
+        <div className="admin-form-grid">
+          <label className="admin-field">
+            <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
+            <input type="text" value={orderModal.draft.address.region} onChange={handleOrderAddressChange("region")} required />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Дүүрэг / Сум" : "District / Soum"}</span>
+            <input
+              type="text"
+              value={orderModal.draft.address.districtOrSoum}
+              onChange={handleOrderAddressChange("districtOrSoum")}
+              required
+            />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Хороо / Баг" : "Khoroo / Bag"}</span>
+            <input
+              type="text"
+              value={orderModal.draft.address.khorooOrBag}
+              onChange={handleOrderAddressChange("khorooOrBag")}
+              required
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{language === "MN" ? "Байр, орц, давхар, тоот" : "Street address"}</span>
+            <input
+              type="text"
+              value={orderModal.draft.address.streetAddress}
+              onChange={handleOrderAddressChange("streetAddress")}
+              required
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{language === "MN" ? "Нэмэлт хаяг" : "Additional address"}</span>
+            <input
+              type="text"
+              value={orderModal.draft.address.additionalAddress}
+              onChange={handleOrderAddressChange("additionalAddress")}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="admin-inline-card">
+        <div className="admin-inline-card-head">
+          <strong>{copy.orderItemsLabel}</strong>
+          <small className="admin-inline-note">{copy.orderReadonlyItemsNote}</small>
+        </div>
+        <div className="admin-order-items-summary">
+          <span>
+            {language === "MN"
+              ? `${orderModal.draft.items.length} төрөл`
+              : `${orderModal.draft.items.length} item types`}
+          </span>
+          <strong>
+            {language === "MN"
+              ? `Нийт ${getOrderTotalQuantity(orderModal.draft)} ширхэг`
+              : `Total ${getOrderTotalQuantity(orderModal.draft)} pcs`}
+          </strong>
+        </div>
+        <div className="admin-order-items">
+          {orderModal.draft.items.map((item: any, itemIndex: any)=> (
+            <div key={`${item.productId}-${item.variant ?? "default"}-${itemIndex}`} className="admin-order-item">
+              <div className="admin-order-item-main">
+                <div className="admin-order-item-thumb">
+                  {item.image ? (
+                    <img src={item.image} alt={item.name} />
+                  ) : (
+                    <span>{item.name.slice(0, 1).toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="admin-order-item-copy">
+                  <strong>{item.name}</strong>
+                  <div className="admin-order-item-meta">
+                    <span>{item.variant || (language === "MN" ? "Сонголтгүй" : "No variant")}</span>
+                    <span>{item.category}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="admin-order-item-stats">
+                <div>
+                  <span>{language === "MN" ? "Тоо" : "Qty"}</span>
+                  <strong>{item.quantity}</strong>
+                </div>
+                <div>
+                  <span>{language === "MN" ? "Нэгж үнэ" : "Unit price"}</span>
+                  <strong>{formatStorePrice(item.unitPrice)}</strong>
+                </div>
+                <div>
+                  <span>{language === "MN" ? "Нийлбэр" : "Line total"}</span>
+                  <strong>{formatStorePrice(item.lineTotal)}</strong>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="admin-order-totals">
+          <div className="admin-order-totals-row">
+            <span>{language === "MN" ? "Барааны дүн" : "Subtotal"}</span>
+            <span>{formatStorePrice(orderModal.draft.totals.subtotal)}</span>
+          </div>
+          <div className="admin-order-totals-row">
+            <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
+            <span>{formatStorePrice(orderModal.draft.totals.shippingFee)}</span>
+          </div>
+          <div className="admin-order-totals-row admin-order-totals-grand">
+            <span>{language === "MN" ? "Нийт дүн" : "Grand total"}</span>
+            <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={closeOrderModal} disabled={savingOrderModal}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={savingOrderModal}>
+          {savingOrderModal ? "..." : copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+    </>
+  );
+}

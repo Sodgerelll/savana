@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* ── Tailwind admin pages: polished form controls ── */
+
+@layer components {
+  /* Generic select / input overrides for Tailwind admin pages */
+  .admin-select {
+    @apply w-full bg-[#fdfcf9] border border-[rgba(183,185,167,0.75)] rounded-[9px] px-3 py-[0.6rem] text-sm text-[var(--color-heading,#3a3630)] outline-none cursor-pointer
+      transition-all duration-150
+      hover:border-[rgba(140,130,80,0.5)] hover:bg-white
+      focus:border-[#5a5103] focus:bg-white focus:ring-2 focus:ring-[rgba(90,81,3,0.09)];
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a8477' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2.25rem;
+  }
+
+  .admin-input {
+    @apply w-full bg-[#fdfcf9] border border-[rgba(183,185,167,0.75)] rounded-[9px] px-3 py-[0.6rem] text-sm text-[var(--color-heading,#3a3630)] outline-none
+      transition-all duration-150
+      hover:border-[rgba(140,130,80,0.5)] hover:bg-white
+      focus:border-[#5a5103] focus:bg-white focus:ring-2 focus:ring-[rgba(90,81,3,0.09)];
+  }
+}

@@ -71,7 +71,7 @@ export default function Checkout() {
           deliveryHeading: "Хаяг, хүргэлт",
           deliverySubheading: "Хүлээн авагч болон хүргэлтийн мэдээллээ бөглөөд захиалгаа үүсгэнэ үү.",
           paymentHeading: "Төлбөр",
-          paymentSubheading: "Захиалга үүссэний дараа QPay-аар төлбөрөө хийж, доорх товчоор шалгана уу.",
+          paymentSubheading: "Захиалга үүссэний дараа доорх QR-г утсаараа уншуулж Bonum-аар төлбөрөө хийнэ үү.",
           guestBadge: "Зочин захиалга",
           memberBadge: "Бүртгэлтэй хэрэглэгчийн захиалга",
           backToCart: "Сагс руу буцах",
@@ -97,7 +97,7 @@ export default function Checkout() {
           requiredPhone: "Утасны дугаар заавал бөглөнө.",
           requiredItems: "Захиалга үүсгэхийн тулд дор хаяж нэг бараа хэрэгтэй.",
           successTitle: "Төлбөр баталгаажлаа",
-          successText: "Таны QPay төлбөр шалгагдаж, захиалга боловсруулагдаж эхэллээ.",
+          successText: "Таны төлбөр Bonum системд баталгаажиж, захиалга боловсруулагдаж эхэллээ.",
           orderNumber: "Захиалгын дугаар",
           keepShopping: "Дахин дэлгүүрлэх",
           preparingGuestCheckout: "Зочин checkout бэлдэж байна...",
@@ -114,23 +114,23 @@ export default function Checkout() {
           deliveryTab: "Хаяг, хүргэлт",
           deliveryTabHint: "Хүлээн авагч ба хаяг",
           paymentTab: "Төлбөр",
-          paymentTabHint: "QPay QR ба төлөв",
+          paymentTabHint: "Bonum QR ба төлөв",
           deliveryLocked: "Захиалга үүссэн тул энэ хэсэг түгжигдсэн. Төлбөрийн таб руу үргэлжлүүлнэ үү.",
           paymentInfo: "Төлбөрийн мэдээлэл",
-          paymentTitle: "QPay-аар төлбөр төлөх",
-          paymentText: "Доорх QR-г QPay апп-аараа уншуулж төлбөрөө гүйцээнэ үү.",
-          paymentReady: "Захиалга үүссэн. Төлбөр хийсний дараа төлөв шалгана уу.",
+          paymentTitle: "Bonum-аар төлбөр төлөх",
+          paymentText: "Доорх QR-г утасны камераараа уншуулна уу. Bonum төлбөрийн хуудас нээгдэж, QPay болон бусад аргаар төлөх боломжтой.",
+          paymentReady: "Захиалга үүссэн. QR уншуулж төлбөр хийсний дараа 'Төлбөр шалгах' товч дарна уу.",
           paymentUnavailable: "Эхлээд хаяг, хүргэлтийн мэдээллээ бөглөж захиалга үүсгэнэ үү.",
           paymentAmount: "Төлөх дүн",
           paymentStatus: "Төлбөрийн төлөв",
           paymentPending: "Хүлээгдэж байна",
           paymentPaid: "Төлөгдсөн",
           paymentReference: "Төлбөрийн лавлагаа",
-          scanQr: "QPay апп ашиглан энэхүү QR кодыг уншуулна уу.",
+          scanQr: "Утасны камераараа уншуулж Bonum төлбөрийн хуудас руу орно уу.",
           checkPayment: "Төлбөр шалгах",
           checkingPayment: "Төлбөр шалгаж байна",
           paymentPendingMessage: "Төлбөр хүлээгдэж байна. Төлбөрөө хийсний дараа дахин шалгана уу.",
-          paymentPaidMessage: "Төлбөр баталгаажлаа. Захиалга амжилттай.",
+          paymentPaidMessage: "Bonum системд төлбөр баталгаажлаа. Захиалга амжилттай.",
           paymentCheckFailed: "Төлбөрийн төлөв шалгаж чадсангүй.",
           qrLoading: "QR бэлтгэж байна...",
           qrAlt: "QPay QR код",
@@ -141,7 +141,7 @@ export default function Checkout() {
           deliveryHeading: "Address and delivery",
           deliverySubheading: "Fill in the recipient and delivery details to create the order.",
           paymentHeading: "Payment",
-          paymentSubheading: "Once the order is created, complete the payment with QPay and verify it below.",
+          paymentSubheading: "Once the order is created, scan the QR below to pay via Bonum. Then click Check payment.",
           guestBadge: "Guest checkout",
           memberBadge: "Member checkout",
           backToCart: "Back to cart",
@@ -167,7 +167,7 @@ export default function Checkout() {
           requiredPhone: "Phone number is required.",
           requiredItems: "At least one cart item is required to place an order.",
           successTitle: "Payment confirmed",
-          successText: "Your QPay payment has been verified and the order is now being processed.",
+          successText: "Your payment has been verified by Bonum and the order is now being processed.",
           orderNumber: "Order number",
           keepShopping: "Keep shopping",
           preparingGuestCheckout: "Preparing guest checkout...",
@@ -184,23 +184,23 @@ export default function Checkout() {
           deliveryTab: "Address",
           deliveryTabHint: "Recipient and address",
           paymentTab: "Payment",
-          paymentTabHint: "QPay QR and status",
+          paymentTabHint: "Bonum QR and status",
           deliveryLocked: "The order has already been created. Continue in the payment tab.",
           paymentInfo: "Payment details",
-          paymentTitle: "Pay with QPay",
-          paymentText: "Scan the QR below with your QPay app to complete the payment.",
-          paymentReady: "The order has been created. Check the payment status after paying.",
+          paymentTitle: "Pay with Bonum",
+          paymentText: "Scan the QR with your phone camera. Bonum's payment page will open — pay with QPay, card, or other methods.",
+          paymentReady: "The order has been created. After scanning and paying, click Check payment.",
           paymentUnavailable: "Complete the address and delivery step before opening payment.",
           paymentAmount: "Amount due",
           paymentStatus: "Payment status",
           paymentPending: "Pending",
           paymentPaid: "Paid",
           paymentReference: "Payment reference",
-          scanQr: "Scan this QR code with your QPay app.",
+          scanQr: "Scan this QR with your phone camera to open the Bonum payment page.",
           checkPayment: "Check payment",
           checkingPayment: "Checking payment",
           paymentPendingMessage: "Payment is still pending. Please pay first and check again.",
-          paymentPaidMessage: "Payment confirmed. Your order is complete.",
+          paymentPaidMessage: "Payment confirmed by Bonum. Your order is complete.",
           paymentCheckFailed: "Unable to check payment status.",
           qrLoading: "Preparing QR...",
           qrAlt: "QPay payment QR",
@@ -709,7 +709,7 @@ export default function Checkout() {
               {pendingOrder ? (
                 <div className="checkout-payment-card">
                   <div className="checkout-payment-header">
-                    <span className="checkout-payment-badge">QPay</span>
+                    <span className="checkout-payment-badge">Bonum</span>
                     <div>
                       <h3>{copy.paymentTitle}</h3>
                       <p>{copy.paymentText}</p>
@@ -743,6 +743,17 @@ export default function Checkout() {
                   </div>
 
                   <p className="checkout-payment-caption">{copy.scanQr}</p>
+
+                  {pendingOrder.payment.qrPayload && (
+                    <a
+                      href={pendingOrder.payment.qrPayload}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="checkout-payment-open-link"
+                    >
+                      {language === "MN" ? "Утсан дээр нээх" : "Open on phone"}
+                    </a>
+                  )}
 
                   <button
                     type="button"

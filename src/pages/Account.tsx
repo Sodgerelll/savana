@@ -1,10 +1,9 @@
 import {
-  AlertTriangle,
+  Building2,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Globe,
-  Images,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -12,24 +11,20 @@ import {
   MessageSquareQuote,
   Package,
   Pencil,
-  Plus,
   RotateCcw,
-  Search,
-  SlidersHorizontal,
   Store,
   Trash2,
   UserCircle2,
   Users,
   WalletCards,
-  X,
 } from "lucide-react";
-import React, { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
-import type { Collection, EntityStatus, Product } from "../data/products";
+import type { Collection, Product } from "../data/products";
 import {
   cloneShopSettings,
   type HeroBanner,
@@ -43,7 +38,6 @@ import {
   resolveUserRole,
   subscribeToUserProfiles,
   updateUserProfileByPrivileged,
-  type UserAuthMethod,
   type UserProfile,
   type UserRole,
 } from "../lib/userProfiles";
@@ -66,7 +60,81 @@ import {
 } from "../lib/storefrontHelpers";
 import { uploadStorefrontImage } from "../lib/storageUpload";
 import { subscribeToPackaging, savePackaging, deletePackaging, type PackagingItem } from "../lib/storefrontRepository";
+import {
+  addRawMaterialPurchase,
+  deleteRawMaterial,
+  removeRawMaterialPurchase,
+  saveRawMaterial,
+  subscribeToRawMaterials,
+  type RawMaterial,
+} from "../lib/rawMaterials";
+import {
+  advanceProductionBatch,
+  createProductionBatch,
+  deleteProductionBatch,
+  subscribeToProductionBatches,
+  updateProductionBatch,
+  type ProductionBatch,
+  type ProductionBatchStatus,
+  type ProductionBatchSupply,
+} from "../lib/productionBatches";
+import {
+  createCustomer,
+  createEmptyCustomerDraft,
+  getNextCustomerCode,
+  subscribeToCustomers,
+  updateCustomer,
+  type CustomerRecord,
+  type CustomerType,
+} from "../lib/customers";
+import {
+  checkProductHasTransactions,
+  createCustomerTransaction,
+  createEmptyTransactionDraft,
+  deleteCustomerTransaction,
+  subscribeToCustomerTransactions,
+  updateCustomerTransaction,
+  type CustomerTransactionRecord,
+  type CustomerTransactionType,
+} from "../lib/customerTransactions";
+import { checkProductHasTransfers, deleteCustomerCascade } from "../services/transferService";
 import logoBlack from "../assets/logoBlack.png";
+import DashboardPage from "./admin/DashboardPage";
+import WebsitePage from "./admin/WebsitePage";
+import CategoriesPage from "./admin/CategoriesPage";
+import OrdersPage from "./admin/OrdersPage";
+import UsersPage from "./admin/UsersPage";
+import CrmCustomersPage from "./admin/CrmCustomersPage";
+import CrmCustomerTransactionsPage from "./admin/CrmCustomerTransactionsPage";
+import CrmOverviewPage from "./admin/CrmOverviewPage";
+import FactoryOverviewPage from "./admin/FactoryOverviewPage";
+import FactoryProductionPage from "./admin/FactoryProductionPage";
+import FactoryInventoryPage from "./admin/FactoryInventoryPage";
+import RawMaterialsPage from "./admin/RawMaterialsPage";
+import ProductsPage from "./admin/ProductsPage";
+import MessagesPage from "./admin/MessagesPage";
+import AdminModals from "./admin/AdminModals";
+import { getAdminCopy } from "./admin/adminCopy";
+import {
+  cloneVariants,
+  cloneProduct,
+  cloneOrderRecord,
+  getUserIdentity,
+  getRoleLabel,
+  getManageableRoleOptions,
+  getUserProviderSummary,
+  getAuthMethodLabel,
+  getOrderStatusLabel,
+  getOrderStatusClassName,
+  getOrderTotalQuantity,
+  getOrderPaymentStatusLabel,
+  formatAdminDateTime,
+  getLocalizedManagedText,
+  getManagedNavigationLabel,
+  getManagedJournalTitle,
+  getManagedJournalCategory,
+} from "./admin/adminHelpers";
+import type { AdminCtx } from "./admin/adminShellTypes";
 import "./Auth.css";
 
 type AdminSection =
@@ -81,6 +149,7 @@ type AdminSection =
   | "activityLog"
   | "crmOverview"
   | "crmCustomers"
+  | "crmCustomerTransactions"
   | "crmService"
   | "financeOverview"
   | "financePayments"
@@ -88,9 +157,9 @@ type AdminSection =
   | "financeReports"
   | "factoryOverview"
   | "factoryProduction"
-  | "factoryInventory"
-  | "factoryDispatch";
-type ModalMode = "create" | "edit";
+  | "rawMaterials"
+  | "factoryInventory";
+type ModalMode = "create" | "edit" | "edit-limited";
 
 interface SettingsModalState {
   draft: ShopSettings;
@@ -143,7 +212,7 @@ interface ConfirmModalState {
   description: string;
   confirmLabel: string;
   destructive?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 interface OrderModalState {
@@ -157,6 +226,66 @@ interface UserProfileModalState {
 interface PackagingModalState {
   mode: ModalMode;
   draft: PackagingItem;
+}
+
+interface RawMaterialModalState {
+  mode: ModalMode;
+  draft: RawMaterial;
+}
+
+interface RawMaterialPurchaseModalState {
+  rawMaterialId: number;
+  rawMaterialName: string;
+  unit: string;
+  draft: {
+    quantity: number;
+    unitCost: number | null;
+    supplier: string;
+    purchasedAt: string;
+    notes: string;
+  };
+}
+
+interface ProductionBatchDraft {
+  id: string;
+  batchCode: string;
+  productId: number;
+  productName: string;
+  status: ProductionBatchStatus;
+  plannedQuantity: number;
+  actualQuantity: number | null;
+  startedAt: string | null;
+  expectedReadyAt: string | null;
+  readyAt: string | null;
+  supplies: ProductionBatchSupply[];
+  totalCost: number;
+  notes: string;
+}
+
+interface ProductionBatchModalState {
+  mode: ModalMode;
+  draft: ProductionBatchDraft;
+  previous?: ProductionBatch;
+}
+
+interface ProductionAdvanceModalState {
+  batch: ProductionBatch;
+  targetStatus: ProductionBatchStatus;
+  startedAt: string;
+  expectedReadyAt: string;
+  readyAt: string;
+  actualQuantity: number;
+}
+
+interface CustomerModalState {
+  mode: ModalMode;
+  draft: CustomerRecord;
+}
+
+interface CustomerTransactionModalState {
+  mode: ModalMode;
+  draft: CustomerTransactionRecord;
+  previous?: CustomerTransactionRecord;
 }
 
 interface AdminModuleHighlight {
@@ -186,223 +315,12 @@ interface AdminMenuGroup {
   badge?: number;
 }
 
-function cloneVariants(variants?: Product["variants"]): Product["variants"] {
-  return variants?.map((v) => ({ ...v }));
-}
-
-function cloneProduct(product: Product): Product {
-  return {
-    ...product,
-    images: [...product.images],
-    variants: product.variants?.map((variant) => ({ ...variant })),
-  };
-}
-
-function cloneOrderRecord(order: OrderRecord): OrderRecord {
-  return {
-    ...order,
-    auth: { ...order.auth },
-    customer: { ...order.customer },
-    address: { ...order.address },
-    items: order.items.map((item) => ({ ...item })),
-    totals: { ...order.totals },
-    payment: { ...order.payment },
-  };
-}
-
-function getUserIdentity(profile: UserProfile) {
-  return profile.displayName || profile.phoneNumber || profile.email || profile.uid;
-}
-
-function getRoleLabel(role: UserRole, language: "MN" | "EN") {
-  switch (role) {
-    case "sysadmin":
-      return language === "MN" ? "Систем админ" : "System admin";
-    case "admin":
-      return language === "MN" ? "Админ" : "Admin";
-    case "worker":
-      return language === "MN" ? "Ажилтан" : "Employee";
-    default:
-      return language === "MN" ? "Хэрэглэгч" : "Customer";
-  }
-}
-
-function getManageableRoleOptions(currentRole: UserRole): UserRole[] {
-  const roles: UserRole[] = ["sysadmin", "admin", "worker"];
-  return currentRole === "customer" ? [...roles, "customer" as const] : roles;
-}
-
-function getUserProviderSummary(profile: UserProfile) {
-  return profile.providers.length > 0 ? profile.providers.join(", ") : "-";
-}
-
-function getAuthMethodLabel(method: UserAuthMethod, language: "MN" | "EN") {
-  switch (method) {
-    case "email":
-      return language === "MN" ? "И-мэйл" : "Email";
-    case "google":
-      return "Google";
-    case "facebook":
-      return "Facebook";
-    case "phone":
-      return language === "MN" ? "Утас" : "Phone";
-    case "guest":
-      return language === "MN" ? "Зочин" : "Guest";
-    default:
-      return language === "MN" ? "Тодорхойгүй" : "Unknown";
-  }
-}
-
-function getOrderStatusLabel(status: OrderStatus, language: "MN" | "EN") {
-  switch (status) {
-    case "paid":
-      return language === "MN" ? "Төлбөр төлөгдсөн" : "Payment paid";
-    case "delivering":
-      return language === "MN" ? "Хүргэлт хийгдэж байгаа" : "Delivering";
-    case "delivered":
-      return language === "MN" ? "Хүргэгдсэн" : "Delivered";
-    default:
-      return language === "MN" ? "Шинэ" : "New";
-  }
-}
-
-function getOrderStatusClassName(status: OrderStatus) {
-  switch (status) {
-    case "paid":
-      return "admin-order-status-badge paid";
-    case "delivering":
-      return "admin-order-status-badge delivering";
-    case "delivered":
-      return "admin-order-status-badge delivered";
-    default:
-      return "admin-order-status-badge new";
-  }
-}
-
-function getOrderTotalQuantity(order: OrderRecord) {
-  return order.items.reduce((total, item) => total + item.quantity, 0);
-}
-
-function getOrderPaymentStatusLabel(status: OrderRecord["payment"]["status"], language: "MN" | "EN") {
-  switch (status) {
-    case "paid":
-      return language === "MN" ? "Төлөгдсөн" : "Paid";
-    case "failed":
-      return language === "MN" ? "Амжилтгүй" : "Failed";
-    case "cancelled":
-      return language === "MN" ? "Цуцлагдсан" : "Cancelled";
-    default:
-      return language === "MN" ? "Хүлээгдэж буй" : "Pending";
-  }
-}
-
-function formatAdminDateTime(value: string | null, language: "MN" | "EN") {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString(language === "MN" ? "mn-MN" : "en-US");
-}
-
-function getLocalizedManagedText(language: "MN" | "EN", english: string, mongolian: string) {
-  const primary = language === "MN" ? mongolian : english;
-  const fallback = language === "MN" ? english : mongolian;
-  return primary.trim() || fallback.trim();
-}
-
-function getManagedNavigationLabel(item: SiteNavigationItem, language: "MN" | "EN") {
-  return getLocalizedManagedText(language, item.labelEn, item.labelMn);
-}
-
-function getManagedJournalTitle(entry: JournalEntry, language: "MN" | "EN") {
-  return getLocalizedManagedText(language, entry.titleEn, entry.titleMn);
-}
-
-function getManagedJournalCategory(entry: JournalEntry, language: "MN" | "EN") {
-  return getLocalizedManagedText(language, entry.categoryEn, entry.categoryMn);
-}
-
-function AdminModal({
-  title,
-  description,
-  onClose,
-  children,
-  wide = false,
-  disableClose = false,
-}: {
-  title: string;
-  description?: string;
-  onClose: () => void;
-  children: ReactNode;
-  wide?: boolean;
-  disableClose?: boolean;
-}) {
-  const handleClose = () => {
-    if (disableClose) {
-      return;
-    }
-
-    onClose();
-  };
-
-  return (
-    <div className="admin-modal-backdrop" onClick={handleClose}>
-      <div
-        className={`admin-modal ${wide ? "admin-modal-wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="admin-modal-header">
-          <div>
-            <h2>{title}</h2>
-            {description && <p>{description}</p>}
-          </div>
-          <button
-            type="button"
-            className="admin-modal-close"
-            onClick={handleClose}
-            aria-label="Close modal"
-            disabled={disableClose}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="admin-modal-body">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({
-  status,
-  activeLabel,
-  inactiveLabel,
-}: {
-  status: EntityStatus;
-  activeLabel: string;
-  inactiveLabel: string;
-}) {
-  return (
-    <span className={`admin-status-badge ${status === "active" ? "active" : "inactive"}`}>
-      {status === "active" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-      {status === "active" ? activeLabel : inactiveLabel}
-    </span>
-  );
-}
-
 const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "categories", "products", "messages", "orders", "users",
   "commonSettings", "activityLog",
-  "crmOverview", "crmCustomers", "crmService",
+  "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
-  "factoryOverview", "factoryProduction", "factoryInventory", "factoryDispatch",
+  "factoryOverview", "factoryProduction", "rawMaterials", "factoryInventory",
 ]);
 
 export default function Account() {
@@ -438,582 +356,7 @@ export default function Account() {
     deleteTestimonial,
   } = useStorefront();
 
-  const copy =
-    language === "MN"
-      ? {
-          dashboard: "Dashboard",
-          website: "Website",
-          categoriesMenu: "Ангилал",
-          productsMenu: "Бүтээгдэхүүн",
-          messagesMenu: "Мессеж",
-          ordersMenu: "Захиалга",
-          usersMenu: "Хэрэглэгч",
-          dashboardTitle: "Админ хянах самбар",
-          dashboardText: "Website, Ангилал, Бүтээгдэхүүн хэсгүүдийг modal-based workflow-оор удирдана.",
-          websiteTitle: "Вэб контент",
-          websiteText: "Storefront settings, market, testimonial мэдээллүүд энэ хэсгээс modal-аар засагдана.",
-          categoriesTitle: "Ангиллын удирдлага",
-          categoriesText: "Ангилал нэмэх, засах, идэвхжүүлэх, идэвхгүй болгох бүх үйлдэл modal-оор хийгдэнэ.",
-          productsTitle: "Бүтээгдэхүүний удирдлага",
-          productsText: "Бүх бүтээгдэхүүний статус, үнэ, ангилал, тайлбар, variant-ийг modal-аар удирдана.",
-          searchByName: "Нэрээр хайх...",
-          allCategories: "Бүх ангилал",
-          priceMin: "Үнэ (мин)",
-          priceMax: "Үнэ (макс)",
-          clearFilters: "Цэвэрлэх",
-          showingResults: "үр дүн",
-          messagesTitle: "Ирсэн мессежүүд",
-          messagesText: "Contact page-ийн form-оор илгээсэн мессежүүдийг эндээс харна.",
-          ordersTitle: "Захиалгын удирдлага",
-          ordersText: "Захиалгын төлөв, төлбөр, хүргэлтийн явц болон хүлээн авагчийн мэдээллийг эндээс удирдана.",
-          newOrders: "Шинэ",
-          deliveringOrders: "Хүргэлтэнд гарсан",
-          deliveredOrders: "Хүргэгдсэн",
-          paymentLabel: "Төлбөр",
-          createdLabel: "Үүссэн огноо",
-          editOrder: "Захиалга засах",
-          orderDetailsTitle: "Захиалгын мэдээлэл засах",
-          orderDetailsText: "Төлөв, хүлээн авагчийн мэдээлэл, хүргэлтийн хаягийг админаас шинэчилнэ.",
-          orderInfo: "Захиалгын ерөнхий мэдээлэл",
-          orderItemsLabel: "Захиалсан бараа",
-          orderPaymentLabel: "Төлбөрийн төлөв",
-          paymentStateLabel: "Төлбөрийн төлөв",
-          paidAtLabel: "Төлбөр төлөгдсөн огноо",
-          orderStatusHelp: "Төлөв өөрчлөхөд payment state автоматаар уялдан шинэчлэгдэнэ.",
-          orderReadonlyItemsNote: "Барааны мөрүүдийг энэ хувилбарт зөвхөн харах боломжтой.",
-          orderUpdateFailed: "Захиалгын мэдээллийг хадгалж чадсангүй.",
-          products: "Бүтээгдэхүүн",
-          collections: "Ангилал",
-          orders: "Захиалга",
-          banners: "Баннер",
-          navigation: "Header navigation",
-          markets: "Markets",
-          journal: "Сэтгүүл",
-          testimonials: "Testimonials",
-          settings: "Website Settings",
-          totalProducts: "Бүтээгдэхүүн",
-          totalCollections: "Ангилал",
-          totalMessages: "Мессеж",
-          totalOrders: "Захиалга",
-          totalBanners: "Баннер",
-          totalMarkets: "Markets",
-          totalTestimonials: "Testimonials",
-          activeCount: "Active",
-          inactiveCount: "Inactive",
-          actions: "Action",
-          linkedProducts: "Хамааралтай бүтээгдэхүүн",
-          pendingOrders: "Хүлээгдэж буй",
-          paidOrders: "Төлбөр төлөгдсөн",
-          guestOrders: "Зочин захиалга",
-          bestSellerCount: "Best seller",
-          compareShort: "Compare",
-          image: "Зураг",
-          emptyCategories: "Ангилал байхгүй байна.",
-          emptyProducts: "Бүтээгдэхүүн байхгүй байна.",
-          emptyMessages: "Одоогоор мессеж ирээгүй байна.",
-          emptyOrders: "Захиалга байхгүй байна.",
-          openWebsite: "Website",
-          openCategories: "Ангилал",
-          openProducts: "Бүтээгдэхүүн",
-          openOrders: "Захиалга",
-          openUsers: "Хэрэглэгч",
-          signedIn: "Нэвтэрсэн хэрэглэгч",
-          status: "Төлөв",
-          active: "Active",
-          inactive: "Inactive",
-          live: "Active session",
-          logout: "Гарах",
-          add: "Нэмэх",
-          edit: "Засах",
-          delete: "Устгах",
-          cancel: "Болих",
-          save: "Хадгалах",
-          close: "Хаах",
-          createCollection: "Ангилал нэмэх",
-          createProduct: "Бүтээгдэхүүн нэмэх",
-          createBanner: "Баннер нэмэх",
-          editNavigation: "Header navigation засах",
-          editJournalSection: "Journal хэсэг засах",
-          createJournal: "Journal нийтлэл нэмэх",
-          editJournal: "Journal нийтлэл засах",
-          createJournalEntry: "Нийтлэл нэмэх",
-          createMarket: "Market нэмэх",
-          createTestimonial: "Testimonial нэмэх",
-          editWebsite: "Website тохиргоо засах",
-          reset: "Анхны төлөвт оруулах",
-          resetConfirmTitle: "Storefront reset",
-          resetConfirmDescription: "Бүх storefront мэдээллийг default утга руу буцаах уу?",
-          basicInfo: "Ерөнхий мэдээлэл",
-          productEditor: "Product details",
-          dangerReset: "Shop-ийн бүх засварыг default утга руу буцаах уу?",
-          bestSeller: "Best seller",
-          comparePrice: "Compare at price",
-          badge: "Badge",
-          variants: "Variants",
-          variantName: "Хэмжээ",
-          variantPrice: "Үнэ",
-          variantQuantity: "Тоо ширхэг",
-          addVariant: "Variant нэмэх",
-          totalStock: "Нийт нөөц",
-          soldCount: "Зарагдсан",
-          stockRemaining: "Үлдэгдэл",
-          imageHelp: "Category card болон home section дээр харагдах зургийн URL оруулна.",
-          imagePreview: "Зургийн preview",
-          variantsHelp: "Нэг мөрөнд `Нэр|Үнэ` форматаар оруулна.",
-          productImages: "Бүтээгдэхүүний зураг",
-          productImagesHelp: "Ихдээ 3 зураг upload хийж болно.",
-          addImage: "Зураг нэмэх",
-          ingredientsLabel: "Орц найрлага",
-          addIngredient: "Орц нэмэх",
-          ingredientPlaceholder: "Орцын нэр",
-          usageLabel: "Үйлчилгээ",
-          howToUseLabel: "Хэрэглэх заавар",
-          cautionLabel: "Анхаар зүйлс",
-          shelfLifeLabel: "Хадгалах хугацаа",
-          sizeLabelField: "Хэмжээ / Грамм",
-          sizeLabelHelp: "Variants байхгүй үед харагдана. Жишээ: 85 гр, 100 мл",
-          description: "Тайлбар",
-          price: "Үнэ",
-          name: "Нэр",
-          category: "Ангилал",
-          brandName: "Brand нэр",
-          brandDescription: "Brand description",
-          labelMn: "Монгол гарчиг",
-          labelEn: "English label",
-          pageBanner: "Page banner",
-          pageBannerHelp: "Тухайн menu route-ийн hero background дээр харагдах зургийн URL.",
-          group: "Байршил",
-          customerInfo: "Хүлээн авагчийн мэдээлэл",
-          addressInfo: "Хүргэлтийн хаяг",
-          note: "Тэмдэглэл",
-          receivedAt: "Ирсэн хугацаа",
-          senderName: "Илгээгч",
-          senderEmail: "И-мэйл",
-          messageSubject: "Сэдэв",
-          messageBody: "Мессеж",
-          heroHeading: "Hero heading",
-          heroSubtext: "Hero subtext",
-          aboutTitle: "About title",
-          aboutBody: "About body",
-          contactPhone: "Утасны дугаар",
-          contactEmail: "Contact email",
-          location: "Байршил",
-          responseTime: "Response time",
-          facebookUrl: "Facebook URL",
-          instagramHandle: "Instagram handle",
-          instagramUrl: "Instagram URL",
-          mapNote: "Map note",
-          marketIntro: "Market intro",
-          storeHoursText: "Store hours text",
-          wholesaleHeading: "Wholesale heading",
-          wholesaleText: "Wholesale text",
-          wholesaleEmail: "Wholesale email",
-          leftGroup: "Зүүн тал",
-          rightGroup: "Баруун тал",
-          sortOrder: "Дараалал",
-          journalHeadingMn: "Journal гарчиг (MN)",
-          journalHeadingEn: "Journal heading (EN)",
-          journalSubtextMn: "Journal тайлбар (MN)",
-          journalSubtextEn: "Journal subtext (EN)",
-          journalEntries: "Journal нийтлэлүүд",
-          publishedAt: "Нийтэлсэн огноо",
-          categoryMn: "Ангилал (MN)",
-          categoryEn: "Category (EN)",
-          titleMn: "Гарчиг (MN)",
-          titleEn: "Title (EN)",
-          excerptMn: "Товч агуулга (MN)",
-          excerptEn: "Excerpt (EN)",
-          journalImage: "Journal зураг",
-          journalImageHelp: "Blog card дээр харагдах cover image URL. URL оруулах эсвэл шууд файл upload хийж болно.",
-          schedule: "Хуваарь",
-          address: "Хаяг",
-          season: "Улирал",
-          quote: "Сэтгэгдэл",
-          author: "Зохиогч",
-          displayName: "Дэлгэцийн нэр",
-          userRole: "Хэрэглэгчийн эрх",
-          userUid: "UID",
-          userProviders: "Provider-ууд",
-          registeredVia: "Бүртгэсэн төрөл",
-          lastAuth: "Сүүлийн нэвтрэлт",
-          registeredAt: "Бүртгүүлсэн огноо",
-          phoneLoginEmail: "Phone login email",
-          editUser: "Хэрэглэгч засах",
-          userModalTitle: "Хэрэглэгчийн мэдээлэл",
-          userModalDescription: "Sysadmin болон admin эрхтэй хэрэглэгч бусад хэрэглэгчийн мэдээлэл, эрхийг эндээс шинэчилнэ.",
-          userUpdateFailed: "Хэрэглэгчийн мэдээллийг хадгалж чадсангүй.",
-          currentUserReadOnly: "Өөрийн профайлыг энэ хэсгээс засахгүй.",
-          bannerCollection: "Ангилал",
-          bannerImage: "Баннер зураг",
-          bannerUpload: "Зураг upload",
-          bannerUploadProgress: "Зураг upload хийж байна...",
-          bannerUploadFailed: "Зураг upload амжилтгүй боллоо.",
-          bannerSummary: "Home hero slideshow дээрх баннерууд.",
-          messagesLast7Days: "Сүүлийн 7 хоног",
-          latestReceived: "Сүүлд ирсэн",
-          messagesListHelp: "Contact form-оос ирсэн мессежүүд newest эхэндээ харагдана.",
-          bannerModalCreate: "Баннер нэмэх",
-          bannerModalEdit: "Баннер засах",
-          deleteBannerDescription: "Энэ баннерыг устгах уу?",
-          bannerDependencyError: "Энэ ангилал баннер дээр ашиглагдаж байгаа тул устгах боломжгүй.",
-          bannerImageHelp: "URL оруулах эсвэл шууд файл upload хийж болно.",
-          bannerAspectTitle: "Зөвлөмжит зургийн стандарт",
-          bannerAspectValue: "16:9 харьцаа",
-          bannerAspectHelp: "Хамгийн багадаа 1600 x 900, боломжтой бол 1920 x 1080 зураг ашиглаарай.",
-          bannerImportedSource: "Эх сурвалж: SAVANA",
-          bannerUploadedSource: "Эх сурвалж: Admin upload",
-          quickOverview: "Хурдан тойм",
-          livePreview: "Storefront live data",
-          language: "Хэл",
-          english: "English",
-          mongolian: "Монгол",
-          firebaseSync: "Firebase sync",
-          firestoreStructure: "Firestore бүтэц",
-          syncLoading: "Уншиж байна",
-          syncSaving: "Хадгалж байна",
-          syncLive: "Live",
-          syncError: "Алдаа",
-          settingsModalTitle: "Website settings",
-          settingsModalText: "Brand болон website дээр харагдах үндсэн текстүүдийг нэг modal-аас шинэчилнэ.",
-          collectionModalCreate: "Ангилал нэмэх",
-          collectionModalEdit: "Ангилал засах",
-          productModalCreate: "Бүтээгдэхүүн нэмэх",
-          productModalEdit: "Бүтээгдэхүүн засах",
-          marketModalCreate: "Market нэмэх",
-          marketModalEdit: "Market засах",
-          testimonialModalCreate: "Testimonial нэмэх",
-          testimonialModalEdit: "Testimonial засах",
-          confirmDeleteTitle: "Устгах баталгаажуулалт",
-          deleteProductDescription: "Энэ бүтээгдэхүүнийг устгах уу?",
-          deleteNavigationDescription: "Энэ navigation item-ийг header-ээс нуух уу?",
-          navigationModalCreate: "Navigation item идэвхжүүлэх",
-          navigationModalEdit: "Navigation item засах",
-          journalSettingsModalTitle: "Journal хэсгийн тохиргоо",
-          journalModalCreate: "Journal нийтлэл нэмэх",
-          journalModalEdit: "Journal нийтлэл засах",
-          deleteJournalEntryDescription: "Энэ journal нийтлэлийг устгах уу?",
-          deleteMarketDescription: "Энэ market мэдээллийг устгах уу?",
-          deleteTestimonialDescription: "Энэ testimonial-ийг устгах уу?",
-          deleteCollectionDescription: "Энэ ангиллыг устгах уу?",
-          categoryDeleteLocked: "Энэ ангиллыг устгах боломжгүй.",
-          categoryLastLocked: "Сүүлийн үлдсэн ангиллыг устгах боломжгүй. Эхлээд өөр ангилал үүсгэнэ үү.",
-          categoryDependencyError: "Энэ ангилал дээр хамааралтай бүтээгдэхүүнүүд байгаа тул устгах боломжгүй.",
-          noCategories: "Идэвхтэй ангилал байхгүй байна. Эхлээд ангилал идэвхжүүлнэ үү.",
-          categorySystemNote: "Системийн ангилал",
-          currentStatus: "Одоогийн төлөв",
-          activeOnWebsite: "Active үед вэб дээр харагдана.",
-          settingsInactiveNote: "Website settings inactive үед public site default контентийг ашиглана.",
-          systemProtected: "System protected",
-          navigationSummary: "Header menu дээр харагдах page-үүдийн дараалал, хэл, статус.",
-          messagesSummary: "Contact page-ээс илгээсэн хэрэглэгчийн хүсэлтүүд.",
-          journalSummary: "Сэтгүүл page дээрх гарчиг, тайлбар, нийтлэлүүд.",
-          marketSummary: "Find Us page дээрх мэдээлэл.",
-          testimonialSummary: "Home page дээрх customer review.",
-          categorySummary: "Header, filter, storefront cards дээр ашиглагдана.",
-          featuredProduct: "Онцлох бүтээгдэхүүн",
-          featuredProductHelp: "Нүүр хуудсанд онцлох бүтээгдэхүүний орц найрлагыг харуулна.",
-          featuredProductNone: "Автомат (эхний бүтээгдэхүүн)",
-          productSummary: "Collections page, home page, detail page дээр ашиглагдана.",
-          statusSummary: "Status active үед selection болон public web дээр харагдана.",
-          inventoryTitle: "Нөөц ба агуулах",
-          inventoryText: "Сав, баглаа боодол болон түүхий эдийн нөөцийг удирдана.",
-          packagingTitle: "Сав, баглаа боодол",
-          packagingName: "Нэр",
-          packagingSize: "Хэмжээ",
-          packagingRemaining: "Үлдэгдэл",
-          packagingModalCreate: "Сав нэмэх",
-          packagingModalEdit: "Сав засах",
-          deletePackagingDescription: "Энэ савыг устгах уу?",
-          packagingEmpty: "Бүртгэгдсэн сав байхгүй байна.",
-          packagingSummary: "Үйлдвэрлэлд хэрэглэгдэх сав, баглаа боодлын бүртгэл.",
-        }
-      : {
-          dashboard: "Dashboard",
-          website: "Website",
-          categoriesMenu: "Categories",
-          productsMenu: "Products",
-          messagesMenu: "Messages",
-          ordersMenu: "Orders",
-          usersMenu: "Users",
-          dashboardTitle: "Admin dashboard",
-          dashboardText: "Manage Website, Categories, and Products through modal-based workflows.",
-          websiteTitle: "Website content",
-          websiteText: "Storefront settings, markets, and testimonials are managed from this section.",
-          categoriesTitle: "Category management",
-          categoriesText: "Create, edit, activate, or deactivate categories through modal forms.",
-          productsTitle: "Product management",
-          productsText: "Manage product status, pricing, category, descriptions, and variants in modal forms.",
-          messagesTitle: "Incoming messages",
-          messagesText: "Review messages submitted from the contact page form.",
-          ordersTitle: "Order management",
-          ordersText: "Manage order status, payment state, delivery progress, and recipient details from one place.",
-          newOrders: "New",
-          deliveringOrders: "Delivering",
-          deliveredOrders: "Delivered",
-          paymentLabel: "Payment",
-          createdLabel: "Created",
-          editOrder: "Edit order",
-          orderDetailsTitle: "Edit order details",
-          orderDetailsText: "Update the order status, recipient details, and delivery address from admin.",
-          orderInfo: "Order information",
-          orderItemsLabel: "Ordered items",
-          orderPaymentLabel: "Payment details",
-          paymentStateLabel: "Payment state",
-          paidAtLabel: "Paid at",
-          orderStatusHelp: "Changing the status automatically syncs the payment state.",
-          orderReadonlyItemsNote: "Line items are read-only in this version.",
-          orderUpdateFailed: "Unable to save the order details.",
-          products: "Products",
-          collections: "Categories",
-          orders: "Orders",
-          banners: "Banners",
-          navigation: "Header navigation",
-          markets: "Markets",
-          journal: "Journal",
-          testimonials: "Testimonials",
-          settings: "Website Settings",
-          totalProducts: "Products",
-          totalCollections: "Categories",
-          totalMessages: "Messages",
-          totalOrders: "Orders",
-          totalBanners: "Banners",
-          totalMarkets: "Markets",
-          totalTestimonials: "Testimonials",
-          activeCount: "Active",
-          inactiveCount: "Inactive",
-          actions: "Action",
-          linkedProducts: "Linked products",
-          pendingOrders: "Pending",
-          paidOrders: "Paid",
-          guestOrders: "Guest orders",
-          bestSellerCount: "Best sellers",
-          compareShort: "Compare",
-          image: "Image",
-          emptyCategories: "No categories found.",
-          emptyProducts: "No products found.",
-          emptyMessages: "No messages have been submitted yet.",
-          emptyOrders: "No orders found.",
-          openWebsite: "Website",
-          openCategories: "Categories",
-          openProducts: "Products",
-          openOrders: "Orders",
-          openUsers: "Users",
-          signedIn: "Signed in user",
-          status: "Status",
-          active: "Active",
-          inactive: "Inactive",
-          live: "Active session",
-          logout: "Logout",
-          add: "Add",
-          edit: "Edit",
-          delete: "Delete",
-          cancel: "Cancel",
-          save: "Save",
-          close: "Close",
-          createCollection: "Create category",
-          createProduct: "Create product",
-          createBanner: "Create banner",
-          editNavigation: "Edit header navigation",
-          editJournalSection: "Edit journal section",
-          createJournal: "Create journal entry",
-          editJournal: "Edit journal entry",
-          createJournalEntry: "Create journal entry",
-          createMarket: "Create market",
-          createTestimonial: "Create testimonial",
-          editWebsite: "Edit website settings",
-          reset: "Reset storefront",
-          resetConfirmTitle: "Storefront reset",
-          resetConfirmDescription: "Reset all storefront content back to defaults?",
-          basicInfo: "Basic Info",
-          productEditor: "Product details",
-          dangerReset: "Reset all storefront edits back to defaults?",
-          bestSeller: "Best seller",
-          comparePrice: "Compare at price",
-          badge: "Badge",
-          variants: "Variants",
-          variantName: "Size",
-          variantPrice: "Price",
-          variantQuantity: "Quantity",
-          addVariant: "Add variant",
-          totalStock: "Total stock",
-          soldCount: "Sold",
-          stockRemaining: "Remaining",
-          imageHelp: "Paste the image URL used on category cards and home sections.",
-          imagePreview: "Image preview",
-          variantsHelp: "Enter one variant per line using `Name|Price`.",
-          productImages: "Product images",
-          productImagesHelp: "Upload up to 3 images.",
-          addImage: "Add image",
-          ingredientsLabel: "Ingredients",
-          addIngredient: "Add ingredient",
-          ingredientPlaceholder: "Ingredient name",
-          usageLabel: "Usage",
-          howToUseLabel: "How to use",
-          cautionLabel: "Caution",
-          shelfLifeLabel: "Shelf life",
-          sizeLabelField: "Size / Weight",
-          sizeLabelHelp: "Shown when no variants exist. e.g. 85g, 100ml",
-          description: "Description",
-          price: "Price",
-          name: "Name",
-          category: "Category",
-          brandName: "Brand name",
-          brandDescription: "Brand description",
-          labelMn: "Mongolian label",
-          labelEn: "English label",
-          pageBanner: "Page banner",
-          pageBannerHelp: "Image URL used as the hero background for that menu page.",
-          group: "Placement",
-          customerInfo: "Recipient details",
-          addressInfo: "Delivery address",
-          note: "Note",
-          receivedAt: "Received",
-          senderName: "Sender",
-          senderEmail: "Email",
-          messageSubject: "Subject",
-          messageBody: "Message",
-          heroHeading: "Hero heading",
-          heroSubtext: "Hero subtext",
-          aboutTitle: "About title",
-          aboutBody: "About body",
-          contactPhone: "Phone number",
-          contactEmail: "Contact email",
-          location: "Location",
-          responseTime: "Response time",
-          facebookUrl: "Facebook URL",
-          instagramHandle: "Instagram handle",
-          instagramUrl: "Instagram URL",
-          mapNote: "Map note",
-          marketIntro: "Market intro",
-          storeHoursText: "Store hours text",
-          wholesaleHeading: "Wholesale heading",
-          wholesaleText: "Wholesale text",
-          wholesaleEmail: "Wholesale email",
-          leftGroup: "Left side",
-          rightGroup: "Right side",
-          sortOrder: "Sort order",
-          journalHeadingMn: "Journal heading (MN)",
-          journalHeadingEn: "Journal heading (EN)",
-          journalSubtextMn: "Journal subtext (MN)",
-          journalSubtextEn: "Journal subtext (EN)",
-          journalEntries: "Journal entries",
-          publishedAt: "Published date",
-          categoryMn: "Category (MN)",
-          categoryEn: "Category (EN)",
-          titleMn: "Title (MN)",
-          titleEn: "Title (EN)",
-          excerptMn: "Excerpt (MN)",
-          excerptEn: "Excerpt (EN)",
-          journalImage: "Journal image",
-          journalImageHelp: "Optional cover image URL shown on the journal card. Paste a URL or upload a file directly.",
-          schedule: "Schedule",
-          address: "Address",
-          season: "Season",
-          quote: "Quote",
-          author: "Author",
-          displayName: "Display name",
-          userRole: "User role",
-          userUid: "UID",
-          userProviders: "Providers",
-          registeredVia: "Registered via",
-          lastAuth: "Last auth",
-          registeredAt: "Registered at",
-          phoneLoginEmail: "Phone login email",
-          editUser: "Edit user",
-          userModalTitle: "User profile",
-          userModalDescription: "Privileged users can review and update another user's profile and access level here.",
-          userUpdateFailed: "Unable to save the user profile.",
-          currentUserReadOnly: "Your own profile is not edited from this directory.",
-          bannerCollection: "Categories",
-          bannerImage: "Banner image",
-          bannerUpload: "Upload image",
-          bannerUploadProgress: "Uploading image...",
-          bannerUploadFailed: "Image upload failed.",
-          bannerSummary: "Displayed inside the homepage hero slideshow.",
-          messagesLast7Days: "Last 7 days",
-          latestReceived: "Latest",
-          messagesListHelp: "Messages submitted from the contact form appear here with the newest first.",
-          bannerModalCreate: "Create banner",
-          bannerModalEdit: "Edit banner",
-          deleteBannerDescription: "Delete this banner?",
-          bannerDependencyError: "This category is used by hero banners and cannot be deleted.",
-          bannerImageHelp: "Paste an image URL or upload a file directly.",
-          bannerAspectTitle: "Recommended image format",
-          bannerAspectValue: "16:9 aspect ratio",
-          bannerAspectHelp: "Use at least 1600 x 900, ideally 1920 x 1080 for the homepage hero.",
-          bannerImportedSource: "Source: SAVANA",
-          bannerUploadedSource: "Source: Admin upload",
-          quickOverview: "Quick overview",
-          livePreview: "Storefront live data",
-          language: "Language",
-          english: "English",
-          mongolian: "Mongolian",
-          firebaseSync: "Firebase sync",
-          firestoreStructure: "Firestore structure",
-          syncLoading: "Loading",
-          syncSaving: "Saving",
-          syncLive: "Live",
-          syncError: "Error",
-          settingsModalTitle: "Website settings",
-          settingsModalText: "Update brand and website-facing copy from one modal.",
-          collectionModalCreate: "Create category",
-          collectionModalEdit: "Edit category",
-          productModalCreate: "Create product",
-          productModalEdit: "Edit product",
-          marketModalCreate: "Create market",
-          marketModalEdit: "Edit market",
-          testimonialModalCreate: "Create testimonial",
-          testimonialModalEdit: "Edit testimonial",
-          confirmDeleteTitle: "Delete confirmation",
-          deleteProductDescription: "Delete this product?",
-          deleteNavigationDescription: "Hide this navigation item from the header?",
-          navigationModalCreate: "Activate navigation item",
-          navigationModalEdit: "Edit navigation item",
-          journalSettingsModalTitle: "Journal section settings",
-          journalModalCreate: "Create journal entry",
-          journalModalEdit: "Edit journal entry",
-          deleteJournalEntryDescription: "Delete this journal entry?",
-          deleteMarketDescription: "Delete this market entry?",
-          deleteTestimonialDescription: "Delete this testimonial?",
-          deleteCollectionDescription: "Delete this category?",
-          categoryDeleteLocked: "This category cannot be deleted.",
-          categoryLastLocked: "This is the last remaining category. Create another one before deleting it.",
-          categoryDependencyError: "This category is referenced by products and cannot be deleted.",
-          noCategories: "No active categories available. Activate or create a category first.",
-          categorySystemNote: "System category",
-          currentStatus: "Current status",
-          activeOnWebsite: "Visible on selections and website when active.",
-          settingsInactiveNote: "When website settings are inactive, the public site falls back to default copy.",
-          systemProtected: "System protected",
-          navigationSummary: "Controls the page labels, placement, and visibility in the header menu.",
-          messagesSummary: "Customer inquiries submitted from the contact page.",
-          journalSummary: "Controls the journal page heading, subtext, and editorial entries.",
-          marketSummary: "Displayed on the Find Us page.",
-          testimonialSummary: "Displayed on the homepage.",
-          categorySummary: "Used in header navigation, filters, and storefront cards.",
-          featuredProduct: "Featured product",
-          featuredProductHelp: "Displays the featured product's ingredients on the homepage.",
-          featuredProductNone: "Auto (first product)",
-          productSummary: "Used across collections, homepage, and product detail pages.",
-          statusSummary: "Only active items appear in selections and on the public website.",
-          searchByName: "Search by name...",
-          allCategories: "All categories",
-          priceMin: "Price (min)",
-          priceMax: "Price (max)",
-          clearFilters: "Clear",
-          showingResults: "results",
-          inventoryTitle: "Inventory & warehouse",
-          inventoryText: "Manage packaging, raw materials, and finished goods inventory.",
-          packagingTitle: "Packaging",
-          packagingName: "Name",
-          packagingSize: "Size",
-          packagingRemaining: "Remaining",
-          packagingModalCreate: "Add packaging",
-          packagingModalEdit: "Edit packaging",
-          deletePackagingDescription: "Delete this packaging item?",
-          packagingEmpty: "No packaging items registered.",
-          packagingSummary: "Packaging materials used in production.",
-        };
+  const copy = getAdminCopy(language);
 
   const activeSection = resolvedSection;
   const setActiveSection = (section: AdminSection) => {
@@ -1028,6 +371,9 @@ export default function Account() {
   const [collectionModal, setCollectionModal] = useState<CollectionModalState | null>(null);
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history">("products");
+  const [expandedTxGrids, setExpandedTxGrids] = useState<Set<string>>(new Set());
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
   const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
@@ -1037,8 +383,24 @@ export default function Account() {
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+  const [confirmModalLoading, setConfirmModalLoading] = useState(false);
+  const [confirmModalError, setConfirmModalError] = useState<string | null>(null);
   const [packagingItems, setPackagingItems] = useState<PackagingItem[]>([]);
   const [packagingModal, setPackagingModal] = useState<PackagingModalState | null>(null);
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+  const [rawMaterialModal, setRawMaterialModal] = useState<RawMaterialModalState | null>(null);
+  const [rawMaterialSaving, setRawMaterialSaving] = useState(false);
+  const [rawMaterialError, setRawMaterialError] = useState<string | null>(null);
+  const [rawMaterialPurchaseModal, setRawMaterialPurchaseModal] = useState<RawMaterialPurchaseModalState | null>(null);
+  const [rawMaterialPurchaseSaving, setRawMaterialPurchaseSaving] = useState(false);
+  const [rawMaterialPurchaseError, setRawMaterialPurchaseError] = useState<string | null>(null);
+  const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>([]);
+  const [productionBatchModal, setProductionBatchModal] = useState<ProductionBatchModalState | null>(null);
+  const [productionBatchSaving, setProductionBatchSaving] = useState(false);
+  const [productionBatchError, setProductionBatchError] = useState<string | null>(null);
+  const [productionAdvanceModal, setProductionAdvanceModal] = useState<ProductionAdvanceModalState | null>(null);
+  const [productionAdvanceSaving, setProductionAdvanceSaving] = useState(false);
+  const [productionAdvanceError, setProductionAdvanceError] = useState<string | null>(null);
   const [navigationBannerUploadError, setNavigationBannerUploadError] = useState<string | null>(null);
   const [navigationBannerUploading, setNavigationBannerUploading] = useState(false);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
@@ -1061,6 +423,21 @@ export default function Account() {
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [myOrders, setMyOrders] = useState<OrderRecord[]>([]);
   const [myOrdersError, setMyOrdersError] = useState<string | null>(null);
+  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+  const [customerModal, setCustomerModal] = useState<CustomerModalState | null>(null);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<"all" | CustomerType>("all");
+  const [customerSavingState, setCustomerSavingState] = useState(false);
+  const [customerError, setCustomerError] = useState<string | null>(null);
+  const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
+  const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
+  const [transactionModal, setTransactionModal] = useState<CustomerTransactionModalState | null>(null);
+  const [transactionSavingState, setTransactionSavingState] = useState(false);
+  const [transactionError, setTransactionError] = useState<string | null>(null);
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<"all" | CustomerTransactionType>("all");
+  const [transactionCustomerFilter, setTransactionCustomerFilter] = useState<string>("all");
+  const [customerViewMode, setCustomerViewMode] = useState<"customers" | "transfers">("customers");
   const [openNavGroups, setOpenNavGroups] = useState<Record<AdminMenuGroup["key"], boolean>>({
     common: true,
     website: true,
@@ -1159,7 +536,8 @@ export default function Account() {
   const bestSellerCount = useMemo(() => products.filter((product) => product.bestSeller).length, [products]);
   const totalStockSum = useMemo(() => products.reduce((sum, p) => {
     const hasVariants = (p.variants ?? []).length > 0;
-    return sum + (hasVariants ? p.variants!.reduce((s, v) => s + (v.quantity || 0), 0) : (p.totalStock ?? 0));
+    const variantStock = hasVariants ? p.variants!.reduce((s, v) => s + (v.quantity || 0), 0) : 0;
+    return sum + (hasVariants ? variantStock + (p.totalStock ?? 0) : (p.totalStock ?? 0));
   }, 0), [products]);
   const totalSoldSum = useMemo(() => products.reduce((sum, p) => sum + (p.soldCount ?? 0), 0), [products]);
   const totalRemainingSum = totalStockSum - totalSoldSum;
@@ -1220,7 +598,13 @@ export default function Account() {
     "messages",
     "orders",
     "users",
+    "factoryOverview",
     "factoryInventory",
+    "factoryProduction",
+    "rawMaterials",
+    "crmOverview",
+    "crmCustomers",
+    "crmCustomerTransactions",
   ]);
   const adminMenuGroups: AdminMenuGroup[] =
     language === "MN"
@@ -1375,12 +759,15 @@ export default function Account() {
                 label: "CRM overview",
                 description: "Pipeline, segmentation, customer operating model.",
                 icon: <Users size={18} />,
+                implemented: true,
               },
               {
                 id: "crmCustomers",
-                label: "Харилцагч",
-                description: "Customer profile, segment, account health.",
-                icon: <UserCircle2 size={18} />,
+                label: "Борлуулагч",
+                description: "Байгууллага, хувь борлуулагчийн бүртгэл, үлдэгдэл.",
+                icon: <Building2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "orders",
@@ -1486,12 +873,21 @@ export default function Account() {
                 label: "Factory overview",
                 description: "Plant control tower, capacity, throughput, risk view.",
                 icon: <Package size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryProduction",
                 label: "Үйлдвэрлэл",
                 description: "Batch planning, work order, BOM execution.",
                 icon: <RotateCcw size={18} />,
+                implemented: true,
+              },
+              {
+                id: "rawMaterials",
+                label: "Түүхий эдийн сан",
+                description: "Түүхий эдийн нөөц, зарцуулалт, нэмэх.",
+                icon: <Package size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryInventory",
@@ -1499,12 +895,6 @@ export default function Account() {
                 description: "Raw material, packaging, finished goods inventory.",
                 icon: <Store size={18} />,
                 implemented: true,
-              },
-              {
-                id: "factoryDispatch",
-                label: "Dispatch",
-                description: "Packing, courier handoff, delivery coordination.",
-                icon: <MapPin size={18} />,
               },
             ],
           },
@@ -1660,12 +1050,15 @@ export default function Account() {
                 label: "CRM overview",
                 description: "Pipeline, segmentation, and customer operating model.",
                 icon: <Users size={18} />,
+                implemented: true,
               },
               {
                 id: "crmCustomers",
-                label: "Customers",
-                description: "Customer profile, segment, and account health.",
-                icon: <UserCircle2 size={18} />,
+                label: "Sellers",
+                description: "Organization & individual seller records and balances.",
+                icon: <Building2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "orders",
@@ -1771,12 +1164,14 @@ export default function Account() {
                 label: "Factory overview",
                 description: "Plant control tower, capacity, throughput, and risk view.",
                 icon: <Package size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryProduction",
                 label: "Production",
                 description: "Batch planning, work orders, and BOM execution.",
                 icon: <RotateCcw size={18} />,
+                implemented: true,
               },
               {
                 id: "factoryInventory",
@@ -1784,12 +1179,6 @@ export default function Account() {
                 description: "Raw material, packaging, and finished goods stock.",
                 icon: <Store size={18} />,
                 implemented: true,
-              },
-              {
-                id: "factoryDispatch",
-                label: "Dispatch",
-                description: "Packing, courier handoff, and delivery coordination.",
-                icon: <MapPin size={18} />,
               },
             ],
           },
@@ -1843,6 +1232,40 @@ export default function Account() {
 
   useEffect(() => {
     if (!isPrivilegedUser) {
+      setCustomers([]);
+      setCustomersError(null);
+      return;
+    }
+    return subscribeToCustomers({
+      onData: (next) => {
+        setCustomers(next);
+        setCustomersError(null);
+      },
+      onError: (subscriptionError) => {
+        setCustomersError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setCustomerTransactions([]);
+      setCustomerTransactionsError(null);
+      return;
+    }
+    return subscribeToCustomerTransactions({
+      onData: (next) => {
+        setCustomerTransactions(next);
+        setCustomerTransactionsError(null);
+      },
+      onError: (subscriptionError) => {
+        setCustomerTransactionsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
       setPackagingItems([]);
       return;
     }
@@ -1850,6 +1273,42 @@ export default function Account() {
       (items) => setPackagingItems(items),
       () => {},
     );
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setRawMaterials([]);
+      return;
+    }
+    let alive = true;
+    let unsub: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const subscribe = () => {
+      unsub = subscribeToRawMaterials(
+        (items) => { if (alive) { setRawMaterials(items); setRawMaterialError(null); } },
+        (err) => { if (alive) { setRawMaterialError(err.message); retryTimer = setTimeout(subscribe, 5000); } },
+      );
+    };
+    subscribe();
+    return () => { alive = false; unsub?.(); if (retryTimer !== undefined) clearTimeout(retryTimer); };
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setProductionBatches([]);
+      return;
+    }
+    let alive = true;
+    let unsub: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const subscribe = () => {
+      unsub = subscribeToProductionBatches({
+        onData: (batches) => { if (alive) { setProductionBatches(batches); setProductionBatchError(null); } },
+        onError: (err) => { if (alive) { setProductionBatchError(err.message); retryTimer = setTimeout(subscribe, 5000); } },
+      });
+    };
+    subscribe();
+    return () => { alive = false; unsub?.(); if (retryTimer !== undefined) clearTimeout(retryTimer); };
   }, [isPrivilegedUser]);
 
   useEffect(() => {
@@ -1890,9 +1349,10 @@ export default function Account() {
   }, [isPrivilegedUser, user]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "messages")) {
+    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "messages" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
       setActiveSection("dashboard");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection, isPrivilegedUser]);
 
   useEffect(() => {
@@ -1905,6 +1365,17 @@ export default function Account() {
       [activeMenuGroup.key]: true,
     }));
   }, [activeMenuGroup, openNavGroups]);
+
+  const lockedProductIds = useMemo(() => {
+    const locked = new Set<number>();
+    customerTransactions.forEach((tx) => {
+      tx.items.forEach((item) => locked.add(item.productId));
+    });
+    orders.forEach((order) => {
+      order.items.forEach((item) => locked.add(item.productId));
+    });
+    return locked;
+  }, [customerTransactions, orders]);
 
   const openSettingsModal = () => {
     setSettingsModal({ draft: cloneShopSettings(settings) });
@@ -2203,6 +1674,8 @@ export default function Account() {
   };
 
   const openConfirmModal = (state: ConfirmModalState) => {
+    setConfirmModalError(null);
+    setConfirmModalLoading(false);
     setConfirmModal(state);
   };
 
@@ -2248,7 +1721,22 @@ export default function Account() {
     });
   };
 
-  const handleProductDeleteRequest = (product: Product) => {
+  const handleProductDeleteRequest = async (product: Product) => {
+    const [hasTransactions, hasTransfers] = await Promise.all([
+      checkProductHasTransactions(product.id),
+      checkProductHasTransfers(product.id),
+    ]);
+
+    if (hasTransactions || hasTransfers) {
+      openConfirmModal({
+        title: copy.confirmDeleteTitle,
+        description: copy.productDeleteLinkedError,
+        confirmLabel: copy.close,
+        onConfirm: () => {},
+      });
+      return;
+    }
+
     openConfirmModal({
       title: copy.confirmDeleteTitle,
       description: copy.deleteProductDescription,
@@ -2501,6 +1989,33 @@ export default function Account() {
     );
   };
 
+  const handleOrderPaymentMethodChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextMethod = event.target.value as import("../lib/orders").OrderPaymentMethod;
+    setOrderModal((current) => {
+      if (!current) return current;
+      const isBonum = nextMethod === "bonum";
+      return {
+        ...current,
+        draft: {
+          ...current.draft,
+          payment: {
+            ...current.draft.payment,
+            method: nextMethod,
+            provider: nextMethod,
+            ...(!isBonum && {
+              qrPayload: "",
+              invoiceId: null,
+              bonumPaymentVendor: undefined,
+              bonumCompletedAt: undefined,
+              bonumTerminalId: undefined,
+              bonumAmount: undefined,
+            }),
+          },
+        },
+      };
+    });
+  };
+
   const handleOrderModalSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -2731,6 +2246,293 @@ export default function Account() {
     );
   }
 
+  const adminCtx: AdminCtx = {
+    // copy + i18n
+    copy,
+    language,
+    // storefront data
+    settings,
+    collections,
+    products,
+    heroBanners,
+    markets,
+    testimonials,
+    loading,
+    saving,
+    error,
+    backend,
+    structure,
+    visibleSettings,
+    activeNavigationItems,
+    activeJournalEntries,
+    activeCollections,
+    activeProducts,
+    activeHeroBanners,
+    activeMarkets,
+    activeTestimonials,
+    navigationPreviewItems,
+    journalPreviewEntries,
+    inactiveNavigationItems,
+    selectableCategories,
+    bannerCategories,
+    collectionNameBySlug,
+    filteredProducts,
+    regularCollectionCount,
+    productCountByCategory,
+    inactiveCollectionsCount,
+    inactiveProductsCount,
+    linkedCollectionCount,
+    bestSellerCount,
+    totalStockSum,
+    totalSoldSum,
+    totalRemainingSum,
+    lockedProductIds,
+    // user / auth
+    user,
+    profile,
+    role,
+    isPrivilegedUser,
+    currentRegistrationMethod,
+    directoryUsers,
+    directoryError,
+    userRoleCounts,
+    // orders
+    orders,
+    ordersError,
+    paidOrdersCount,
+    deliveringOrdersCount,
+    deliveredOrdersCount,
+    guestOrdersCount,
+    orderStatusOptions,
+    // messages
+    contactMessages,
+    contactMessagesError,
+    contactMessagesLast7DaysCount,
+    latestContactMessageAt,
+    // customers / transactions
+    customers,
+    customersError,
+    customerSearch,
+    setCustomerSearch,
+    customerTypeFilter,
+    setCustomerTypeFilter,
+    customerViewMode,
+    setCustomerViewMode,
+    customerTransactions,
+    customerTransactionsError,
+    transactionTypeFilter,
+    setTransactionTypeFilter,
+    transactionCustomerFilter,
+    setTransactionCustomerFilter,
+    expandedCustomerId,
+    setExpandedCustomerId,
+    expandedCustomerTab,
+    setExpandedCustomerTab,
+    expandedTxGrids,
+    setExpandedTxGrids,
+    // inventory / production
+    packagingItems,
+    rawMaterials,
+    rawMaterialError,
+    productionBatches,
+    productionBatchError,
+    productionAdvanceError,
+    // navigation state
+    adminMenuGroups,
+    activeMenuGroup,
+    activeMenuItem,
+    architectureSection,
+    implementedSections,
+    activeSection,
+    setActiveSection,
+    // misc UI state
+    productSearchName,
+    setProductSearchName,
+    productFilterCategory,
+    setProductFilterCategory,
+    productFilterPriceMin,
+    setProductFilterPriceMin,
+    productFilterPriceMax,
+    setProductFilterPriceMax,
+    expandedProductId,
+    setExpandedProductId,
+    // modal openers
+    openSettingsModal,
+    openCollectionModal,
+    openProductModal,
+    openHeroBannerModal,
+    openNavigationModal,
+    openJournalEntryModal,
+    openJournalSettingsModal,
+    openMarketModal,
+    openTestimonialModal,
+    openUserProfileModal,
+    openOrderModal,
+    setCustomerModal,
+    setTransactionModal,
+    setPackagingModal,
+    setRawMaterialModal,
+    setProductionBatchModal,
+    setProductionAdvanceModal,
+    // delete request handlers
+    handleCollectionDeleteRequest,
+    handleProductDeleteRequest,
+    handleHeroBannerDeleteRequest,
+    handleMarketDeleteRequest,
+    handleTestimonialDeleteRequest,
+    handleNavigationDeleteRequest,
+    handleJournalEntryDeleteRequest,
+    // helpers
+    formatAdminDateTime,
+    formatStorePrice,
+    getOrderStatusLabel,
+    getOrderStatusClassName,
+    getOrderPaymentStatusLabel,
+    getOrderTotalQuantity,
+    getAuthMethodLabel,
+    getRoleLabel,
+    getUserIdentity,
+    getCollectionPrimaryImage,
+    getProductPrimaryImage,
+    getLocalizedManagedText,
+    getManagedNavigationLabel,
+    getManagedJournalTitle,
+    getManagedJournalCategory,
+    isSystemCollection,
+    resolveUserRole,
+    // delete operations
+    deletePackaging,
+    deleteRawMaterial,
+    deleteProductionBatch,
+    deleteCustomer: deleteCustomerCascade,
+    deleteCustomerTransaction,
+    // create/get helpers
+    createEmptyCustomerDraft,
+    getNextCustomerCode,
+    createEmptyTransactionDraft,
+    // confirm modal
+    openConfirmModal,
+    // error setters
+    setTransactionError,
+    setCustomerError,
+    setRawMaterialError,
+    setProductionBatchError,
+    setProductionAdvanceError,
+    // storefront operations for modals
+    saveSettingsDraft,
+    saveCollectionDraft,
+    saveProductDraft,
+    saveHeroBannerDraft,
+    saveMarketDraft,
+    saveTestimonialDraft,
+    saveSettingsSection,
+    savePackaging,
+    saveRawMaterial,
+    createProductionBatch,
+    updateProductionBatch,
+    advanceProductionBatch,
+    createCustomer,
+    updateCustomer,
+    createCustomerTransaction,
+    updateCustomerTransaction,
+    getManageableRoleOptions,
+    getUserProviderSummary,
+    // modal state
+    settingsModal,
+    setSettingsModal,
+    navigationModal,
+    setNavigationModal,
+    closeNavigationModal,
+    handleNavigationBannerFileChange,
+    navigationBannerUploading,
+    navigationBannerUploadError,
+    setNavigationBannerUploadError,
+    journalSettingsModal,
+    setJournalSettingsModal,
+    journalEntryModal,
+    setJournalEntryModal,
+    closeJournalEntryModal,
+    handleJournalEntryFileChange,
+    journalImageUploading,
+    journalImageUploadError,
+    setJournalImageUploadError,
+    setJournalImageUploading,
+    collectionModal,
+    setCollectionModal,
+    collectionImageUploading,
+    collectionImageUploadError,
+    setCollectionImageUploading,
+    setCollectionImageUploadError,
+    handleCollectionImageUpload,
+    removeCollectionImage,
+    heroBannerModal,
+    setHeroBannerModal,
+    closeHeroBannerModal,
+    handleHeroBannerFileChange,
+    bannerUploading,
+    bannerUploadError,
+    setBannerUploadError,
+    productModal,
+    setProductModal,
+    productImageUploading,
+    productImageUploadError,
+    setProductImageUploading,
+    setProductImageUploadError,
+    handleProductImageUpload,
+    removeProductImage,
+    marketModal,
+    setMarketModal,
+    testimonialModal,
+    setTestimonialModal,
+    packagingModal,
+    rawMaterialModal,
+    rawMaterialSaving,
+    setRawMaterialSaving,
+    rawMaterialPurchaseModal,
+    setRawMaterialPurchaseModal,
+    rawMaterialPurchaseSaving,
+    setRawMaterialPurchaseSaving,
+    rawMaterialPurchaseError,
+    setRawMaterialPurchaseError,
+    addRawMaterialPurchase,
+    removeRawMaterialPurchase,
+    productionBatchModal,
+    productionBatchSaving,
+    setProductionBatchSaving,
+    productionAdvanceModal,
+    productionAdvanceSaving,
+    setProductionAdvanceSaving,
+    customerModal,
+    customerSavingState,
+    setCustomerSavingState,
+    customerError,
+    transactionModal,
+    transactionSavingState,
+    setTransactionSavingState,
+    transactionError,
+    orderModal,
+    closeOrderModal,
+    handleOrderCustomerChange,
+    handleOrderAddressChange,
+    handleOrderStatusChange,
+    handleOrderPaymentMethodChange,
+    handleOrderModalSubmit,
+    orderModalError,
+    savingOrderModal,
+    userProfileModal,
+    setUserProfileModal,
+    closeUserProfileModal,
+    handleUserProfileSubmit,
+    userProfileError,
+    savingUserProfile,
+    confirmModal,
+    setConfirmModal,
+    confirmModalLoading,
+    confirmModalError,
+    setConfirmModalLoading,
+    setConfirmModalError,
+  };
+
   return (
     <div className="admin-page">
       <div className={`admin-shell ${sidebarOpen ? "" : "admin-shell-collapsed"}`}>
@@ -2840,216 +2642,7 @@ export default function Account() {
             <Menu size={20} />
           </button>
           {activeSection === "dashboard" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.quickOverview}</p>
-                  <h1>{copy.dashboardTitle}</h1>
-                  <p>{copy.dashboardText}</p>
-                </div>
-              </div>
-
-              <div className="admin-stat-grid">
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="website"
-                  onClick={() => setActiveSection("products")}
-                  aria-label={copy.openProducts}
-                >
-                  <span>{copy.totalProducts}</span>
-                  <strong>{activeProducts.length}/{products.length}</strong>
-                  <small>{copy.statusSummary}</small>
-                </button>
-                {isPrivilegedUser && (
-                  <button
-                    type="button"
-                    className="admin-stat-card admin-stat-card-link admin-module-card"
-                    data-module="crm"
-                    onClick={() => setActiveSection("orders")}
-                    aria-label={copy.openOrders}
-                  >
-                    <span>{copy.totalOrders}</span>
-                    <strong>{orders.length}</strong>
-                    <small>{copy.ordersText}</small>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="website"
-                  onClick={() => setActiveSection("categories")}
-                  aria-label={copy.openCategories}
-                >
-                  <span>{copy.totalCollections}</span>
-                  <strong>{activeCollections.length}/{collections.length}</strong>
-                  <small>{copy.statusSummary}</small>
-                </button>
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="website"
-                  onClick={() => setActiveSection("website")}
-                  aria-label={copy.openWebsite}
-                >
-                  <span>{copy.totalBanners}</span>
-                  <strong>{activeHeroBanners.length}/{heroBanners.length}</strong>
-                  <small>{copy.bannerSummary}</small>
-                </button>
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="website"
-                  onClick={() => setActiveSection("website")}
-                  aria-label={copy.openWebsite}
-                >
-                  <span>{copy.totalMarkets}</span>
-                  <strong>{activeMarkets.length}/{markets.length}</strong>
-                  <small>{copy.statusSummary}</small>
-                </button>
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="website"
-                  onClick={() => setActiveSection("website")}
-                  aria-label={copy.openWebsite}
-                >
-                  <span>{copy.totalTestimonials}</span>
-                  <strong>{activeTestimonials.length}/{testimonials.length}</strong>
-                  <small>{copy.statusSummary}</small>
-                </button>
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="common"
-                  onClick={() => setActiveSection("website")}
-                  aria-label={language === "MN" ? "Вэб контент руу очих" : "Open website content"}
-                >
-                  <span>{copy.firebaseSync}</span>
-                  <strong>
-                    {error
-                      ? copy.syncError
-                      : loading
-                        ? copy.syncLoading
-                        : saving
-                          ? copy.syncSaving
-                          : copy.syncLive}
-                  </strong>
-                </button>
-                <button
-                  type="button"
-                  className="admin-stat-card admin-stat-card-link admin-module-card"
-                  data-module="common"
-                  onClick={() => setActiveSection("website")}
-                  aria-label={language === "MN" ? "Вэб контент руу очих" : "Open website content"}
-                >
-                  <span>{copy.firestoreStructure}</span>
-                  <strong>{backend}</strong>
-                </button>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{language === "MN" ? "Системийн модуль архитектур" : "System module architecture"}</h2>
-                    <p>
-                      {language === "MN"
-                        ? "Нийтлэг цэсүүд болон Website, CRM, Finance, Factory module-ууд нэг sidebar navigation дээр төвлөрсөн бүтэц."
-                        : "A unified sidebar architecture for shared menus plus the Website, CRM, Finance, and Factory modules."}
-                    </p>
-                  </div>
-                </div>
-                <div className="admin-architecture-grid">
-                  {adminMenuGroups.map((group) => {
-                    const visibleItems = group.items.filter((item) => !item.requiresPrivilege || isPrivilegedUser);
-
-                    return (
-                      <div key={group.key} className="admin-architecture-card admin-module-card" data-module={group.key}>
-                        <span>{group.label}</span>
-                        <strong>{visibleItems.length}</strong>
-                        <p>{group.description}</p>
-                        <div className="admin-architecture-list">
-                          {visibleItems.map((item) => (
-                            <small key={item.id}>{item.label}</small>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.livePreview}</h2>
-                    <p>{copy.statusSummary}</p>
-                  </div>
-                </div>
-                <div className="admin-preview-grid">
-                  <div className="admin-preview-item">
-                    <Store size={18} />
-                    <div>
-                      <span>{copy.brandName}</span>
-                      <strong>{visibleSettings.brandName}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <Package size={18} />
-                    <div>
-                      <span>{copy.heroHeading}</span>
-                      <strong>{visibleSettings.heroHeading}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <Images size={18} />
-                    <div>
-                      <span>{copy.banners}</span>
-                      <strong>{activeHeroBanners[0] ? collectionNameBySlug.get(activeHeroBanners[0].collectionSlug) ?? "-" : "-"}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <MapPin size={18} />
-                    <div>
-                      <span>{copy.location}</span>
-                      <strong>{visibleSettings.location}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <MessageSquareQuote size={18} />
-                    <div>
-                      <span>{copy.testimonials}</span>
-                      <strong>{activeTestimonials[0]?.author ?? "-"}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.firestoreStructure}</h2>
-                    <p>
-                      {language === "MN"
-                        ? "Firestore path-ууд болон active-only public visibility логик."
-                        : "Firestore paths and active-only public visibility logic."}
-                    </p>
-                  </div>
-                </div>
-                <div className="admin-structure-list">
-                  <code>{structure.site}</code>
-                  <code>{structure.settings}</code>
-                  <code>{structure.collections}</code>
-                  <code>{structure.products}</code>
-                  <code>{structure.orders}</code>
-                  <code>{structure.contactMessages}</code>
-                  <code>{structure.heroBanners}</code>
-                  <code>{structure.markets}</code>
-                  <code>{structure.testimonials}</code>
-                </div>
-                {error && <div className="admin-sync-error">{error}</div>}
-              </div>
-            </>
+            <DashboardPage ctx={adminCtx} />
           ) : architectureSection && activeMenuGroup ? (
             <>
               <div className="admin-topbar">
@@ -3144,3498 +2737,36 @@ export default function Account() {
               </div>
             </>
           ) : activeSection === "website" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.website}</p>
-                  <h1>{copy.websiteTitle}</h1>
-                  <p>{copy.websiteText}</p>
-                </div>
-                <div className="admin-topbar-actions">
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={() => openHeroBannerModal()}
-                    disabled={bannerCategories.length === 0}
-                  >
-                    <Images size={16} />
-                    {copy.createBanner}
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-icon-btn admin-icon-btn-neutral"
-                    onClick={openSettingsModal}
-                    aria-label={copy.editWebsite}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.settings}</strong>
-                    <StatusBadge
-                      status={settings.status}
-                      activeLabel={copy.active}
-                      inactiveLabel={copy.inactive}
-                    />
-                  </div>
-                  <p>{settings.brandName}</p>
-                  <small>{copy.settingsInactiveNote}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.navigation}</strong>
-                    <span>{activeNavigationItems.length}/{settings.navigationItems.length}</span>
-                  </div>
-                  <p>{copy.navigationSummary}</p>
-                </div>
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.journal}</strong>
-                    <span>{activeJournalEntries.length}/{settings.journalEntries.length}</span>
-                  </div>
-                  <p>{copy.journalSummary}</p>
-                </div>
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.banners}</strong>
-                    <span>{activeHeroBanners.length}/{heroBanners.length}</span>
-                  </div>
-                  <p>{copy.bannerSummary}</p>
-                </div>
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.markets}</strong>
-                    <span>{activeMarkets.length}/{markets.length}</span>
-                  </div>
-                  <p>{copy.marketSummary}</p>
-                </div>
-                <div className="admin-summary-card">
-                  <div className="admin-inline-card-head">
-                    <strong>{copy.testimonials}</strong>
-                    <span>{activeTestimonials.length}/{testimonials.length}</span>
-                  </div>
-                  <p>{copy.testimonialSummary}</p>
-                </div>
-                {isPrivilegedUser ? (
-                  <div className="admin-summary-card">
-                    <div className="admin-inline-card-head">
-                      <strong>{copy.messagesMenu}</strong>
-                      <span>{contactMessages.length}</span>
-                    </div>
-                    <p>{copy.messagesSummary}</p>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.banners}</h2>
-                    <p>{copy.bannerSummary}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => openHeroBannerModal()}
-                    disabled={bannerCategories.length === 0}
-                  >
-                    <Plus size={16} />
-                    {copy.createBanner}
-                  </button>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>{copy.bannerImage}</th>
-                        <th>{copy.bannerCollection}</th>
-                        <th>{copy.status}</th>
-                        <th>{copy.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {heroBanners.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="admin-table-empty">
-                            {copy.bannerSummary}
-                          </td>
-                        </tr>
-                      ) : (
-                        heroBanners.map((heroBanner) => (
-                          <tr key={heroBanner.id}>
-                            <td>
-                              <div className="admin-table-primary-row">
-                                <div className="admin-product-thumb">
-                                  {heroBanner.image ? (
-                                    <img src={heroBanner.image} alt={collectionNameBySlug.get(heroBanner.collectionSlug) ?? copy.banners} />
-                                  ) : (
-                                    <span>B</span>
-                                  )}
-                                </div>
-                                <div className="admin-table-primary">
-                                  <strong>{collectionNameBySlug.get(heroBanner.collectionSlug) ?? "-"}</strong>
-                                  <small>
-                                    #{heroBanner.id} • {heroBanner.source === "prairiesoapshack.com" ? copy.bannerImportedSource : copy.bannerUploadedSource}
-                                  </small>
-                                </div>
-                              </div>
-                            </td>
-                            <td>{collectionNameBySlug.get(heroBanner.collectionSlug) ?? heroBanner.collectionSlug}</td>
-                            <td>
-                              <StatusBadge
-                                status={heroBanner.status}
-                                activeLabel={copy.active}
-                                inactiveLabel={copy.inactive}
-                              />
-                            </td>
-                            <td>
-                              <div className="admin-table-actions">
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn admin-icon-btn-neutral"
-                                  onClick={() => openHeroBannerModal(heroBanner)}
-                                  aria-label={`${copy.edit} ${heroBanner.id}`}
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn"
-                                  onClick={() => handleHeroBannerDeleteRequest(heroBanner)}
-                                  aria-label={`${copy.delete} ${heroBanner.id}`}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {bannerCategories.length === 0 && <div className="admin-sync-error">{copy.noCategories}</div>}
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.settings}</h2>
-                    <p>{copy.settingsInactiveNote}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="admin-icon-btn admin-icon-btn-neutral"
-                    onClick={openSettingsModal}
-                    aria-label={copy.edit}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </div>
-                <div className="admin-preview-grid">
-                  <div className="admin-preview-item">
-                    <Store size={18} />
-                    <div>
-                      <span>{copy.brandName}</span>
-                      <strong>{settings.brandName}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <Package size={18} />
-                    <div>
-                      <span>{copy.heroHeading}</span>
-                      <strong>{settings.heroHeading}</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <Globe size={18} />
-                    <div>
-                      <span>{copy.navigation}</span>
-                      <strong>{activeNavigationItems.length} active</strong>
-                    </div>
-                  </div>
-                  <div className="admin-preview-item">
-                    <MessageSquareQuote size={18} />
-                    <div>
-                      <span>{copy.journal}</span>
-                      <strong>{getLocalizedManagedText(language, settings.journalHeadingEn, settings.journalHeadingMn)}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.navigation}</h2>
-                    <p>{copy.navigationSummary}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={() => inactiveNavigationItems[0] && openNavigationModal(inactiveNavigationItems[0])}
-                    disabled={inactiveNavigationItems.length === 0}
-                  >
-                    <Plus size={16} />
-                    {copy.add}
-                  </button>
-                </div>
-                <div className="admin-stack">
-                  {navigationPreviewItems.map((item) => {
-                    const navigationLabel = getManagedNavigationLabel(item, language);
-                    const hasPageBannerImage = Boolean(item.pageBannerImage.trim());
-
-                    return (
-                      <div key={item.id} className="admin-inline-card">
-                        <div className="admin-inline-card-head">
-                          <div className="admin-entity-head admin-navigation-entity">
-                            <div className="admin-navigation-thumb">
-                              {hasPageBannerImage ? (
-                                <img src={item.pageBannerImage} alt={navigationLabel} />
-                              ) : (
-                                <span>{navigationLabel.slice(0, 1) || item.id.slice(0, 1).toUpperCase()}</span>
-                              )}
-                            </div>
-                            <div className="admin-navigation-copy">
-                              <strong>{navigationLabel}</strong>
-                              <small>{item.id}</small>
-                            </div>
-                            <StatusBadge
-                              status={item.status}
-                              activeLabel={copy.active}
-                              inactiveLabel={copy.inactive}
-                            />
-                          </div>
-                          <div className="admin-entity-actions">
-                            <button
-                              type="button"
-                              className="admin-icon-btn admin-icon-btn-neutral"
-                              onClick={() => openNavigationModal(item)}
-                              aria-label={`${copy.edit} ${item.id}`}
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            {item.status === "active" ? (
-                              <button
-                                type="button"
-                                className="admin-icon-btn"
-                                onClick={() => handleNavigationDeleteRequest(item)}
-                                aria-label={`${copy.delete} ${item.id}`}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                        <small>
-                          {item.group === "left" ? copy.leftGroup : copy.rightGroup}
-                          {" • "}
-                          {copy.sortOrder} #{item.sortOrder}
-                        </small>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.journal}</h2>
-                    <p>{copy.journalSummary}</p>
-                  </div>
-                  <div className="admin-topbar-actions">
-                    <button type="button" className="btn btn-outline" onClick={openJournalSettingsModal}>
-                      <Pencil size={16} />
-                      {copy.editJournalSection}
-                    </button>
-                    <button type="button" className="btn btn-primary" onClick={() => openJournalEntryModal()}>
-                      <Plus size={16} />
-                      {copy.createJournal}
-                    </button>
-                  </div>
-                </div>
-                <div className="admin-stack">
-                  <div className="admin-inline-card">
-                    <strong>{getLocalizedManagedText(language, settings.journalHeadingEn, settings.journalHeadingMn)}</strong>
-                    <small>
-                      {getLocalizedManagedText(language, settings.journalSubtextEn, settings.journalSubtextMn)}
-                    </small>
-                  </div>
-                  {journalPreviewEntries.length === 0 ? (
-                    <div className="admin-inline-card">
-                      <p>{copy.journalSummary}</p>
-                    </div>
-                  ) : (
-                    journalPreviewEntries.map((entry) => (
-                      <div key={entry.id} className="admin-inline-card">
-                        <div className="admin-inline-card-head">
-                          <div className="admin-entity-head admin-navigation-entity">
-                            <div className="admin-navigation-thumb">
-                              {entry.image.trim() ? (
-                                <img
-                                  src={entry.image}
-                                  alt={getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}
-                                />
-                              ) : (
-                                <span>
-                                  {(getManagedJournalTitle(entry, language) ||
-                                    getManagedJournalCategory(entry, language) ||
-                                    "J"
-                                  )
-                                    .slice(0, 1)
-                                    .toUpperCase()}
-                                </span>
-                              )}
-                            </div>
-                            <div className="admin-navigation-copy">
-                              <strong>{getManagedJournalTitle(entry, language) || `${copy.journal} #${entry.id}`}</strong>
-                              <small>{getManagedJournalCategory(entry, language) || `#${entry.id}`}</small>
-                            </div>
-                            <StatusBadge
-                              status={entry.status}
-                              activeLabel={copy.active}
-                              inactiveLabel={copy.inactive}
-                            />
-                          </div>
-                          <div className="admin-entity-actions">
-                            <button
-                              type="button"
-                              className="admin-icon-btn admin-icon-btn-neutral"
-                              onClick={() => openJournalEntryModal(entry)}
-                              aria-label={`${copy.edit} ${entry.id}`}
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-icon-btn"
-                              onClick={() => handleJournalEntryDeleteRequest(entry)}
-                              aria-label={`${copy.delete} ${entry.id}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                        <small>
-                          {formatAdminDateTime(entry.publishedAt, language)}
-                          {entry.author ? ` • ${entry.author}` : ""}
-                        </small>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.markets}</h2>
-                    <p>{copy.marketSummary}</p>
-                  </div>
-                  <button type="button" className="btn btn-primary" onClick={() => openMarketModal()}>
-                    <Plus size={16} />
-                    {copy.createMarket}
-                  </button>
-                </div>
-                <div className="admin-stack">
-                  {markets.map((market) => (
-                    <div key={market.id} className="admin-inline-card">
-                      <div className="admin-inline-card-head">
-                        <div className="admin-entity-head">
-                          <strong>{market.name || "Market"}</strong>
-                          <StatusBadge status={market.status} activeLabel={copy.active} inactiveLabel={copy.inactive} />
-                        </div>
-                        <div className="admin-entity-actions">
-                          <button
-                            type="button"
-                            className="admin-icon-btn admin-icon-btn-neutral"
-                            onClick={() => openMarketModal(market)}
-                            aria-label={`${copy.edit} ${market.name || "market"}`}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button type="button" className="admin-icon-btn" onClick={() => handleMarketDeleteRequest(market)}>
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <p>{market.schedule || "-"}</p>
-                      <small>{market.address || "-"}</small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="admin-section-card">
-                <div className="admin-section-head">
-                  <div>
-                    <h2>{copy.testimonials}</h2>
-                    <p>{copy.testimonialSummary}</p>
-                  </div>
-                  <button type="button" className="btn btn-primary" onClick={() => openTestimonialModal()}>
-                    <Plus size={16} />
-                    {copy.createTestimonial}
-                  </button>
-                </div>
-                <div className="admin-stack">
-                  {testimonials.map((testimonial) => (
-                    <div key={testimonial.id} className="admin-inline-card">
-                      <div className="admin-inline-card-head">
-                        <div className="admin-entity-head">
-                          <strong>{testimonial.author || "Customer"}</strong>
-                          <StatusBadge
-                            status={testimonial.status}
-                            activeLabel={copy.active}
-                            inactiveLabel={copy.inactive}
-                          />
-                        </div>
-                        <div className="admin-entity-actions">
-                          <button
-                            type="button"
-                            className="admin-icon-btn admin-icon-btn-neutral"
-                            onClick={() => openTestimonialModal(testimonial)}
-                            aria-label={`${copy.edit} ${testimonial.author || "testimonial"}`}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="admin-icon-btn"
-                            onClick={() => handleTestimonialDeleteRequest(testimonial)}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <p>{testimonial.text || "-"}</p>
-                      <small>{testimonial.location || "-"}</small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
+            <WebsitePage ctx={adminCtx} />
           ) : activeSection === "messages" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.messagesMenu}</p>
-                  <h1>{copy.messagesTitle}</h1>
-                  <p>{copy.messagesText}</p>
-                </div>
-              </div>
-
-              {contactMessagesError && <div className="admin-sync-error">{contactMessagesError}</div>}
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.totalMessages}</span>
-                  <strong>{contactMessages.length}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.messagesLast7Days}</span>
-                  <strong>{contactMessagesLast7DaysCount}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.latestReceived}</span>
-                  <strong>{formatAdminDateTime(latestContactMessageAt, language)}</strong>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.messagesMenu}</h2>
-                    <p>{copy.messagesListHelp}</p>
-                  </div>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table admin-messages-table">
-                    <thead>
-                      <tr>
-                        <th>{copy.receivedAt}</th>
-                        <th>{copy.senderName}</th>
-                        <th>{copy.senderEmail}</th>
-                        <th>{copy.messageSubject}</th>
-                        <th>{copy.messageBody}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {contactMessages.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="admin-table-empty">
-                            {copy.emptyMessages}
-                          </td>
-                        </tr>
-                      ) : (
-                        contactMessages.map((contactMessage) => (
-                          <tr key={contactMessage.id}>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{formatAdminDateTime(contactMessage.createdAt, language)}</strong>
-                                <small>#{contactMessage.id.slice(0, 6).toUpperCase()}</small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{contactMessage.name}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <a className="admin-contact-email-link" href={`mailto:${contactMessage.email}`}>
-                                  {contactMessage.email}
-                                </a>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary admin-table-cell-wrap">
-                                <strong>{contactMessage.subject}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary admin-table-cell-wrap admin-contact-message-cell">
-                                <p className="admin-contact-message-text">{contactMessage.message}</p>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <MessagesPage ctx={adminCtx} />
           ) : activeSection === "orders" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.orders}</p>
-                  <h1>{copy.ordersTitle}</h1>
-                  <p>{copy.ordersText}</p>
-                </div>
-              </div>
-
-              {ordersError && <div className="admin-sync-error">{ordersError}</div>}
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.totalOrders}</span>
-                  <strong>{orders.length}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.paidOrders}</span>
-                  <strong>{paidOrdersCount}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.deliveringOrders}</span>
-                  <strong>{deliveringOrdersCount}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.deliveredOrders}</span>
-                  <strong>{deliveredOrdersCount}</strong>
-                </div>
-                <div className="admin-summary-card admin-summary-card-compact">
-                  <span>{copy.guestOrders}</span>
-                  <strong>{guestOrdersCount}</strong>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.orders}</h2>
-                    <p>
-                      {language === "MN"
-                        ? "Захиалгын дугаар дээр дарж төлөв болон хүргэлтийн мэдээллийг засна."
-                        : "Click an order number to edit the status and delivery details."}
-                    </p>
-                  </div>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table admin-orders-table">
-                    <thead>
-                      <tr>
-                        <th>{language === "MN" ? "Захиалга" : "Order"}</th>
-                        <th>{language === "MN" ? "Үүссэн хугацаа" : "Created"}</th>
-                        <th>{copy.status}</th>
-                        <th>{language === "MN" ? "Бараа" : "Items"}</th>
-                        <th>{copy.paymentLabel}</th>
-                        <th>{language === "MN" ? "Нийт дүн" : "Total"}</th>
-                        <th>{language === "MN" ? "Эх сурвалж" : "Source"}</th>
-                        <th>{language === "MN" ? "Хүлээн авагч" : "Recipient"}</th>
-                        <th>{language === "MN" ? "Утас" : "Phone"}</th>
-                        <th>{language === "MN" ? "Дүүрэг" : "District"}</th>
-                        <th>{language === "MN" ? "Баг" : "Bag"}</th>
-                        <th>{language === "MN" ? "Нэмэлт" : "Additional"}</th>
-                        <th className="admin-table-sticky-action">{copy.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orders.length === 0 ? (
-                        <tr>
-                          <td colSpan={13} className="admin-table-empty">
-                            {copy.emptyOrders}
-                          </td>
-                        </tr>
-                      ) : (
-                        orders.map((order) => (
-                          <tr key={order.id}>
-                            <td>
-                              <button type="button" className="admin-table-link" onClick={() => openOrderModal(order)}>
-                                <div className="admin-table-primary">
-                                  <strong>{order.orderNumber}</strong>
-                                  <small>{language === "MN" ? "Дарж засварлана" : "Click to edit"}</small>
-                                </div>
-                              </button>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{formatAdminDateTime(order.createdAt, language)}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <span className={getOrderStatusClassName(order.status)}>
-                                  {getOrderStatusLabel(order.status, language)}
-                                </span>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary admin-order-table-items admin-table-cell-wrap">
-                                <div className="admin-order-table-item-names">
-                                  {order.items.map((item, itemIndex) => (
-                                    <span key={`${order.id}-${item.productId}-${item.variant ?? "default"}-${itemIndex}`}>
-                                      {item.name}
-                                      {item.variant ? ` / ${item.variant}` : ""}
-                                      {` × ${item.quantity}`}
-                                    </span>
-                                  ))}
-                                </div>
-                                <small>
-                                  {language === "MN"
-                                    ? `Нийт ${getOrderTotalQuantity(order)} ширхэг`
-                                    : `Total ${getOrderTotalQuantity(order)} pcs`}
-                                </small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{order.payment.method.toUpperCase()}</strong>
-                                <small>{getOrderPaymentStatusLabel(order.payment.status, language)}</small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{formatStorePrice(order.totals.grandTotal)}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <span className="admin-table-code">
-                                {order.auth.isAnonymous
-                                  ? language === "MN"
-                                    ? "Зочин"
-                                    : "Guest"
-                                  : getAuthMethodLabel(order.auth.method as UserAuthMethod, language)}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{order.customer.fullName || order.customer.phoneNumber || "-"}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{order.customer.phoneNumber}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{order.address.districtOrSoum || "-"}</strong>
-                                <small>{order.address.region || "-"}</small>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary">
-                                <strong>{order.address.khorooOrBag || "-"}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-primary admin-table-cell-wrap">
-                                <strong>{order.address.streetAddress || "-"}</strong>
-                                <small>
-                                  {[order.address.additionalAddress, order.customer.note].filter(Boolean).join(" • ") || "-"}
-                                </small>
-                              </div>
-                            </td>
-                            <td className="admin-table-sticky-action">
-                              <div className="admin-table-actions">
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn admin-icon-btn-neutral"
-                                  onClick={() => openOrderModal(order)}
-                                  aria-label={`${copy.edit} ${order.orderNumber}`}
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <OrdersPage ctx={adminCtx} />
           ) : activeSection === "users" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{language === "MN" ? "Хэрэглэгч" : "Users"}</p>
-                  <h1>{language === "MN" ? "Хэрэглэгчийн жагсаалт" : "User Directory"}</h1>
-                  <p>
-                    {language === "MN"
-                      ? "Бүртгүүлсэн хэрэглэгчдийн role, бүртгэлийн төрөл, сүүлийн нэвтрэх аргыг эндээс харна."
-                      : "Review registered users, their roles, registration types, and their latest authentication method."}
-                  </p>
-                </div>
-              </div>
-
-              {directoryError && <div className="admin-sync-error">{directoryError}</div>}
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card">
-                  <span>{language === "MN" ? "Нийт хэрэглэгч" : "Total users"}</span>
-                  <strong>{directoryUsers.length}</strong>
-                  <small>{language === "MN" ? "Бүртгэлтэй хэрэглэгчдийн тоо" : "Registered user profiles"}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{getRoleLabel("sysadmin", language)}</span>
-                  <strong>{userRoleCounts.sysadmin}</strong>
-                  <small>{language === "MN" ? "Бүрэн эрхтэй хэрэглэгч" : "Full-access operators"}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{getRoleLabel("admin", language)}</span>
-                  <strong>{userRoleCounts.admin}</strong>
-                  <small>{language === "MN" ? "Админ эрхтэй хэрэглэгч" : "Admin operators"}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{getRoleLabel("worker", language)}</span>
-                  <strong>{userRoleCounts.worker}</strong>
-                  <small>{language === "MN" ? "Ажилтны эрхтэй хэрэглэгч" : "Employee accounts"}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{getRoleLabel("customer", language)}</span>
-                  <strong>{userRoleCounts.customer}</strong>
-                  <small>{language === "MN" ? "Энгийн бүртгэлтэй хэрэглэгч" : "Standard registered users"}</small>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{language === "MN" ? "Хэрэглэгчид" : "Users"}</h2>
-                    <p>
-                      {language === "MN"
-                        ? "Registration method болон last auth method-оор ялгаж харуулна."
-                        : "Grouped by registration method and latest authentication method."}
-                    </p>
-                  </div>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>{language === "MN" ? "Хэрэглэгч" : "User"}</th>
-                        <th>{language === "MN" ? "Role" : "Role"}</th>
-                        <th>{language === "MN" ? "Бүртгэсэн төрөл" : "Registered Via"}</th>
-                        <th>{language === "MN" ? "Сүүлийн нэвтрэлт" : "Last Auth"}</th>
-                        <th>{language === "MN" ? "Холбоо барих" : "Contact"}</th>
-                        <th className="admin-table-sticky-action">{copy.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {directoryUsers.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="admin-table-empty">
-                            {language === "MN" ? "Хэрэглэгч олдсонгүй." : "No user profiles found."}
-                          </td>
-                        </tr>
-                      ) : (
-                        directoryUsers.map((directoryUser) => {
-                          const resolvedRole = resolveUserRole(directoryUser);
-
-                          return (
-                            <tr key={directoryUser.uid}>
-                              <td>
-                                <div className="admin-table-primary">
-                                  <strong>{getUserIdentity(directoryUser)}</strong>
-                                  <small>{directoryUser.uid}</small>
-                                </div>
-                              </td>
-                              <td>{getRoleLabel(resolvedRole, language)}</td>
-                              <td>
-                                <div className="admin-table-primary">
-                                  <strong>{getAuthMethodLabel(directoryUser.registrationMethod, language)}</strong>
-                                  <small>
-                                    {directoryUser.registrationMethod === "phone" && directoryUser.hasPassword
-                                      ? language === "MN"
-                                        ? "password-той phone account"
-                                        : "phone account with password"
-                                      : directoryUser.hasPassword
-                                        ? language === "MN"
-                                          ? "password идэвхтэй"
-                                          : "password enabled"
-                                        : language === "MN"
-                                          ? "password ашиглахгүй"
-                                          : "no password"}
-                                  </small>
-                                </div>
-                              </td>
-                              <td>
-                                <div className="admin-table-primary">
-                                  <strong>{getAuthMethodLabel(directoryUser.lastAuthMethod, language)}</strong>
-                                  <small>
-                                    {directoryUser.lastSignInAt
-                                      ? new Date(directoryUser.lastSignInAt).toLocaleString(language === "MN" ? "mn-MN" : "en-US")
-                                      : "-"}
-                                  </small>
-                                </div>
-                              </td>
-                              <td>
-                                <div className="admin-table-primary">
-                                  <strong>{directoryUser.phoneNumber ?? directoryUser.email ?? "-"}</strong>
-                                  <small>{directoryUser.email ?? directoryUser.phoneLoginEmail ?? "-"}</small>
-                                </div>
-                              </td>
-                              <td className="admin-table-sticky-action">
-                                <div className="admin-table-actions">
-                                  <button
-                                    type="button"
-                                    className="admin-icon-btn admin-icon-btn-neutral"
-                                    onClick={() => openUserProfileModal(directoryUser)}
-                                    title={copy.editUser}
-                                    aria-label={`${copy.editUser} ${getUserIdentity(directoryUser)}`}
-                                  >
-                                    <Pencil size={15} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <UsersPage ctx={adminCtx} />
           ) : activeSection === "categories" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.collections}</p>
-                  <h1>{copy.categoriesTitle}</h1>
-                  <p>{copy.categoriesText}</p>
-                </div>
-                <div className="admin-topbar-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setActiveSection("products")}>
-                    <Package size={16} />
-                    {copy.openProducts}
-                  </button>
-                  <button type="button" className="btn btn-primary" onClick={() => openCollectionModal()}>
-                    <Plus size={16} />
-                    {copy.createCollection}
-                  </button>
-                </div>
-              </div>
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card">
-                  <span>{copy.totalCollections}</span>
-                  <strong>{collections.length}</strong>
-                  <small>{copy.categorySummary}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.activeCount}</span>
-                  <strong>{activeCollections.length}</strong>
-                  <small>{copy.activeOnWebsite}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.inactiveCount}</span>
-                  <strong>{inactiveCollectionsCount}</strong>
-                  <small>{copy.statusSummary}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.linkedProducts}</span>
-                  <strong>{linkedCollectionCount}</strong>
-                  <small>{copy.categoryDependencyError}</small>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.collections}</h2>
-                    <p>{copy.categorySummary}</p>
-                  </div>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>{copy.name}</th>
-                        <th>{copy.description}</th>
-                        <th>{copy.linkedProducts}</th>
-                        <th>{copy.status}</th>
-                        <th>{copy.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {collections.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="admin-table-empty">
-                            {copy.emptyCategories}
-                          </td>
-                        </tr>
-                      ) : (
-                        collections.map((collection) => (
-                          <tr key={collection.id}>
-                            <td>
-                              <div className="admin-table-primary-row">
-                                <div className="admin-product-thumb">
-                                  {getCollectionPrimaryImage(collection) ? (
-                                    <img src={getCollectionPrimaryImage(collection)} alt={collection.name} />
-                                  ) : (
-                                    <span>{collection.name.slice(0, 1) || "C"}</span>
-                                  )}
-                                </div>
-                                <div className="admin-table-primary">
-                                  <strong>{collection.name || copy.collections}</strong>
-                                  <small>
-                                    #{collection.id}
-                                    {isSystemCollection(collection) ? ` • ${copy.categorySystemNote}` : ""}
-                                  </small>
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="admin-table-description">{collection.description || "-"}</div>
-                            </td>
-                            <td>{productCountByCategory.get(collection.slug) ?? 0}</td>
-                            <td>
-                              <StatusBadge
-                                status={collection.status}
-                                activeLabel={copy.active}
-                                inactiveLabel={copy.inactive}
-                              />
-                            </td>
-                            <td>
-                              <div className="admin-table-actions">
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn admin-icon-btn-neutral"
-                                  onClick={() => openCollectionModal(collection)}
-                                  aria-label={`${copy.edit} ${collection.name}`}
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn"
-                                  onClick={() => handleCollectionDeleteRequest(collection)}
-                                  aria-label={`${copy.delete} ${collection.name}`}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <CategoriesPage ctx={adminCtx} />
+          ) : activeSection === "crmOverview" ? (
+            <CrmOverviewPage ctx={adminCtx} />
+          ) : activeSection === "crmCustomers" ? (
+            <CrmCustomersPage ctx={adminCtx} />
+          ) : activeSection === "crmCustomerTransactions" ? (
+            <CrmCustomerTransactionsPage ctx={adminCtx} />
+          ) : activeSection === "factoryOverview" ? (
+            <FactoryOverviewPage ctx={adminCtx} />
+          ) : activeSection === "factoryProduction" ? (
+            <FactoryProductionPage ctx={adminCtx} />
+          ) : activeSection === "rawMaterials" ? (
+            <RawMaterialsPage ctx={adminCtx} />
           ) : activeSection === "factoryInventory" ? (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{language === "MN" ? "Factory" : "Factory"}</p>
-                  <h1>{copy.inventoryTitle}</h1>
-                  <p>{copy.inventoryText}</p>
-                </div>
-              </div>
-
-              <div className="admin-summary-grid" style={{ marginBottom: "1.5rem" }}>
-                <div className="admin-summary-card">
-                  <span>{language === "MN" ? "Нийт төрөл" : "Total types"}</span>
-                  <strong>{packagingItems.length}</strong>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{language === "MN" ? "Нийт үлдэгдэл" : "Total remaining"}</span>
-                  <strong>{packagingItems.reduce((s, p) => s + p.remaining, 0)}</strong>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.packagingTitle}</h2>
-                    <p>{copy.packagingSummary}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() =>
-                      setPackagingModal({
-                        mode: "create",
-                        draft: { id: Date.now(), name: "", size: "", remaining: 0, sortOrder: packagingItems.length },
-                      })
-                    }
-                  >
-                    <Plus size={16} /> {copy.packagingModalCreate}
-                  </button>
-                </div>
-
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{copy.packagingName}</th>
-                        <th>{copy.packagingSize}</th>
-                        <th>{copy.packagingRemaining}</th>
-                        <th>{copy.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {packagingItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="admin-table-empty">{copy.packagingEmpty}</td>
-                        </tr>
-                      ) : (
-                        packagingItems.map((item, idx) => (
-                          <tr key={item.id}>
-                            <td>{idx + 1}</td>
-                            <td><strong>{item.name}</strong></td>
-                            <td>{item.size || "—"}</td>
-                            <td>{item.remaining}</td>
-                            <td>
-                              <div className="admin-table-actions">
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn admin-icon-btn-neutral"
-                                  onClick={() => setPackagingModal({ mode: "edit", draft: { ...item } })}
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="admin-icon-btn"
-                                  onClick={() =>
-                                    openConfirmModal({
-                                      title: copy.confirmDeleteTitle,
-                                      description: copy.deletePackagingDescription,
-                                      confirmLabel: copy.delete,
-                                      destructive: true,
-                                      onConfirm: () => deletePackaging(item.id),
-                                    })
-                                  }
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <FactoryInventoryPage ctx={adminCtx} />
           ) : (
-            <>
-              <div className="admin-topbar">
-                <div>
-                  <p className="admin-kicker">{copy.products}</p>
-                  <h1>{copy.productsTitle}</h1>
-                  <p>{copy.productsText}</p>
-                </div>
-                <div className="admin-topbar-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setActiveSection("categories")}>
-                    <Store size={16} />
-                    {copy.openCategories}
-                  </button>
-                  <button type="button" className="btn btn-primary" onClick={() => openProductModal()}>
-                    <Plus size={16} />
-                    {copy.createProduct}
-                  </button>
-                </div>
-              </div>
-
-              {selectableCategories.length === 0 && <div className="admin-sync-error">{copy.noCategories}</div>}
-
-              <div className="admin-summary-grid">
-                <div className="admin-summary-card">
-                  <span>{copy.totalProducts}</span>
-                  <strong>{products.length}</strong>
-                  <small>{copy.productSummary}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.activeCount}</span>
-                  <strong>{activeProducts.length}</strong>
-                  <small>{copy.activeOnWebsite}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.inactiveCount}</span>
-                  <strong>{inactiveProductsCount}</strong>
-                  <small>{copy.statusSummary}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.bestSellerCount}</span>
-                  <strong>{bestSellerCount}</strong>
-                  <small>{copy.bestSeller}</small>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.totalStock}</span>
-                  <strong>{totalStockSum}</strong>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.soldCount}</span>
-                  <strong>{totalSoldSum}</strong>
-                </div>
-                <div className="admin-summary-card">
-                  <span>{copy.stockRemaining}</span>
-                  <strong>{totalRemainingSum}</strong>
-                </div>
-              </div>
-
-              <div className="admin-filter-bar">
-                <div className="admin-filter-search">
-                  <Search size={16} className="admin-filter-search-icon" />
-                  <input
-                    type="text"
-                    placeholder={copy.searchByName}
-                    value={productSearchName}
-                    onChange={(e) => setProductSearchName(e.target.value)}
-                  />
-                </div>
-                <div className="admin-filter-group">
-                  <SlidersHorizontal size={14} className="admin-filter-group-icon" />
-                  <select
-                    value={productFilterCategory}
-                    onChange={(e) => setProductFilterCategory(e.target.value)}
-                  >
-                    <option value="">{copy.allCategories}</option>
-                    {selectableCategories.map((cat) => (
-                      <option key={cat.slug} value={cat.slug}>{cat.name}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    placeholder={copy.priceMin}
-                    value={productFilterPriceMin}
-                    onChange={(e) => setProductFilterPriceMin(e.target.value)}
-                  />
-                  <span className="admin-filter-divider">–</span>
-                  <input
-                    type="number"
-                    placeholder={copy.priceMax}
-                    value={productFilterPriceMax}
-                    onChange={(e) => setProductFilterPriceMax(e.target.value)}
-                  />
-                </div>
-                <div className="admin-filter-meta">
-                  {(productSearchName || productFilterCategory || productFilterPriceMin || productFilterPriceMax) && (
-                    <button
-                      type="button"
-                      className="admin-filter-clear"
-                      onClick={() => {
-                        setProductSearchName("");
-                        setProductFilterCategory("");
-                        setProductFilterPriceMin("");
-                        setProductFilterPriceMax("");
-                      }}
-                    >
-                      <X size={14} />
-                      {copy.clearFilters}
-                    </button>
-                  )}
-                  <span className="admin-filter-count">
-                    {filteredProducts.length} / {products.length} {copy.showingResults}
-                  </span>
-                </div>
-              </div>
-
-              <div className="admin-data-card">
-                <div className="admin-data-card-head">
-                  <div>
-                    <h2>{copy.products}</h2>
-                    <p>{copy.productSummary}</p>
-                  </div>
-                </div>
-                <div className="admin-data-table-wrap">
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>{copy.name}</th>
-                        <th>{copy.category}</th>
-                        <th>{copy.price}</th>
-                        <th>{copy.compareShort}</th>
-                        <th>{copy.stockRemaining}</th>
-                        <th>{copy.status}</th>
-                        <th>{copy.actions}</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredProducts.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="admin-table-empty">
-                            {copy.emptyProducts}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredProducts.map((product) => {
-                          const isExpanded = expandedProductId === product.id;
-                          const stock = product.variants?.length
-                            ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
-                            : (product.totalStock ?? 0);
-                          const sold = product.soldCount ?? 0;
-                          const remaining = stock - sold;
-                          return (
-                            <React.Fragment key={product.id}>
-                              <tr
-                                className={`admin-product-row-clickable ${isExpanded ? "admin-product-row-expanded" : ""}`}
-                                onClick={() => setExpandedProductId(isExpanded ? null : product.id)}
-                              >
-                                <td>
-                                  <div className="admin-table-primary-row">
-                                    <div className="admin-product-thumb">
-                                      {getProductPrimaryImage(product) ? (
-                                        <img src={getProductPrimaryImage(product)} alt={product.name} />
-                                      ) : (
-                                        <span>{product.name.slice(0, 1)}</span>
-                                      )}
-                                    </div>
-                                    <div className="admin-table-primary">
-                                      <strong>{product.name || "Product"}</strong>
-                                      <small>
-                                        #{product.id}
-                                        {product.bestSeller ? ` • ${copy.bestSeller}` : ""}
-                                      </small>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td>{collectionNameBySlug.get(product.category) ?? product.category}</td>
-                                <td>{formatStorePrice(product.price)}</td>
-                                <td>{product.compareAtPrice ? formatStorePrice(product.compareAtPrice) : "-"}</td>
-                                <td>{remaining}/{stock}</td>
-                                <td>
-                                  <StatusBadge
-                                    status={product.status}
-                                    activeLabel={copy.active}
-                                    inactiveLabel={copy.inactive}
-                                  />
-                                </td>
-                                <td>
-                                  <div className="admin-table-actions">
-                                    <button
-                                      type="button"
-                                      className="admin-icon-btn admin-icon-btn-neutral"
-                                      onClick={(e) => { e.stopPropagation(); openProductModal(product); }}
-                                      aria-label={`${copy.edit} ${product.name}`}
-                                    >
-                                      <Pencil size={15} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="admin-icon-btn"
-                                      onClick={(e) => { e.stopPropagation(); handleProductDeleteRequest(product); }}
-                                      aria-label={`${copy.delete} ${product.name}`}
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                </td>
-                                <td>
-                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                </td>
-                              </tr>
-                              {isExpanded && (() => {
-                                const productOrders = orders
-                                  .filter((o) => o.items.some((it) => it.productId === product.id))
-                                  .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-                                return (
-                                  <tr className="admin-product-expand-row">
-                                    <td colSpan={8}>
-                                      <div className="admin-product-expand">
-                                        <div className="admin-product-expand-top">
-                                          <div className="admin-product-expand-stats">
-                                            <div className="admin-expand-stat">
-                                              <small>{copy.totalStock}</small>
-                                              <strong>{stock}</strong>
-                                            </div>
-                                            <div className="admin-expand-stat">
-                                              <small>{copy.soldCount}</small>
-                                              <strong>{sold}</strong>
-                                            </div>
-                                            <div className="admin-expand-stat">
-                                              <small>{copy.stockRemaining}</small>
-                                              <strong>{remaining}</strong>
-                                            </div>
-                                          </div>
-                                          {product.variants?.length ? (
-                                            <div className="admin-product-expand-variants">
-                                              {product.variants.map((v, i) => {
-                                                const vRemaining = (v.quantity || 0) - (v.soldCount ?? 0);
-                                                return (
-                                                  <div key={i} className="admin-product-expand-variant">
-                                                    <span className="admin-expand-variant-name">{v.name}</span>
-                                                    <span>{formatStorePrice(v.price)}</span>
-                                                    <span className="admin-expand-variant-stock">{v.soldCount ?? 0}/{vRemaining}</span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                        <div className="admin-product-expand-section">
-                                          <h4>{language === "MN" ? "Борлуулалтын түүх" : "Sales history"}</h4>
-                                          {productOrders.length === 0 ? (
-                                            <p className="admin-expand-empty">{language === "MN" ? "Борлуулалт байхгүй" : "No sales yet"}</p>
-                                          ) : (
-                                            <div className="admin-expand-sales-table-wrap">
-                                              <table className="admin-expand-sales-table">
-                                                <thead>
-                                                  <tr>
-                                                    <th>{language === "MN" ? "Огноо" : "Date"}</th>
-                                                    <th>{language === "MN" ? "Захиалга" : "Order"}</th>
-                                                    <th>{language === "MN" ? "Variant" : "Variant"}</th>
-                                                    <th>{language === "MN" ? "Тоо" : "Qty"}</th>
-                                                    <th>{language === "MN" ? "Үнэ" : "Price"}</th>
-                                                    <th>{language === "MN" ? "Нийт" : "Total"}</th>
-                                                    <th>{language === "MN" ? "Төлөв" : "Status"}</th>
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {productOrders.map((o) =>
-                                                    o.items
-                                                      .filter((it) => it.productId === product.id)
-                                                      .map((it, idx) => (
-                                                        <tr key={`${o.id}-${idx}`}>
-                                                          <td>{formatAdminDateTime(o.createdAt, language)}</td>
-                                                          <td><small>#{o.orderNumber}</small></td>
-                                                          <td>{it.variant || "—"}</td>
-                                                          <td>{it.quantity}</td>
-                                                          <td>{formatStorePrice(it.unitPrice)}</td>
-                                                          <td><strong>{formatStorePrice(it.lineTotal)}</strong></td>
-                                                          <td>
-                                                            <span className={`admin-expand-order-status admin-expand-order-${o.status}`}>
-                                                              {o.status}
-                                                            </span>
-                                                          </td>
-                                                        </tr>
-                                                      ))
-                                                  )}
-                                                </tbody>
-                                                <tfoot>
-                                                  <tr>
-                                                    <td colSpan={3}><strong>{language === "MN" ? "Нийт" : "Total"}</strong></td>
-                                                    <td><strong>{productOrders.reduce((s, o) => s + o.items.filter((it) => it.productId === product.id).reduce((a, it) => a + it.quantity, 0), 0)}</strong></td>
-                                                    <td></td>
-                                                    <td><strong>{formatStorePrice(productOrders.reduce((s, o) => s + o.items.filter((it) => it.productId === product.id).reduce((a, it) => a + it.lineTotal, 0), 0))}</strong></td>
-                                                    <td></td>
-                                                  </tr>
-                                                </tfoot>
-                                              </table>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })()}
-                            </React.Fragment>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+            <ProductsPage ctx={adminCtx} />
           )}
         </section>
       </div>
 
-      {settingsModal && (
-        <AdminModal
-          title={copy.settingsModalTitle}
-          description={copy.settingsModalText}
-          onClose={() => setSettingsModal(null)}
-          wide
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveSettingsDraft(settingsModal.draft);
-              setSettingsModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={settingsModal.draft.status}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: {
-                        ...settingsModal.draft,
-                        status: event.target.value as EntityStatus,
-                      },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.brandName}</span>
-                <input
-                  value={settingsModal.draft.brandName}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, brandName: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.brandDescription}</span>
-                <textarea
-                  value={settingsModal.draft.brandDescription}
-                  rows={3}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, brandDescription: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.heroHeading}</span>
-                <input
-                  value={settingsModal.draft.heroHeading}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, heroHeading: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.heroSubtext}</span>
-                <textarea
-                  value={settingsModal.draft.heroSubtext}
-                  rows={2}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, heroSubtext: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.aboutTitle}</span>
-                <input
-                  value={settingsModal.draft.aboutIntroTitle}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, aboutIntroTitle: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.aboutBody}</span>
-                <textarea
-                  value={settingsModal.draft.aboutIntroBody}
-                  rows={6}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, aboutIntroBody: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.contactPhone}</span>
-                <input
-                  value={settingsModal.draft.contactPhone}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      ...settingsModal,
-                      draft: { ...settingsModal.draft, contactPhone: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.contactEmail}</span>
-                <input
-                  value={settingsModal.draft.contactEmail}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, contactEmail: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.location}</span>
-                <input
-                  value={settingsModal.draft.location}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, location: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.responseTime}</span>
-                <input
-                  value={settingsModal.draft.responseTime}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, responseTime: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.facebookUrl}</span>
-                <input
-                  value={settingsModal.draft.facebookUrl}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, facebookUrl: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.instagramHandle}</span>
-                <input
-                  value={settingsModal.draft.instagramHandle}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, instagramHandle: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.instagramUrl}</span>
-                <input
-                  value={settingsModal.draft.instagramUrl}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, instagramUrl: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.mapNote}</span>
-                <textarea
-                  value={settingsModal.draft.mapNote}
-                  rows={3}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, mapNote: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.marketIntro}</span>
-                <textarea
-                  value={settingsModal.draft.marketIntro}
-                  rows={3}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, marketIntro: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.storeHoursText}</span>
-                <textarea
-                  value={settingsModal.draft.storeHoursText}
-                  rows={3}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, storeHoursText: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.wholesaleHeading}</span>
-                <input
-                  value={settingsModal.draft.wholesaleHeading}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, wholesaleHeading: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.wholesaleEmail}</span>
-                <input
-                  value={settingsModal.draft.wholesaleEmail}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, wholesaleEmail: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.wholesaleText}</span>
-                <textarea
-                  value={settingsModal.draft.wholesaleText}
-                  rows={3}
-                  onChange={(event) =>
-                    setSettingsModal({
-                      draft: { ...settingsModal.draft, wholesaleText: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <p className="admin-inline-note">{copy.settingsInactiveNote}</p>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setSettingsModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary">
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {navigationModal && (
-        <AdminModal
-          title={navigationModal.mode === "create" ? copy.navigationModalCreate : copy.navigationModalEdit}
-          description={copy.navigationSummary}
-          onClose={closeNavigationModal}
-          disableClose={navigationBannerUploading}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-
-              if (navigationBannerUploading) {
-                return;
-              }
-
-              saveSettingsSection((draft) => ({
-                ...draft,
-                navigationItems: draft.navigationItems.map((item) =>
-                  item.id === navigationModal.draft.id ? navigationModal.draft : item
-                ),
-              }));
-              setNavigationModal(null);
-              setNavigationBannerUploadError(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={navigationModal.draft.status}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: { ...navigationModal.draft, status: event.target.value as EntityStatus },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.group}</span>
-                <select
-                  value={navigationModal.draft.group}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: {
-                        ...navigationModal.draft,
-                        group: event.target.value as SiteNavigationItem["group"],
-                      },
-                    })
-                  }
-                >
-                  <option value="left">{copy.leftGroup}</option>
-                  <option value="right">{copy.rightGroup}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.sortOrder}</span>
-                <input
-                  type="number"
-                  value={navigationModal.draft.sortOrder}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: { ...navigationModal.draft, sortOrder: Number(event.target.value) || 0 },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>ID</span>
-                <input value={navigationModal.draft.id} disabled />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.labelMn}</span>
-                <input
-                  value={navigationModal.draft.labelMn}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: { ...navigationModal.draft, labelMn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.labelEn}</span>
-                <input
-                  value={navigationModal.draft.labelEn}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: { ...navigationModal.draft, labelEn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.pageBanner}</span>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={navigationModal.draft.pageBannerImage}
-                  onChange={(event) =>
-                    setNavigationModal({
-                      ...navigationModal,
-                      draft: { ...navigationModal.draft, pageBannerImage: event.target.value },
-                    })
-                  }
-                />
-                <small>{copy.pageBannerHelp}</small>
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.bannerUpload}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleNavigationBannerFileChange}
-                  disabled={navigationBannerUploading}
-                />
-                {navigationBannerUploading && <small>{copy.bannerUploadProgress}</small>}
-                {navigationBannerUploadError && (
-                  <small className="admin-field-error">{navigationBannerUploadError}</small>
-                )}
-              </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.imagePreview}</span>
-                <div className="admin-collection-preview admin-banner-preview">
-                  {navigationModal.draft.pageBannerImage ? (
-                    <img
-                      src={navigationModal.draft.pageBannerImage}
-                      alt={navigationModal.draft.labelEn || navigationModal.draft.labelMn || navigationModal.draft.id}
-                    />
-                  ) : (
-                    <div className="admin-collection-preview-empty">N</div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="admin-modal-footer">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={closeNavigationModal}
-                disabled={navigationBannerUploading}
-              >
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={navigationBannerUploading}>
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {journalSettingsModal && (
-        <AdminModal
-          title={copy.journalSettingsModalTitle}
-          description={copy.journalSummary}
-          onClose={() => setJournalSettingsModal(null)}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveSettingsSection((draft) => ({
-                ...draft,
-                journalHeadingMn: journalSettingsModal.journalHeadingMn,
-                journalHeadingEn: journalSettingsModal.journalHeadingEn,
-                journalSubtextMn: journalSettingsModal.journalSubtextMn,
-                journalSubtextEn: journalSettingsModal.journalSubtextEn,
-              }));
-              setJournalSettingsModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.journalHeadingMn}</span>
-                <input
-                  value={journalSettingsModal.journalHeadingMn}
-                  onChange={(event) =>
-                    setJournalSettingsModal({
-                      ...journalSettingsModal,
-                      journalHeadingMn: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.journalHeadingEn}</span>
-                <input
-                  value={journalSettingsModal.journalHeadingEn}
-                  onChange={(event) =>
-                    setJournalSettingsModal({
-                      ...journalSettingsModal,
-                      journalHeadingEn: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.journalSubtextMn}</span>
-                <textarea
-                  rows={3}
-                  value={journalSettingsModal.journalSubtextMn}
-                  onChange={(event) =>
-                    setJournalSettingsModal({
-                      ...journalSettingsModal,
-                      journalSubtextMn: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.journalSubtextEn}</span>
-                <textarea
-                  rows={3}
-                  value={journalSettingsModal.journalSubtextEn}
-                  onChange={(event) =>
-                    setJournalSettingsModal({
-                      ...journalSettingsModal,
-                      journalSubtextEn: event.target.value,
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setJournalSettingsModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary">
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {journalEntryModal && (
-        <AdminModal
-          title={journalEntryModal.mode === "create" ? copy.journalModalCreate : copy.journalModalEdit}
-          description={copy.journalSummary}
-          onClose={closeJournalEntryModal}
-          disableClose={journalImageUploading}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-
-              if (journalImageUploading) {
-                return;
-              }
-
-              saveSettingsSection((draft) => ({
-                ...draft,
-                journalEntries:
-                  journalEntryModal.mode === "create"
-                    ? [...draft.journalEntries, journalEntryModal.draft]
-                    : draft.journalEntries.map((entry) =>
-                        entry.id === journalEntryModal.draft.id ? journalEntryModal.draft : entry
-                      ),
-              }));
-              setJournalEntryModal(null);
-              setJournalImageUploadError(null);
-              setJournalImageUploading(false);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={journalEntryModal.draft.status}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, status: event.target.value as EntityStatus },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.author}</span>
-                <input
-                  value={journalEntryModal.draft.author}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, author: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.publishedAt}</span>
-                <input
-                  type="date"
-                  value={journalEntryModal.draft.publishedAt}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, publishedAt: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.journalImage}</span>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={journalEntryModal.draft.image}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, image: event.target.value },
-                    })
-                  }
-                />
-                <small>{copy.journalImageHelp}</small>
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.bannerUpload}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleJournalEntryFileChange}
-                  disabled={journalImageUploading}
-                />
-                {journalImageUploading && <small>{copy.bannerUploadProgress}</small>}
-                {journalImageUploadError && <small className="admin-field-error">{journalImageUploadError}</small>}
-              </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.imagePreview}</span>
-                <div className="admin-collection-preview admin-banner-preview">
-                  {journalEntryModal.draft.image ? (
-                    <img
-                      src={journalEntryModal.draft.image}
-                      alt={getManagedJournalTitle(journalEntryModal.draft, language) || `${copy.journal} preview`}
-                    />
-                  ) : (
-                    <div className="admin-collection-preview-empty">
-                      {(getManagedJournalTitle(journalEntryModal.draft, language) ||
-                        getManagedJournalCategory(journalEntryModal.draft, language) ||
-                        "J"
-                      )
-                        .slice(0, 1)
-                        .toUpperCase()}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <label className="admin-field">
-                <span>{copy.categoryMn}</span>
-                <input
-                  value={journalEntryModal.draft.categoryMn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, categoryMn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.categoryEn}</span>
-                <input
-                  value={journalEntryModal.draft.categoryEn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, categoryEn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.titleMn}</span>
-                <input
-                  value={journalEntryModal.draft.titleMn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, titleMn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.titleEn}</span>
-                <input
-                  value={journalEntryModal.draft.titleEn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, titleEn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.excerptMn}</span>
-                <textarea
-                  rows={3}
-                  value={journalEntryModal.draft.excerptMn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, excerptMn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.excerptEn}</span>
-                <textarea
-                  rows={3}
-                  value={journalEntryModal.draft.excerptEn}
-                  onChange={(event) =>
-                    setJournalEntryModal({
-                      ...journalEntryModal,
-                      draft: { ...journalEntryModal.draft, excerptEn: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <div className="admin-modal-footer">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={closeJournalEntryModal}
-                disabled={journalImageUploading}
-              >
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={journalImageUploading}>
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {collectionModal && (
-        <AdminModal
-          title={collectionModal.mode === "create" ? copy.collectionModalCreate : copy.collectionModalEdit}
-          description={copy.statusSummary}
-          onClose={() => setCollectionModal(null)}
-          disableClose={collectionImageUploading}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (collectionImageUploading) return;
-              saveCollectionDraft(collectionModal.draft);
-              setCollectionModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={collectionModal.draft.status}
-                  onChange={(event) =>
-                    setCollectionModal({
-                      ...collectionModal,
-                      draft: {
-                        ...collectionModal.draft,
-                        status: event.target.value as EntityStatus,
-                      },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.name}</span>
-                <input
-                  value={collectionModal.draft.name}
-                  onChange={(event) =>
-                    setCollectionModal({
-                      ...collectionModal,
-                      draft: { ...collectionModal.draft, name: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.image}</span>
-                <div className="admin-product-images">
-                  {collectionModal.draft.image ? (
-                    <div className="admin-product-image-item">
-                      <img
-                        src={collectionModal.draft.image}
-                        alt={collectionModal.draft.name || copy.collections}
-                        className="admin-product-image-preview"
-                      />
-                      <button type="button" className="admin-product-image-remove" onClick={removeCollectionImage}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="admin-product-image-add">
-                      <Plus size={20} />
-                      <span>{copy.addImage}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleCollectionImageUpload}
-                        disabled={collectionImageUploading}
-                        style={{ display: "none" }}
-                      />
-                    </label>
-                  )}
-                </div>
-                {collectionImageUploading && <small>{copy.bannerUploadProgress}</small>}
-                {collectionImageUploadError && <small className="admin-field-error">{collectionImageUploadError}</small>}
-              </div>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.featuredProduct}</span>
-                <select
-                  value={collectionModal.draft.featuredProductId ?? ""}
-                  onChange={(event) =>
-                    setCollectionModal({
-                      ...collectionModal,
-                      draft: {
-                        ...collectionModal.draft,
-                        featuredProductId: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    })
-                  }
-                >
-                  <option value="">{copy.featuredProductNone}</option>
-                  {products
-                    .filter((p) => p.category === collectionModal.draft.slug)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                </select>
-                <small>{copy.featuredProductHelp}</small>
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.description}</span>
-                <textarea
-                  rows={3}
-                  value={collectionModal.draft.description}
-                  onChange={(event) =>
-                    setCollectionModal({
-                      ...collectionModal,
-                      draft: { ...collectionModal.draft, description: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <p className="admin-inline-note">
-              {isSystemCollection(collectionModal.draft) ? copy.categorySystemNote : copy.categorySummary}
-            </p>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setCollectionModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={collectionImageUploading}>
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {heroBannerModal && (
-        <AdminModal
-          title={heroBannerModal.mode === "create" ? copy.bannerModalCreate : copy.bannerModalEdit}
-          description={copy.bannerSummary}
-          onClose={closeHeroBannerModal}
-          disableClose={bannerUploading}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-
-              if (bannerUploading) {
-                return;
-              }
-
-              saveHeroBannerDraft(heroBannerModal.draft);
-              setHeroBannerModal(null);
-              setBannerUploadError(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={heroBannerModal.draft.status}
-                  onChange={(event) =>
-                    setHeroBannerModal({
-                      ...heroBannerModal,
-                      draft: {
-                        ...heroBannerModal.draft,
-                        status: event.target.value as EntityStatus,
-                      },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.bannerCollection}</span>
-                <select
-                  value={heroBannerModal.draft.collectionSlug}
-                  onChange={(event) =>
-                    setHeroBannerModal({
-                      ...heroBannerModal,
-                      draft: {
-                        ...heroBannerModal.draft,
-                        collectionSlug: event.target.value,
-                      },
-                    })
-                  }
-                >
-                  {bannerCategories.map((collection) => (
-                    <option key={collection.id} value={collection.slug}>
-                      {collection.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.bannerImage}</span>
-                <input
-                  type="url"
-                  value={heroBannerModal.draft.image}
-                  placeholder="https://..."
-                  onChange={(event) =>
-                    setHeroBannerModal({
-                      ...heroBannerModal,
-                      draft: {
-                        ...heroBannerModal.draft,
-                        image: event.target.value,
-                        source: event.target.value ? "admin" : heroBannerModal.draft.source,
-                      },
-                    })
-                  }
-                />
-                <small>{copy.bannerImageHelp}</small>
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.bannerUpload}</span>
-                <input type="file" accept="image/*" onChange={handleHeroBannerFileChange} disabled={bannerUploading} />
-                {bannerUploading && <small>{copy.bannerUploadProgress}</small>}
-                {bannerUploadError && <small className="admin-field-error">{bannerUploadError}</small>}
-              </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.bannerAspectTitle}</span>
-                <div className="admin-inline-card admin-banner-spec">
-                  <div className="admin-banner-spec-visual" aria-hidden="true">
-                    <span>16:9</span>
-                  </div>
-                  <div className="admin-banner-spec-copy">
-                    <strong>{copy.bannerAspectValue}</strong>
-                    <small>{copy.bannerAspectHelp}</small>
-                  </div>
-                </div>
-              </div>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.imagePreview}</span>
-                <div className="admin-collection-preview admin-banner-preview">
-                  {heroBannerModal.draft.image ? (
-                    <img
-                      src={heroBannerModal.draft.image}
-                      alt={collectionNameBySlug.get(heroBannerModal.draft.collectionSlug) ?? copy.banners}
-                    />
-                  ) : (
-                    <div className="admin-collection-preview-empty">B</div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <p className="admin-inline-note">
-              {heroBannerModal.draft.source === "prairiesoapshack.com"
-                ? copy.bannerImportedSource
-                : copy.bannerUploadedSource}
-            </p>
-            <div className="admin-modal-footer">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={closeHeroBannerModal}
-                disabled={bannerUploading}
-              >
-                {copy.cancel}
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={bannerCategories.length === 0 || bannerUploading}
-              >
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {productModal && (
-        <AdminModal
-          title={productModal.mode === "create" ? copy.productModalCreate : copy.productModalEdit}
-          description={copy.productSummary}
-          onClose={() => setProductModal(null)}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-
-              if (selectableCategories.length === 0) {
-                return;
-              }
-
-              const cleanedVariants = productModal.draft.variants?.filter((v) => v.name.trim()) ?? [];
-              const hasVariants = cleanedVariants.length > 0;
-              const computedStock = hasVariants
-                ? cleanedVariants.reduce((sum, v) => sum + (v.quantity || 0), 0)
-                : (productModal.draft.totalStock ?? 0);
-              saveProductDraft({
-                ...productModal.draft,
-                category: productModal.draft.category || selectableCategories[0].slug,
-                variants: hasVariants ? cleanedVariants : undefined,
-                totalStock: computedStock,
-              });
-              setProductModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={productModal.draft.status}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: {
-                        ...productModal.draft,
-                        status: event.target.value as EntityStatus,
-                      },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.name}</span>
-                <input
-                  value={productModal.draft.name}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, name: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.category}</span>
-                <select
-                  value={productModal.draft.category}
-                  disabled={selectableCategories.length === 0}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, category: event.target.value },
-                    })
-                  }
-                >
-                  {selectableCategories.map((collection) => (
-                    <option key={collection.id} value={collection.slug}>
-                      {collection.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.price}</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={productModal.draft.price}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: {
-                        ...productModal.draft,
-                        price: Number(event.target.value) || 0,
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.comparePrice}</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={productModal.draft.compareAtPrice ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: {
-                        ...productModal.draft,
-                        compareAtPrice: event.target.value ? Number(event.target.value) : undefined,
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.badge}</span>
-                <input
-                  value={productModal.draft.badge ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: {
-                        ...productModal.draft,
-                        badge: event.target.value || undefined,
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-toggle">
-                <span>{copy.bestSeller}</span>
-                <input
-                  type="checkbox"
-                  checked={Boolean(productModal.draft.bestSeller)}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: {
-                        ...productModal.draft,
-                        bestSeller: event.target.checked,
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.description}</span>
-                <textarea
-                  rows={5}
-                  value={productModal.draft.description}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, description: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <div className="admin-field admin-field-wide">
-                <span>{copy.ingredientsLabel}</span>
-                <div className="admin-ingredients-list">
-                  {(productModal.draft.ingredients ?? "")
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                    .map((ingredient, iIdx, arr) => (
-                      <div key={iIdx} className="admin-ingredient-tag">
-                        <span>{ingredient}</span>
-                        <button
-                          type="button"
-                          className="admin-ingredient-remove"
-                          onClick={() => {
-                            const next = arr.filter((_, i) => i !== iIdx).join(", ");
-                            setProductModal({
-                              ...productModal,
-                              draft: { ...productModal.draft, ingredients: next || undefined },
-                            });
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  <div className="admin-ingredient-add">
-                    <input
-                      placeholder={copy.ingredientPlaceholder}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          const val = event.currentTarget.value.trim();
-                          if (!val) return;
-                          const existing = (productModal.draft.ingredients ?? "")
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean);
-                          existing.push(val);
-                          setProductModal({
-                            ...productModal,
-                            draft: { ...productModal.draft, ingredients: existing.join(", ") },
-                          });
-                          event.currentTarget.value = "";
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={(event) => {
-                        const input = (event.currentTarget.previousElementSibling as HTMLInputElement);
-                        const val = input.value.trim();
-                        if (!val) return;
-                        const existing = (productModal.draft.ingredients ?? "")
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean);
-                        existing.push(val);
-                        setProductModal({
-                          ...productModal,
-                          draft: { ...productModal.draft, ingredients: existing.join(", ") },
-                        });
-                        input.value = "";
-                        input.focus();
-                      }}
-                    >
-                      <Plus size={14} /> {copy.addIngredient}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.usageLabel}</span>
-                <textarea
-                  rows={4}
-                  value={productModal.draft.usage ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, usage: event.target.value || undefined },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.howToUseLabel}</span>
-                <textarea
-                  rows={4}
-                  value={productModal.draft.howToUse ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, howToUse: event.target.value || undefined },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.cautionLabel}</span>
-                <textarea
-                  rows={4}
-                  value={productModal.draft.caution ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, caution: event.target.value || undefined },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.shelfLifeLabel}</span>
-                <input
-                  value={productModal.draft.shelfLife ?? ""}
-                  onChange={(event) =>
-                    setProductModal({
-                      ...productModal,
-                      draft: { ...productModal.draft, shelfLife: event.target.value || undefined },
-                    })
-                  }
-                />
-              </label>
-              {!(productModal.draft.variants?.length) && (
-                <label className="admin-field admin-field-wide">
-                  <span>{copy.sizeLabelField}</span>
-                  <input
-                    value={productModal.draft.sizeLabel ?? ""}
-                    placeholder={copy.sizeLabelHelp}
-                    onChange={(event) =>
-                      setProductModal({
-                        ...productModal,
-                        draft: { ...productModal.draft, sizeLabel: event.target.value || undefined },
-                      })
-                    }
-                  />
-                </label>
-              )}
-              <div className="admin-field admin-field-wide">
-                <span>{copy.variants}</span>
-                <div className="admin-variants-list">
-                  {(productModal.draft.variants ?? []).length > 0 && (
-                    <div className="admin-variant-row admin-variant-header">
-                      <span>{copy.variantName}</span>
-                      <span>{copy.variantPrice}</span>
-                      <span>{copy.variantQuantity}</span>
-                      <span>{copy.soldCount}/{copy.stockRemaining}</span>
-                      <span></span>
-                    </div>
-                  )}
-                  {(productModal.draft.variants ?? []).map((variant, vIndex) => (
-                    <div key={vIndex} className="admin-variant-row">
-                      <input
-                        placeholder={copy.variantName}
-                        value={variant.name}
-                        onChange={(event) => {
-                          const next = [...(productModal.draft.variants ?? [])];
-                          next[vIndex] = { ...next[vIndex], name: event.target.value };
-                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
-                        }}
-                      />
-                      <input
-                        type="number"
-                        placeholder={copy.variantPrice}
-                        value={variant.price || ""}
-                        onChange={(event) => {
-                          const next = [...(productModal.draft.variants ?? [])];
-                          next[vIndex] = { ...next[vIndex], price: Number(event.target.value) || 0 };
-                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
-                        }}
-                      />
-                      <input
-                        type="number"
-                        placeholder={copy.variantQuantity}
-                        value={variant.quantity || ""}
-                        onChange={(event) => {
-                          const next = [...(productModal.draft.variants ?? [])];
-                          next[vIndex] = { ...next[vIndex], quantity: Number(event.target.value) || 0 };
-                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
-                        }}
-                      />
-                      <span className="admin-variant-sold">
-                        {variant.soldCount ?? 0}/{(variant.quantity || 0) - (variant.soldCount ?? 0)}
-                      </span>
-                      <button
-                        type="button"
-                        className="admin-icon-btn"
-                        onClick={() => {
-                          const next = (productModal.draft.variants ?? []).filter((_, i) => i !== vIndex);
-                          setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next.length > 0 ? next : undefined } });
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    onClick={() => {
-                      const next = [...(productModal.draft.variants ?? []), { name: "", price: 0, quantity: 0 }];
-                      setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
-                    }}
-                  >
-                    <Plus size={14} /> {copy.addVariant}
-                  </button>
-                </div>
-              </div>
-              {(() => {
-                const hasVariants = (productModal.draft.variants ?? []).length > 0;
-                const variantTotal = hasVariants
-                  ? (productModal.draft.variants ?? []).reduce((sum, v) => sum + (v.quantity || 0), 0)
-                  : 0;
-                const currentStock = hasVariants ? variantTotal : (productModal.draft.totalStock ?? 0);
-                const sold = productModal.draft.soldCount ?? 0;
-                return (
-                  <div className="admin-field admin-field-wide">
-                    <span>{copy.totalStock} / {copy.soldCount}</span>
-                    <div className="admin-stock-row">
-                      {hasVariants ? (
-                        <div className="admin-stock-remaining">
-                          <small>{copy.totalStock}</small>
-                          <strong>{variantTotal}</strong>
-                        </div>
-                      ) : (
-                        <label className="admin-field">
-                          <small>{copy.totalStock}</small>
-                          <input
-                            type="number"
-                            value={productModal.draft.totalStock ?? 0}
-                            onChange={(event) =>
-                              setProductModal({
-                                ...productModal,
-                                draft: { ...productModal.draft, totalStock: Number(event.target.value) || 0 },
-                              })
-                            }
-                          />
-                        </label>
-                      )}
-                      <label className="admin-field">
-                        <small>{copy.soldCount}</small>
-                        <input
-                          type="number"
-                          value={sold}
-                          onChange={(event) =>
-                            setProductModal({
-                              ...productModal,
-                              draft: { ...productModal.draft, soldCount: Number(event.target.value) || 0 },
-                            })
-                          }
-                        />
-                      </label>
-                      <div className="admin-stock-remaining">
-                        <small>{copy.stockRemaining}</small>
-                        <strong>{currentStock - sold}</strong>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="admin-field admin-field-wide">
-                <span>{copy.productImages}</span>
-                <small>{copy.productImagesHelp}</small>
-                <div className="admin-product-images">
-                  {productModal.draft.images.map((image, index) =>
-                    image ? (
-                      <div key={index} className="admin-product-image-item">
-                        <img src={image} alt={`Product ${index + 1}`} className="admin-product-image-preview" />
-                        <button type="button" className="admin-product-image-remove" onClick={() => removeProductImage(index)}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ) : null
-                  )}
-                  {productModal.draft.images.filter(Boolean).length < 3 && (
-                    <label className="admin-product-image-add">
-                      <Plus size={20} />
-                      <span>{copy.addImage}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const nextIndex = productModal.draft.images.filter(Boolean).length;
-                          handleProductImageUpload(event, nextIndex);
-                        }}
-                        disabled={productImageUploading}
-                        style={{ display: "none" }}
-                      />
-                    </label>
-                  )}
-                </div>
-                {productImageUploading && <small>{copy.bannerUploadProgress}</small>}
-                {productImageUploadError && <small className="admin-field-error">{productImageUploadError}</small>}
-              </div>
-            </div>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setProductModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={selectableCategories.length === 0}>
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {marketModal && (
-        <AdminModal
-          title={marketModal.mode === "create" ? copy.marketModalCreate : copy.marketModalEdit}
-          description={copy.marketSummary}
-          onClose={() => setMarketModal(null)}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveMarketDraft(marketModal.draft);
-              setMarketModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={marketModal.draft.status}
-                  onChange={(event) =>
-                    setMarketModal({
-                      ...marketModal,
-                      draft: { ...marketModal.draft, status: event.target.value as EntityStatus },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.name}</span>
-                <input
-                  value={marketModal.draft.name}
-                  onChange={(event) =>
-                    setMarketModal({
-                      ...marketModal,
-                      draft: { ...marketModal.draft, name: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.schedule}</span>
-                <input
-                  value={marketModal.draft.schedule}
-                  onChange={(event) =>
-                    setMarketModal({
-                      ...marketModal,
-                      draft: { ...marketModal.draft, schedule: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.season}</span>
-                <input
-                  value={marketModal.draft.season}
-                  onChange={(event) =>
-                    setMarketModal({
-                      ...marketModal,
-                      draft: { ...marketModal.draft, season: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.address}</span>
-                <textarea
-                  rows={3}
-                  value={marketModal.draft.address}
-                  onChange={(event) =>
-                    setMarketModal({
-                      ...marketModal,
-                      draft: { ...marketModal.draft, address: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setMarketModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary">
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {testimonialModal && (
-        <AdminModal
-          title={testimonialModal.mode === "create" ? copy.testimonialModalCreate : copy.testimonialModalEdit}
-          description={copy.testimonialSummary}
-          onClose={() => setTestimonialModal(null)}
-        >
-          <form
-            className="admin-modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveTestimonialDraft(testimonialModal.draft);
-              setTestimonialModal(null);
-            }}
-          >
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select
-                  value={testimonialModal.draft.status}
-                  onChange={(event) =>
-                    setTestimonialModal({
-                      ...testimonialModal,
-                      draft: { ...testimonialModal.draft, status: event.target.value as EntityStatus },
-                    })
-                  }
-                >
-                  <option value="active">{copy.active}</option>
-                  <option value="inactive">{copy.inactive}</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.author}</span>
-                <input
-                  value={testimonialModal.draft.author}
-                  onChange={(event) =>
-                    setTestimonialModal({
-                      ...testimonialModal,
-                      draft: { ...testimonialModal.draft, author: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.location}</span>
-                <input
-                  value={testimonialModal.draft.location}
-                  onChange={(event) =>
-                    setTestimonialModal({
-                      ...testimonialModal,
-                      draft: { ...testimonialModal.draft, location: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.quote}</span>
-                <textarea
-                  rows={5}
-                  value={testimonialModal.draft.text}
-                  onChange={(event) =>
-                    setTestimonialModal({
-                      ...testimonialModal,
-                      draft: { ...testimonialModal.draft, text: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setTestimonialModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary">
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {packagingModal && (
-        <AdminModal
-          title={packagingModal.mode === "create" ? copy.packagingModalCreate : copy.packagingModalEdit}
-          onClose={() => setPackagingModal(null)}
-        >
-          <form
-            onSubmit={async (e: FormEvent) => {
-              e.preventDefault();
-              await savePackaging(packagingModal.draft);
-              setPackagingModal(null);
-            }}
-          >
-            <label className="admin-field admin-field-wide">
-              <span>{copy.packagingName}</span>
-              <input
-                value={packagingModal.draft.name}
-                onChange={(e) =>
-                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, name: e.target.value } })
-                }
-                required
-              />
-            </label>
-            <label className="admin-field admin-field-wide">
-              <span>{copy.packagingSize}</span>
-              <input
-                value={packagingModal.draft.size}
-                onChange={(e) =>
-                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, size: e.target.value } })
-                }
-              />
-            </label>
-            <label className="admin-field admin-field-wide">
-              <span>{copy.packagingRemaining}</span>
-              <input
-                type="number"
-                value={packagingModal.draft.remaining}
-                onChange={(e) =>
-                  setPackagingModal({ ...packagingModal, draft: { ...packagingModal.draft, remaining: Number(e.target.value) || 0 } })
-                }
-              />
-            </label>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setPackagingModal(null)}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary">{copy.save}</button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {confirmModal && (
-        <AdminModal title={confirmModal.title} onClose={() => setConfirmModal(null)}>
-          <div className="admin-confirm-body">
-            <p>{confirmModal.description}</p>
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setConfirmModal(null)}>
-                {copy.cancel}
-              </button>
-              <button
-                type="button"
-                className={confirmModal.destructive ? "btn btn-danger" : "btn btn-primary"}
-                onClick={() => {
-                  confirmModal.onConfirm();
-                  setConfirmModal(null);
-                }}
-              >
-                {confirmModal.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </AdminModal>
-      )}
-
-      {userProfileModal && (
-        <AdminModal
-          title={copy.userModalTitle}
-          description={copy.userModalDescription}
-          onClose={closeUserProfileModal}
-          disableClose={savingUserProfile}
-        >
-          <form className="admin-modal-form" onSubmit={handleUserProfileSubmit}>
-            {userProfileError && <div className="admin-sync-error">{userProfileError}</div>}
-
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.displayName}</span>
-                <input
-                  value={userProfileModal.draft.displayName ?? ""}
-                  onChange={(event) =>
-                    setUserProfileModal((current) =>
-                      current
-                        ? {
-                            ...current,
-                            draft: {
-                              ...current.draft,
-                              displayName: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.userRole}</span>
-                <select
-                  value={userProfileModal.draft.role}
-                  onChange={(event) =>
-                    setUserProfileModal((current) =>
-                      current
-                        ? {
-                            ...current,
-                            draft: {
-                              ...current.draft,
-                              role: event.target.value as UserRole,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                >
-                  {getManageableRoleOptions(userProfileModal.draft.role).map((roleOption) => (
-                    <option key={roleOption} value={roleOption}>
-                      {getRoleLabel(roleOption, language)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>{copy.senderEmail}</span>
-                <input
-                  type="email"
-                  value={userProfileModal.draft.email ?? ""}
-                  onChange={(event) =>
-                    setUserProfileModal((current) =>
-                      current
-                        ? {
-                            ...current,
-                            draft: {
-                              ...current.draft,
-                              email: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label className="admin-field">
-                <span>{copy.contactPhone}</span>
-                <input
-                  type="tel"
-                  value={userProfileModal.draft.phoneNumber ?? ""}
-                  onChange={(event) =>
-                    setUserProfileModal((current) =>
-                      current
-                        ? {
-                            ...current,
-                            draft: {
-                              ...current.draft,
-                              phoneNumber: event.target.value,
-                            },
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label className="admin-field admin-field-wide">
-                <span>{copy.userUid}</span>
-                <input value={userProfileModal.draft.uid} disabled />
-              </label>
-            </div>
-
-            <div className="admin-inline-card">
-              <div className="admin-inline-card-head">
-                <strong>{language === "MN" ? "Нэвтрэлтийн мэдээлэл" : "Authentication details"}</strong>
-              </div>
-              <div className="admin-form-grid">
-                <label className="admin-field">
-                  <span>{copy.registeredVia}</span>
-                  <input value={getAuthMethodLabel(userProfileModal.draft.registrationMethod, language)} disabled />
-                </label>
-                <label className="admin-field">
-                  <span>{copy.lastAuth}</span>
-                  <input value={getAuthMethodLabel(userProfileModal.draft.lastAuthMethod, language)} disabled />
-                </label>
-                <label className="admin-field">
-                  <span>{copy.registeredAt}</span>
-                  <input value={formatAdminDateTime(userProfileModal.draft.registeredAt, language)} disabled />
-                </label>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Сүүлд нэвтэрсэн огноо" : "Last sign-in at"}</span>
-                  <input value={formatAdminDateTime(userProfileModal.draft.lastSignInAt, language)} disabled />
-                </label>
-                <label className="admin-field admin-field-wide">
-                  <span>{copy.userProviders}</span>
-                  <input value={getUserProviderSummary(userProfileModal.draft)} disabled />
-                </label>
-                <label className="admin-field admin-field-wide">
-                  <span>{copy.phoneLoginEmail}</span>
-                  <input value={userProfileModal.draft.phoneLoginEmail ?? "-"} disabled />
-                </label>
-              </div>
-            </div>
-
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={closeUserProfileModal} disabled={savingUserProfile}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={savingUserProfile}>
-                {savingUserProfile ? "..." : copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
-
-      {orderModal && (
-        <AdminModal
-          title={copy.orderDetailsTitle}
-          description={`${copy.orderDetailsText} (${orderModal.draft.orderNumber})`}
-          onClose={closeOrderModal}
-          wide
-          disableClose={savingOrderModal}
-        >
-          <form className="admin-modal-form" onSubmit={handleOrderModalSubmit}>
-            {orderModalError && <div className="admin-sync-error">{orderModalError}</div>}
-
-            <div className="admin-order-meta-grid">
-              <div className="admin-order-meta-card">
-                <span>{language === "MN" ? "Захиалгын дугаар" : "Order number"}</span>
-                <strong>{orderModal.draft.orderNumber}</strong>
-                <small>{formatAdminDateTime(orderModal.draft.createdAt, language)}</small>
-              </div>
-              <div className="admin-order-meta-card">
-                <span>{copy.paymentLabel}</span>
-                <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
-                <small>
-                  {orderModal.draft.status === "new"
-                    ? language === "MN"
-                      ? "Төлбөр хүлээгдэж байна"
-                      : "Payment pending"
-                    : `${copy.paidAtLabel}: ${formatAdminDateTime(orderModal.draft.payment.paidAt, language)}`}
-                </small>
-              </div>
-            </div>
-
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>{copy.status}</span>
-                <select value={orderModal.draft.status} onChange={handleOrderStatusChange}>
-                  {orderStatusOptions.map((statusOption) => (
-                    <option key={statusOption.value} value={statusOption.value}>
-                      {statusOption.label}
-                    </option>
-                  ))}
-                </select>
-                <small>{copy.orderStatusHelp}</small>
-              </label>
-
-              <div className="admin-field">
-                <span>{copy.orderPaymentLabel}</span>
-                <div className="admin-order-static-value">
-                  <strong>
-                    {orderModal.draft.status === "new"
-                      ? language === "MN"
-                        ? "Төлбөр хүлээгдэж байна"
-                        : "Payment pending"
-                      : language === "MN"
-                        ? "Төлбөр төлөгдсөн"
-                        : "Payment paid"}
-                  </strong>
-                  <small>{copy.paymentStateLabel}</small>
-                </div>
-              </div>
-            </div>
-
-            <div className="admin-inline-card">
-              <div className="admin-inline-card-head">
-                <strong>{copy.customerInfo}</strong>
-              </div>
-              <div className="admin-form-grid">
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
-                  <input
-                    type="text"
-                    value={orderModal.draft.customer.fullName}
-                    onChange={handleOrderCustomerChange("fullName")}
-                    required
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Утасны дугаар" : "Phone number"}</span>
-                  <input
-                    type="tel"
-                    value={orderModal.draft.customer.phoneNumber}
-                    onChange={handleOrderCustomerChange("phoneNumber")}
-                    required
-                  />
-                </label>
-                <label className="admin-field admin-field-wide">
-                  <span>{copy.note}</span>
-                  <textarea value={orderModal.draft.customer.note} onChange={handleOrderCustomerChange("note")} rows={3} />
-                </label>
-              </div>
-            </div>
-
-            <div className="admin-inline-card">
-              <div className="admin-inline-card-head">
-                <strong>{copy.addressInfo}</strong>
-              </div>
-              <div className="admin-form-grid">
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
-                  <input type="text" value={orderModal.draft.address.region} onChange={handleOrderAddressChange("region")} required />
-                </label>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Дүүрэг / Сум" : "District / Soum"}</span>
-                  <input
-                    type="text"
-                    value={orderModal.draft.address.districtOrSoum}
-                    onChange={handleOrderAddressChange("districtOrSoum")}
-                    required
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Хороо / Баг" : "Khoroo / Bag"}</span>
-                  <input
-                    type="text"
-                    value={orderModal.draft.address.khorooOrBag}
-                    onChange={handleOrderAddressChange("khorooOrBag")}
-                    required
-                  />
-                </label>
-                <label className="admin-field admin-field-wide">
-                  <span>{language === "MN" ? "Байр, орц, давхар, тоот" : "Street address"}</span>
-                  <input
-                    type="text"
-                    value={orderModal.draft.address.streetAddress}
-                    onChange={handleOrderAddressChange("streetAddress")}
-                    required
-                  />
-                </label>
-                <label className="admin-field admin-field-wide">
-                  <span>{language === "MN" ? "Нэмэлт хаяг" : "Additional address"}</span>
-                  <input
-                    type="text"
-                    value={orderModal.draft.address.additionalAddress}
-                    onChange={handleOrderAddressChange("additionalAddress")}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="admin-inline-card">
-              <div className="admin-inline-card-head">
-                <strong>{copy.orderItemsLabel}</strong>
-                <small className="admin-inline-note">{copy.orderReadonlyItemsNote}</small>
-              </div>
-              <div className="admin-order-items-summary">
-                <span>
-                  {language === "MN"
-                    ? `${orderModal.draft.items.length} төрөл`
-                    : `${orderModal.draft.items.length} item types`}
-                </span>
-                <strong>
-                  {language === "MN"
-                    ? `Нийт ${getOrderTotalQuantity(orderModal.draft)} ширхэг`
-                    : `Total ${getOrderTotalQuantity(orderModal.draft)} pcs`}
-                </strong>
-              </div>
-              <div className="admin-order-items">
-                {orderModal.draft.items.map((item, itemIndex) => (
-                  <div key={`${item.productId}-${item.variant ?? "default"}-${itemIndex}`} className="admin-order-item">
-                    <div className="admin-order-item-main">
-                      <div className="admin-order-item-thumb">
-                        {item.image ? (
-                          <img src={item.image} alt={item.name} />
-                        ) : (
-                          <span>{item.name.slice(0, 1).toUpperCase()}</span>
-                        )}
-                      </div>
-                      <div className="admin-order-item-copy">
-                        <strong>{item.name}</strong>
-                        <div className="admin-order-item-meta">
-                          <span>{item.variant || (language === "MN" ? "Сонголтгүй" : "No variant")}</span>
-                          <span>{item.category}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="admin-order-item-stats">
-                      <div>
-                        <span>{language === "MN" ? "Тоо" : "Qty"}</span>
-                        <strong>{item.quantity}</strong>
-                      </div>
-                      <div>
-                        <span>{language === "MN" ? "Нэгж үнэ" : "Unit price"}</span>
-                        <strong>{formatStorePrice(item.unitPrice)}</strong>
-                      </div>
-                      <div>
-                        <span>{language === "MN" ? "Нийлбэр" : "Line total"}</span>
-                        <strong>{formatStorePrice(item.lineTotal)}</strong>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="admin-order-totals">
-                <div className="admin-order-totals-row">
-                  <span>{language === "MN" ? "Барааны дүн" : "Subtotal"}</span>
-                  <span>{formatStorePrice(orderModal.draft.totals.subtotal)}</span>
-                </div>
-                <div className="admin-order-totals-row">
-                  <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
-                  <span>{formatStorePrice(orderModal.draft.totals.shippingFee)}</span>
-                </div>
-                <div className="admin-order-totals-row admin-order-totals-grand">
-                  <span>{language === "MN" ? "Нийт дүн" : "Grand total"}</span>
-                  <strong>{formatStorePrice(orderModal.draft.totals.grandTotal)}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="admin-modal-footer">
-              <button type="button" className="btn btn-outline" onClick={closeOrderModal} disabled={savingOrderModal}>
-                {copy.cancel}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={savingOrderModal}>
-                {savingOrderModal ? "..." : copy.save}
-              </button>
-            </div>
-          </form>
-        </AdminModal>
-      )}
+      <AdminModals ctx={adminCtx} />
     </div>
   );
 }

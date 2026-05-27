@@ -16,8 +16,19 @@ export default function ProductDetail() {
   const visibleProducts = getActiveProducts(products, collections);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<string | undefined>();
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const product = visibleProducts.find((p) => p.id === Number(id));
+
+  const allImages = product?.images.filter(Boolean) ?? [];
+
+  useEffect(() => {
+    if (allImages.length <= 1) return undefined;
+    const interval = window.setInterval(() => {
+      setActiveImageIndex((i) => (i + 1) % allImages.length);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [allImages.length]);
 
   if (!product) {
     return (
@@ -39,17 +50,7 @@ export default function ProductDetail() {
     : product.price;
 
   const gradient = getCategoryGradient(collections, product.category);
-  const allImages = product.images.filter(Boolean);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const activeImage = allImages[activeImageIndex] || allImages[0] || "";
-
-  useEffect(() => {
-    if (allImages.length <= 1) return undefined;
-    const interval = window.setInterval(() => {
-      setActiveImageIndex((i) => (i + 1) % allImages.length);
-    }, 3000);
-    return () => window.clearInterval(interval);
-  }, [allImages.length]);
 
   return (
     <div className="product-detail">

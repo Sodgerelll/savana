@@ -345,6 +345,15 @@
   color: rgba(74, 71, 55, 0.8);
 }
 
+.checkout-payment-open-link {
+  display: block;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-primary, #5a5103);
+  text-decoration: underline;
+  margin-top: -0.25rem;
+}
+
 .checkout-summary {
   position: sticky;
   top: 1.5rem;

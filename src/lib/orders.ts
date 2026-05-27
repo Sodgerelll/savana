@@ -18,7 +18,7 @@ import { db } from "./firebase";
 export const ORDERS_COLLECTION = "orders";
 export const ORDER_SCHEMA_VERSION = 1;
 export const SHIPPING_FEE = 8000;
-export type OrderPaymentMethod = "qpay";
+export type OrderPaymentMethod = "bonum" | "cash" | "bank_transfer";
 export type OrderPaymentStatus = "pending" | "paid" | "failed" | "cancelled";
 export type OrderStatus = "new" | "paid" | "delivering" | "delivered";
 export const ORDER_STATUS_VALUES = ["new", "paid", "delivering", "delivered"] as const;
@@ -51,11 +51,19 @@ export interface OrderCustomerPayload {
 
 export interface OrderPaymentPayload {
   method: OrderPaymentMethod;
-  provider: "qpay";
+  provider: OrderPaymentMethod;
   status: OrderPaymentStatus;
   amount: number;
+  /** followUpLink URL from Bonum — used as QR content so the user can scan and pay */
   qrPayload: string;
+  /** Bonum invoiceId — used to check payment status */
+  invoiceId: string | null;
   paidAt: string | null;
+  /** Bonum transaction details — populated when payment is confirmed */
+  bonumPaymentVendor?: string;
+  bonumCompletedAt?: string;
+  bonumTerminalId?: string;
+  bonumAmount?: number;
 }
 
 export interface CreateOrderInput {
@@ -120,21 +128,27 @@ function createOrderNumber(): string {
   return `ORD-${year}${month}${day}${randomLetter}${randomDigits}`;
 }
 
-function createQpayQrPayload(input: {
-  orderNumber: string;
-  amount: number;
-  phoneNumber: string;
-  uid: string;
-}) {
-  return JSON.stringify({
-    provider: "QPAY",
-    merchant: "Savana",
-    orderNumber: input.orderNumber,
-    amount: input.amount,
-    currency: "MNT",
-    phoneNumber: input.phoneNumber,
-    customerId: input.uid,
+async function createBonumInvoice(amount: number, transactionId: string): Promise<{ invoiceId: string; followUpLink: string }> {
+  const res = await fetch("/api/bonum/invoice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount, transactionId }),
   });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(String(err["error"] ?? `Bonum invoice failed: ${res.status}`));
+  }
+
+  return res.json() as Promise<{ invoiceId: string; followUpLink: string }>;
+}
+
+function normalizePaymentMethod(value: unknown): OrderPaymentMethod {
+  if (value === "cash" || value === "bank_transfer") {
+    return value;
+  }
+
+  return "bonum";
 }
 
 function normalizePaymentStatus(value: unknown): OrderPaymentStatus {
@@ -252,12 +266,17 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
       grandTotal: Number(totalsData.grandTotal ?? 0),
     },
     payment: {
-      method: "qpay",
-      provider: "qpay",
+      method: normalizePaymentMethod(paymentData.method),
+      provider: normalizePaymentMethod(paymentData.provider),
       status: normalizePaymentStatus(paymentData.status),
       amount: Number(paymentData.amount ?? 0),
       qrPayload: String(paymentData.qrPayload ?? ""),
+      invoiceId: typeof paymentData.invoiceId === "string" ? paymentData.invoiceId : null,
       paidAt: parseTimestamp(paymentData.paidAt),
+      ...(typeof paymentData.bonumPaymentVendor === "string" && { bonumPaymentVendor: paymentData.bonumPaymentVendor }),
+      ...(typeof paymentData.bonumCompletedAt === "string" && { bonumCompletedAt: paymentData.bonumCompletedAt }),
+      ...(typeof paymentData.bonumTerminalId === "string" && { bonumTerminalId: paymentData.bonumTerminalId }),
+      ...(typeof paymentData.bonumAmount === "number" && { bonumAmount: paymentData.bonumAmount }),
     },
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
@@ -267,17 +286,19 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
 export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder> {
   const orderRef = doc(collection(db, ORDERS_COLLECTION));
   const orderNumber = createOrderNumber();
+
+  // Use the Firestore doc ID as Bonum transactionId so the webhook can look up the order
+  // TEST MODE: fixed 100₮ invoice so real money is not charged during development
+  const bonumResult = await createBonumInvoice(100, orderRef.id);
+
   const payment: OrderPaymentPayload = {
-    method: "qpay",
-    provider: "qpay",
+    method: "bonum",
+    provider: "bonum",
     status: "pending",
     amount: input.totals.grandTotal,
-    qrPayload: createQpayQrPayload({
-      orderNumber,
-      amount: input.totals.grandTotal,
-      phoneNumber: input.customer.phoneNumber,
-      uid: input.auth.uid,
-    }),
+    // followUpLink is the URL opened when the user scans the QR code
+    qrPayload: bonumResult.followUpLink,
+    invoiceId: bonumResult.invoiceId,
     paidAt: null,
   };
 
@@ -317,18 +338,55 @@ export async function getOrderPaymentSnapshot(orderId: string) {
       : {};
 
   return {
-    method: "qpay" as const,
-    provider: "qpay" as const,
+    method: normalizePaymentMethod(paymentData.method),
+    provider: normalizePaymentMethod(paymentData.provider),
     status: normalizePaymentStatus(paymentData.status),
     amount: Number(paymentData.amount ?? 0),
     qrPayload: String(paymentData.qrPayload ?? ""),
+    invoiceId: typeof paymentData.invoiceId === "string" ? paymentData.invoiceId : null,
     paidAt: parseTimestamp(paymentData.paidAt),
   } satisfies OrderPaymentPayload;
 }
 
+interface BonumCheckResult {
+  paid: boolean;
+  paymentVendor?: string;
+  completedAt?: string;
+  terminalId?: string;
+  bonumAmount?: number;
+}
+
+async function verifyBonumPayment(invoiceId: string): Promise<BonumCheckResult> {
+  const res = await fetch(`/api/bonum/check?invoiceId=${encodeURIComponent(invoiceId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(String(err["error"] ?? `Payment check failed: ${res.status}`));
+  }
+  return res.json() as Promise<BonumCheckResult>;
+}
+
 export async function markOrderAsPaid(orderId: string) {
   const currentPayment = await getOrderPaymentSnapshot(orderId);
-  const nextPayment = buildPaymentForOrderStatus("paid", currentPayment);
+
+  let bonumDetails: Omit<BonumCheckResult, "paid"> = {};
+
+  // Verify with Bonum before marking as paid
+  if (currentPayment.invoiceId) {
+    const checkResult = await verifyBonumPayment(currentPayment.invoiceId);
+    if (!checkResult.paid) {
+      throw new Error("Төлбөр Bonum системд баталгаажаагүй байна. Төлбөрөө хийсний дараа дахин шалгана уу.");
+    }
+    const { paid: _paid, ...details } = checkResult;
+    bonumDetails = details;
+  }
+
+  const nextPayment: OrderPaymentPayload = {
+    ...buildPaymentForOrderStatus("paid", currentPayment),
+    ...(bonumDetails.paymentVendor !== undefined && { bonumPaymentVendor: bonumDetails.paymentVendor }),
+    ...(bonumDetails.completedAt !== undefined && { bonumCompletedAt: bonumDetails.completedAt }),
+    ...(bonumDetails.terminalId !== undefined && { bonumTerminalId: bonumDetails.terminalId }),
+    ...(bonumDetails.bonumAmount !== undefined && { bonumAmount: bonumDetails.bonumAmount }),
+  };
 
   await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
     status: "paid",

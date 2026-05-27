@@ -1,17 +1,12 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { Facebook, Instagram, Mail, MapPin, Phone } from "lucide-react";
+import { Facebook, Instagram, Mail, Phone } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { createContactMessage } from "../lib/contactMessages";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Contact.css";
 
-const initialFormState = {
-  name: "",
-  email: "",
-  subject: "",
-  message: "",
-};
+const initialFormState = { name: "", email: "", subject: "", message: "" };
 
 export default function Contact() {
   const { language, t } = useLanguage();
@@ -19,49 +14,37 @@ export default function Contact() {
   const [formValues, setFormValues] = useState(initialFormState);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+
   const visibleSettings = getRenderableSettings(settings);
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, "/contact");
   const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
   const contactPhone = visibleSettings.contactPhone.trim();
   const contactPhoneHref = contactPhone.replace(/\s+/g, "");
-  const mapLink =
-    "https://www.google.com/maps/place/SAVANA+BRAND/@47.9167711,106.939625,584m/data=!3m2!1e3!4b1!4m6!3m5!1s0x5d96930061a87f33:0xeea1567f36e7cd41!8m2!3d47.9167711!4d106.939625!16s%2Fg%2F11wjpf89k5?entry=ttu&g_ep=EgoyMDI2MDMxMS4wIKXMDSoASAFQAw%3D%3D";
   const mapEmbedSrc = "https://maps.google.com/maps?q=47.9167711,106.939625&z=17&output=embed";
+  const isMN = language === "MN";
 
   const handleFieldChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
-
-    setFormValues((current) => ({
-      ...current,
-      [name]: value,
-    }));
-
-    if (submitStatus !== "idle") {
-      setSubmitStatus("idle");
-      setSubmitError(null);
-    }
+    setFormValues((cur) => ({ ...cur, [name]: value }));
+    if (submitStatus !== "idle") { setSubmitStatus("idle"); setSubmitError(null); }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
     const payload = {
       name: formValues.name.trim(),
       email: formValues.email.trim(),
       subject: formValues.subject.trim(),
       message: formValues.message.trim(),
     };
-
     if (!payload.name || !payload.email || !payload.subject || !payload.message) {
       setSubmitStatus("error");
       setSubmitError(t.messageFormValidationError);
       return;
     }
-
     setSubmitStatus("submitting");
     setSubmitError(null);
-
     try {
       await createContactMessage(payload);
       setFormValues(initialFormState);
@@ -74,120 +57,130 @@ export default function Contact() {
 
   return (
     <div className="contact-page">
-      <div
-        className={`contact-hero${hasPageBanner ? " has-banner" : ""}`}
-        style={pageBannerStyle}
-      >
+
+      {/* ── Hero ── */}
+      <div className={`contact-hero${hasPageBanner ? " has-banner" : ""}`} style={pageBannerStyle}>
         <div className="container">
           <h1>{t.contactHeading}</h1>
           <p>{t.contactSub}</p>
         </div>
       </div>
 
+      {/* ── Strip: утас · и-мэйл · Facebook · Instagram ── */}
+      <div className="contact-strip">
+        <div className="container">
+          <div className="contact-strip-grid">
+            {contactPhone && (
+              <a href={`tel:${contactPhoneHref}`} className="contact-strip-item">
+                <Phone size={18} strokeWidth={1.4} className="contact-strip-icon" />
+                <span className="contact-strip-label">{t.phoneNumber}</span>
+                <span className="contact-strip-value">{contactPhone}</span>
+              </a>
+            )}
+            <a href={`mailto:${visibleSettings.contactEmail}`} className="contact-strip-item">
+              <Mail size={18} strokeWidth={1.4} className="contact-strip-icon" />
+              <span className="contact-strip-label">{isMN ? "И-мэйл" : "Email"}</span>
+              <span className="contact-strip-value">{visibleSettings.contactEmail}</span>
+            </a>
+            <a href={visibleSettings.facebookUrl} target="_blank" rel="noopener noreferrer" className="contact-strip-item">
+              <Facebook size={18} strokeWidth={1.4} className="contact-strip-icon" />
+              <span className="contact-strip-label">Facebook</span>
+              <span className="contact-strip-value">SAVANA Brand</span>
+            </a>
+            <a href={visibleSettings.instagramUrl} target="_blank" rel="noopener noreferrer" className="contact-strip-item">
+              <Instagram size={18} strokeWidth={1.4} className="contact-strip-icon" />
+              <span className="contact-strip-label">Instagram</span>
+              <span className="contact-strip-value">{visibleSettings.instagramHandle}</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Form + sidebar ── */}
       <section className="section">
         <div className="container">
           <div className="contact-grid">
+
+            {/* Form */}
             <div className="contact-form-section">
+              <span className="contact-section-kicker">{isMN ? "Санал, хүсэлт" : "Get in touch"}</span>
               <h2>{t.sendMessage}</h2>
               <form className="contact-form" onSubmit={handleSubmit}>
                 <div className="form-row">
                   <div className="form-group">
                     <label htmlFor="name">{t.name}</label>
-                    <input
-                      type="text"
-                      id="name"
-                      name="name"
-                      placeholder={t.namePlaceholder}
-                      value={formValues.name}
-                      onChange={handleFieldChange}
-                      disabled={submitStatus === "submitting"}
-                      required
-                    />
+                    <input type="text" id="name" name="name" placeholder={t.namePlaceholder}
+                      value={formValues.name} onChange={handleFieldChange}
+                      disabled={submitStatus === "submitting"} required />
                   </div>
                   <div className="form-group">
                     <label htmlFor="email">{t.email}</label>
-                    <input
-                      type="email"
-                      id="email"
-                      name="email"
-                      placeholder={t.emailPlaceholder}
-                      value={formValues.email}
-                      onChange={handleFieldChange}
-                      disabled={submitStatus === "submitting"}
-                      required
-                    />
+                    <input type="email" id="email" name="email" placeholder={t.emailPlaceholder}
+                      value={formValues.email} onChange={handleFieldChange}
+                      disabled={submitStatus === "submitting"} required />
                   </div>
                 </div>
                 <div className="form-group">
                   <label htmlFor="subject">{t.subject}</label>
-                  <input
-                    type="text"
-                    id="subject"
-                    name="subject"
-                    placeholder={t.subjectPlaceholder}
-                    value={formValues.subject}
-                    onChange={handleFieldChange}
-                    disabled={submitStatus === "submitting"}
-                    required
-                  />
+                  <input type="text" id="subject" name="subject" placeholder={t.subjectPlaceholder}
+                    value={formValues.subject} onChange={handleFieldChange}
+                    disabled={submitStatus === "submitting"} required />
                 </div>
                 <div className="form-group">
                   <label htmlFor="message">{t.message}</label>
-                  <textarea
-                    id="message"
-                    name="message"
-                    rows={6}
-                    placeholder={t.messagePlaceholder}
-                    value={formValues.message}
-                    onChange={handleFieldChange}
-                    disabled={submitStatus === "submitting"}
-                    required
-                  />
+                  <textarea id="message" name="message" rows={6} placeholder={t.messagePlaceholder}
+                    value={formValues.message} onChange={handleFieldChange}
+                    disabled={submitStatus === "submitting"} required />
                 </div>
-                {submitStatus === "success" ? (
+                {submitStatus === "success" && (
                   <p className="contact-form-feedback success">{t.messageSentSuccess}</p>
-                ) : null}
-                {submitError ? (
+                )}
+                {submitError && (
                   <p className="contact-form-feedback error">{submitError}</p>
-                ) : null}
+                )}
                 <button type="submit" className="btn btn-primary" disabled={submitStatus === "submitting"}>
                   {submitStatus === "submitting" ? t.sendingMessage : t.sendBtn}
                 </button>
               </form>
             </div>
 
-            <div className="contact-info-section">
-              {contactPhone ? (
-                <div className="contact-info-card">
-                  <div className="contact-info-icon">
-                    <Phone size={22} strokeWidth={1.2} />
+            {/* Sidebar: ажлын цаг + тайлбар */}
+            <aside className="contact-sidebar">
+              <div className="contact-sidebar-card">
+                <h3>{isMN ? "Ажлын цаг" : "Working hours"}</h3>
+                <div className="contact-hours">
+                  <div className="contact-hours-row">
+                    <span>{isMN ? "Да – Ба" : "Mon – Fri"}</span>
+                    <span>09:00 – 18:00</span>
                   </div>
-                  <h3>{t.phoneNumber}</h3>
-                  <a href={`tel:${contactPhoneHref}`}>{contactPhone}</a>
+                  <div className="contact-hours-row">
+                    <span>{isMN ? "Бя – Ня" : "Sat – Sun"}</span>
+                    <span>{isMN ? "Амарна" : "Closed"}</span>
+                  </div>
                 </div>
-              ) : null}
-              <div className="contact-info-card">
-                <div className="contact-info-icon">
-                  <Mail size={22} strokeWidth={1.2} />
-                </div>
-                <h3>{t.email}</h3>
-                <a href={`mailto:${visibleSettings.contactEmail}`}>{visibleSettings.contactEmail}</a>
               </div>
-              <div className="contact-info-card">
-                <div className="contact-info-icon">
-                  <MapPin size={22} strokeWidth={1.2} />
-                </div>
-                <h3>{language === "MN" ? "Байршил" : "Location"}</h3>
-                <p>{visibleSettings.location}</p>
+              <div className="contact-sidebar-note">
+                <p>
+                  {isMN
+                    ? "Бид таны санал хүсэлтийг ихэд үнэлдэг бөгөөд аливаа асуултад хурдан хугацаанд хариу өгөх болно."
+                    : "We value every message and aim to respond to all inquiries as quickly as possible."}
+                </p>
               </div>
-            </div>
+            </aside>
+
           </div>
         </div>
       </section>
 
+      {/* ── Газрын зураг + байршлын карт ── */}
       <section className="contact-visit-section">
         <div className="container">
           <div className="contact-visit-layout">
+            <div className="contact-visit-header">
+              <span className="contact-section-kicker">
+                {isMN ? "Байршил" : "Location"}
+              </span>
+            </div>
             <div className="contact-map-card">
               <iframe
                 title={visibleSettings.location || "Map"}
@@ -197,39 +190,10 @@ export default function Contact() {
                 className="contact-map-frame"
               />
             </div>
-            <div className="contact-visit-card">
-              <span className="contact-section-kicker">
-                {language === "MN" ? "Байршил & сувгууд" : "Location & channels"}
-              </span>
-              <h2>{language === "MN" ? "SAVANA-тай холбогдоорой" : "Reach SAVANA from one place"}</h2>
-              <div className="contact-visit-actions">
-                <a href={mapLink} target="_blank" rel="noopener noreferrer" className="btn btn-outline">
-                  <MapPin size={16} />
-                  {language === "MN" ? "Google Maps дээр харах" : "View on Google Maps"}
-                </a>
-                <a
-                  href={visibleSettings.facebookUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline"
-                >
-                  <Facebook size={16} />
-                  Facebook
-                </a>
-                <a
-                  href={visibleSettings.instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline"
-                >
-                  <Instagram size={16} />
-                  {visibleSettings.instagramHandle}
-                </a>
-              </div>
-            </div>
           </div>
         </div>
       </section>
+
     </div>
   );
 }
