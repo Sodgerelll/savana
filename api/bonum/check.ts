@@ -3,7 +3,7 @@
 // Returns { paid: boolean, paymentVendor?, completedAt?, terminalId?, bonumAmount? }.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { bonumGet } from './_client';
+import { bonumGet } from './_client.js';
 
 interface BonumInvoiceBody {
   status?: string;

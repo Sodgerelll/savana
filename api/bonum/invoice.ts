@@ -5,7 +5,7 @@
 // Body: { amount: number, transactionId: string }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { bonumPost } from './_client';
+import { bonumPost } from './_client.js';
 
 interface InvoiceRequestBody {
   amount: number;
