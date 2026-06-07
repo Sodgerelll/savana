@@ -97,6 +97,7 @@ import {
   type CustomerTransactionType,
 } from "../lib/customerTransactions";
 import { checkProductHasTransfers, deleteCustomerCascade } from "../services/transferService";
+import { createDirectSale, updateDirectSale, deleteDirectSale, subscribeToDirectSales, type DirectSaleRecord } from "../lib/directSales";
 import logoBlack from "../assets/logoBlack.png";
 import DashboardPage from "./admin/DashboardPage";
 import WebsitePage from "./admin/WebsitePage";
@@ -112,6 +113,7 @@ import FactoryInventoryPage from "./admin/FactoryInventoryPage";
 import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
+import DirectSalesPage from "./admin/DirectSalesPage";
 import AdminModals from "./admin/AdminModals";
 import { getAdminCopy } from "./admin/adminCopy";
 import {
@@ -141,6 +143,7 @@ type AdminSection =
   | "website"
   | "categories"
   | "products"
+  | "directSales"
   | "messages"
   | "orders"
   | "users"
@@ -274,6 +277,7 @@ interface ProductionAdvanceModalState {
   expectedReadyAt: string;
   readyAt: string;
   actualQuantity: number;
+  variantName: string;
 }
 
 interface CustomerModalState {
@@ -431,6 +435,7 @@ export default function Account() {
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
   const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
+  const [directSales, setDirectSales] = useState<DirectSaleRecord[]>([]);
   const [transactionModal, setTransactionModal] = useState<CustomerTransactionModalState | null>(null);
   const [transactionSavingState, setTransactionSavingState] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
@@ -536,7 +541,7 @@ export default function Account() {
   const totalStockSum = useMemo(() => products.reduce((sum, p) => {
     const hasVariants = (p.variants ?? []).length > 0;
     const variantStock = hasVariants ? p.variants!.reduce((s, v) => s + (v.quantity || 0), 0) : 0;
-    return sum + (hasVariants ? variantStock + (p.totalStock ?? 0) : (p.totalStock ?? 0));
+    return sum + (hasVariants ? variantStock : (p.totalStock ?? 0));
   }, 0), [products]);
   const totalSoldSum = useMemo(() => products.reduce((sum, p) => sum + (p.soldCount ?? 0), 0), [products]);
   const totalRemainingSum = totalStockSum - totalSoldSum;
@@ -594,6 +599,7 @@ export default function Account() {
     "website",
     "categories",
     "products",
+    "directSales",
     "messages",
     "orders",
     "users",
@@ -669,6 +675,14 @@ export default function Account() {
                 description: "SKU, pricing, copy, assets, status management.",
                 icon: <Package size={18} />,
                 implemented: true,
+              },
+              {
+                id: "directSales",
+                label: "Борлуулалтын түүх",
+                description: "Шууд борлуулалтын бүртгэл, захиалгаас тусдаа.",
+                icon: <WalletCards size={18} />,
+                implemented: true,
+                badge: directSales.length > 0 ? undefined : undefined,
               },
               {
                 id: "categories",
@@ -1260,6 +1274,16 @@ export default function Account() {
       onError: (subscriptionError) => {
         setCustomerTransactionsError(subscriptionError.message);
       },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setDirectSales([]);
+      return;
+    }
+    return subscribeToDirectSales({
+      onData: (next) => setDirectSales(next),
     });
   }, [isPrivilegedUser]);
 
@@ -2053,10 +2077,8 @@ export default function Account() {
 
     try {
       const originalOrder = orders.find((o) => o.id === orderModal.draft.id);
-      const isNewlyDelivered =
-        orderModal.draft.status === "delivered" &&
-        originalOrder != null &&
-        originalOrder.status !== "delivered";
+      const wasDelivered = originalOrder?.status === "delivered";
+      const willBeDelivered = orderModal.draft.status === "delivered";
 
       await updateOrderByAdmin(orderModal.draft.id, {
         status: orderModal.draft.status,
@@ -2065,21 +2087,45 @@ export default function Account() {
         payment: orderModal.draft.payment,
       });
 
-      if (isNewlyDelivered && originalOrder) {
+      // Adjust soldCount only when crossing the "delivered" boundary.
+      // sign = +1 when entering delivered (deduct stock), -1 when leaving (restore).
+      if (originalOrder && wasDelivered !== willBeDelivered) {
+        const sign = willBeDelivered ? 1 : -1;
+
+        // Aggregate items per product so a single product appearing in multiple
+        // order lines (e.g. different variants) is updated in one write.
+        const itemsByProduct = new Map<number, typeof originalOrder.items>();
         for (const item of originalOrder.items) {
-          const currentProduct = products.find((p) => p.id === item.productId);
-          if (currentProduct) {
-            const updatedVariants = currentProduct.variants?.map((v) =>
-              v.name === item.variant
-                ? { ...v, soldCount: (v.soldCount ?? 0) + item.quantity }
-                : v
-            );
-            updateProduct(item.productId, {
-              soldCount: (currentProduct.soldCount ?? 0) + item.quantity,
-              ...(updatedVariants ? { variants: updatedVariants } : {}),
-            });
-          }
+          const list = itemsByProduct.get(item.productId) ?? [];
+          list.push(item);
+          itemsByProduct.set(item.productId, list);
         }
+
+        itemsByProduct.forEach((items, productId) => {
+          const currentProduct = products.find((p) => p.id === productId);
+          if (!currentProduct) return;
+
+          let nextSoldCount = currentProduct.soldCount ?? 0;
+          const nextVariants = currentProduct.variants?.map((v) => ({ ...v }));
+
+          for (const item of items) {
+            nextSoldCount = Math.max(0, nextSoldCount + sign * item.quantity);
+            if (nextVariants && item.variant) {
+              const idx = nextVariants.findIndex((v) => v.name === item.variant);
+              if (idx >= 0) {
+                nextVariants[idx] = {
+                  ...nextVariants[idx],
+                  soldCount: Math.max(0, (nextVariants[idx].soldCount ?? 0) + sign * item.quantity),
+                };
+              }
+            }
+          }
+
+          updateProduct(productId, {
+            soldCount: nextSoldCount,
+            ...(nextVariants ? { variants: nextVariants } : {}),
+          });
+        });
       }
 
       setOrderModal(null);
@@ -2308,6 +2354,11 @@ export default function Account() {
     contactMessagesError,
     contactMessagesLast7DaysCount,
     latestContactMessageAt,
+    // direct sales
+    directSales,
+    createDirectSale,
+    updateDirectSale,
+    deleteDirectSale,
     // customers / transactions
     customers,
     customersError,
@@ -2759,6 +2810,8 @@ export default function Account() {
             <RawMaterialsPage ctx={adminCtx} />
           ) : activeSection === "factoryInventory" ? (
             <FactoryInventoryPage ctx={adminCtx} />
+          ) : activeSection === "directSales" ? (
+            <DirectSalesPage ctx={adminCtx} />
           ) : (
             <ProductsPage ctx={adminCtx} />
           )}

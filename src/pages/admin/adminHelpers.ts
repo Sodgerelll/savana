@@ -3,6 +3,14 @@ import type { JournalEntry, SiteNavigationItem } from "../../data/storefront";
 import type { OrderRecord, OrderStatus } from "../../lib/orders";
 import type { UserAuthMethod, UserProfile, UserRole } from "../../lib/userProfiles";
 
+export function getProductCode(productId: number): string {
+  return `#${String((productId + 99) % 1000).padStart(3, "0")}`;
+}
+
+export function getProductLabel(productId: number, productName: string): string {
+  return `${getProductCode(productId)} - ${productName}`;
+}
+
 export function cloneVariants(variants?: Product["variants"]): Product["variants"] {
   return variants?.map((v) => ({ ...v }));
 }

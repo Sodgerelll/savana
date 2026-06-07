@@ -239,6 +239,11 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    match /directSales/{saleId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     // CRM: Transfers
     match /transfers/{transferId} {
       allow read, list: if hasPrivilegedProfileRole();

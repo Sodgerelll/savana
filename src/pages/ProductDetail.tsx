@@ -10,7 +10,7 @@ import "./ProductDetail.css";
 
 export default function ProductDetail() {
   const { id } = useParams();
-  const { addItem } = useCart();
+  const { addItem, items } = useCart();
   const { language, t } = useLanguage();
   const { products, collections } = useStorefront();
   const visibleProducts = getActiveProducts(products, collections);
@@ -48,6 +48,22 @@ export default function ProductDetail() {
   const currentPrice = selectedVariant
     ? product.variants?.find((v) => v.name === selectedVariant)?.price ?? product.price
     : product.price;
+
+  const hasVariants = (product.variants?.length ?? 0) > 0;
+  // Remaining stock for the current selection (a variant must be picked first).
+  const selectedRemaining = hasVariants
+    ? (selectedVariant
+        ? (() => {
+            const v = product.variants!.find((vv) => vv.name === selectedVariant);
+            return Number(v?.quantity ?? 0) - Number(v?.soldCount ?? 0);
+          })()
+        : 0)
+    : Number(product.totalStock ?? 0) - Number(product.soldCount ?? 0);
+  const cartQtyForSelection =
+    items.find((i) => i.product.id === product.id && i.variant === selectedVariant)?.quantity ?? 0;
+  const addableMax = Math.max(0, selectedRemaining - cartQtyForSelection);
+  const needsVariantSelection = hasVariants && !selectedVariant;
+  const addDisabled = needsVariantSelection || addableMax <= 0;
 
   const gradient = getCategoryGradient(collections, product.category);
   const activeImage = allImages[activeImageIndex] || allImages[0] || "";
@@ -130,7 +146,7 @@ export default function ProductDetail() {
                       <button
                         key={variant.name}
                         className={`variant-btn ${selectedVariant === variant.name ? "active" : ""} ${remaining <= 0 ? "variant-btn-out" : ""}`}
-                        onClick={() => setSelectedVariant(variant.name)}
+                        onClick={() => { setSelectedVariant(variant.name); setQuantity(1); }}
                         disabled={remaining <= 0}
                       >
                         <span>{variant.name} — {formatStorePrice(variant.price)}</span>
@@ -157,11 +173,14 @@ export default function ProductDetail() {
               <label className="pd-label">{t.quantity}</label>
               <div className="pd-quantity-row">
                 <div className="quantity-selector">
-                  <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>
+                  <button onClick={() => setQuantity(Math.max(1, quantity - 1))} disabled={quantity <= 1}>
                     <Minus size={14} />
                   </button>
                   <span>{quantity}</span>
-                  <button onClick={() => setQuantity(quantity + 1)}>
+                  <button
+                    onClick={() => setQuantity((q) => Math.min(q + 1, Math.max(1, addableMax)))}
+                    disabled={quantity >= addableMax}
+                  >
                     <Plus size={14} />
                   </button>
                 </div>
@@ -176,8 +195,15 @@ export default function ProductDetail() {
             <button
               className="btn btn-primary pd-add-btn"
               onClick={() => addItem(product, quantity, selectedVariant)}
+              disabled={addDisabled}
             >
-              {t.addToCart}
+              {needsVariantSelection
+                ? (language === "MN" ? "Сонголтоо сонгоно уу" : "Select an option")
+                : addableMax <= 0
+                  ? (selectedRemaining <= 0
+                      ? (language === "MN" ? "Дууссан" : "Out of stock")
+                      : (language === "MN" ? "Сагсанд нэмэгдсэн" : "Max in cart"))
+                  : t.addToCart}
             </button>
 
             <div className="pd-features">

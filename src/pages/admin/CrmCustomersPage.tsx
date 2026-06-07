@@ -3,6 +3,7 @@ import { ArrowLeftRight, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lu
 import React from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
+import { getProductLabel } from "./adminHelpers";
 
 export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -769,7 +770,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                           {tx.items.map((it: any, idx: number) => (
                                                             <tr key={idx}>
                                                               <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
-                                                              <td style={{ textAlign: "center" }}>{it.productName}</td>
+                                                              <td style={{ textAlign: "center" }}>{getProductLabel(it.productId, it.productName)}</td>
                                                               <td style={{ textAlign: "center" }}>{it.variant || "—"}</td>
                                                               <td style={{ textAlign: "center" }}>{it.quantity}</td>
                                                               <td style={{ textAlign: "center" }}>{it.soldQuantity}</td>
@@ -820,7 +821,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                               {productAggList.map((p, idx) => (
                                                 <tr key={`${p.productId}-${p.variant ?? ""}`}>
                                                   <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
-                                                  <td style={{ textAlign: "center" }}>{p.productName}</td>
+                                                  <td style={{ textAlign: "center" }}>{getProductLabel(p.productId, p.productName)}</td>
                                                   <td style={{ textAlign: "center" }}>{p.variant || "—"}</td>
                                                   <td style={{ textAlign: "center" }}><strong>{p.transferred}</strong></td>
                                                   <td style={{ textAlign: "center" }}>{p.sold}</td>

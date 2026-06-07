@@ -139,9 +139,9 @@ describe("createProductionBatch", () => {
   });
 });
 
-// ─── advanceProductionBatch — planning → in_progress ─────────────────────────
+// ─── advanceProductionBatch — planning → curing ──────────────────────────────
 
-describe("advanceProductionBatch — planning → in_progress", () => {
+describe("advanceProductionBatch — planning → curing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBatchCommit.mockResolvedValue(undefined);
@@ -151,7 +151,7 @@ describe("advanceProductionBatch — planning → in_progress", () => {
     const batch = makeBatch({ status: "planning", supplies: [] });
     (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" });
 
-    await expect(advanceProductionBatch("batch-1", batch, "in_progress")).rejects.toThrow("No supplies");
+    await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("No supplies");
   });
 
   it("deducts raw materials and advances status", async () => {
@@ -160,11 +160,11 @@ describe("advanceProductionBatch — planning → in_progress", () => {
       .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" })
       .mockResolvedValueOnce({ exists: () => true, data: () => ({ remaining: 20 }), id: "10" }); // rawMaterial 10
 
-    await advanceProductionBatch("batch-1", batch, "in_progress");
+    await advanceProductionBatch("batch-1", batch, "curing");
 
     expect(mockBatchUpdate).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "in_progress" }),
+      expect.objectContaining({ status: "curing" }),
     );
     // Raw material should be deducted: 20 - 5 = 15
     expect(mockBatchUpdate).toHaveBeenCalledWith(
@@ -179,52 +179,18 @@ describe("advanceProductionBatch — planning → in_progress", () => {
       .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" })
       .mockResolvedValueOnce({ exists: () => true, data: () => ({ remaining: 3 }), id: "10" }); // only 3, need 5
 
-    await expect(advanceProductionBatch("batch-1", batch, "in_progress")).rejects.toThrow("INSUFFICIENT");
+    await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("INSUFFICIENT");
   });
 
   it("throws stale error if batch status changed since read", async () => {
     const batch = makeBatch({ status: "planning" });
     (getDoc as Mock).mockResolvedValue({
       exists: () => true,
-      data: () => ({ status: "in_progress" }), // mismatch
+      data: () => ({ status: "ready" }), // mismatch with previous "planning"
       id: "batch-1",
     });
 
-    await expect(advanceProductionBatch("batch-1", batch, "in_progress")).rejects.toThrow("changed");
-  });
-});
-
-// ─── advanceProductionBatch — in_progress → curing ───────────────────────────
-
-describe("advanceProductionBatch — in_progress → curing", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
-  it("updates status to curing", async () => {
-    const batch = makeBatch({ status: "in_progress" });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ status: "in_progress" }), id: "batch-1" });
-
-    await advanceProductionBatch("batch-1", batch, "curing", { expectedReadyAt: "2024-06-01" });
-
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: "curing", expectedReadyAt: "2024-06-01" }),
-    );
-  });
-
-  it("does NOT touch raw materials during curing transition", async () => {
-    const batch = makeBatch({ status: "in_progress" });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ status: "in_progress" }), id: "batch-1" });
-
-    await advanceProductionBatch("batch-1", batch, "curing");
-
-    // Only one update call (the batch status update), no raw material updates
-    const rawMaterialCalls = (mockBatchUpdate as Mock).mock.calls.filter(
-      ([ref]: [{ path: string }]) => ref?.path?.includes("rawMaterial"),
-    );
-    expect(rawMaterialCalls).toHaveLength(0);
+    await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("changed");
   });
 });
 
@@ -269,6 +235,56 @@ describe("advanceProductionBatch — curing → ready", () => {
 
     await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 })).rejects.toThrow("Product not found");
   });
+
+  it("adds produced quantity to the chosen variant for variant products", async () => {
+    const batch = makeBatch({ status: "curing" });
+    (getDoc as Mock)
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: "1",
+        data: () => ({
+          totalStock: 30,
+          variants: [
+            { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+            { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
+          ],
+        }),
+      });
+
+    await advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 15, variantName: "Large" });
+
+    // Chosen variant quantity bumped (20 → 35); totalStock mirrors variant sum (10 + 35).
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        variants: [
+          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+          { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
+        ],
+        totalStock: 45,
+      }),
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "ready", actualQuantity: 15, producedVariant: "Large" }),
+    );
+  });
+
+  it("throws VARIANT_REQUIRED when a variant product has no variant chosen", async () => {
+    const batch = makeBatch({ status: "curing" });
+    (getDoc as Mock)
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        id: "1",
+        data: () => ({ variants: [{ name: "Small", price: 1000, quantity: 10 }] }),
+      });
+
+    await expect(
+      advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 5 }),
+    ).rejects.toThrow("VARIANT_REQUIRED");
+  });
 });
 
 // ─── deleteProductionBatch ────────────────────────────────────────────────────
@@ -287,17 +303,33 @@ describe("deleteProductionBatch", () => {
     expect(mockBatchUpdate).not.toHaveBeenCalled();
   });
 
-  it("restores raw materials when deleting an IN_PROGRESS batch", async () => {
-    const batch = makeBatch({ status: "in_progress" });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ remaining: 10 }), id: "10" });
+  it("reverses the produced quantity from the variant when deleting a READY variant batch", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 15, producedVariant: "Large" });
+    (getDoc as Mock).mockResolvedValue({
+      exists: () => true,
+      id: "1",
+      data: () => ({
+        totalStock: 45,
+        variants: [
+          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+          { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
+        ],
+      }),
+    });
 
     await deleteProductionBatch(batch);
 
     expect(mockBatchDelete).toHaveBeenCalledTimes(1);
-    // remaining should be restored: 10 + 5 = 15
+    // Large variant reverted (35 → 20); totalStock mirrors variant sum (10 + 20).
     expect(mockBatchUpdate).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ remaining: 15 }),
+      expect.objectContaining({
+        variants: [
+          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+          { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
+        ],
+        totalStock: 30,
+      }),
     );
   });
 
@@ -359,7 +391,7 @@ describe("updateProductionBatch", () => {
   });
 
   it("restricts update to soft fields for non-PLANNING batches", async () => {
-    const previous = makeBatch({ status: "in_progress" });
+    const previous = makeBatch({ status: "curing" });
     const next = { productId: 2, productName: "New Soap", plannedQuantity: 200, supplies: [], totalCost: 50000, notes: "updated note" };
 
     await updateProductionBatch("batch-1", previous, next);

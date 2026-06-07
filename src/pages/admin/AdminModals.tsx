@@ -3,6 +3,7 @@ import { type FormEvent } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import { AdminModal } from "./AdminModal";
 import type { AdminCtx } from "./adminShellTypes";
+import { getProductCode, getProductLabel } from "./adminHelpers";
 import type { EntityStatus } from "../../data/products";
 import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
@@ -1146,7 +1147,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
 
 {productModal && (
   <AdminModal
-    title={productModal.mode === "create" ? copy.productModalCreate : copy.productModalEdit}
+    title={productModal.mode === "create" ? copy.productModalCreate : `${getProductCode(productModal.draft.id)} ${copy.productModalEdit}`}
     description={copy.productSummary}
     onClose={() => setProductModal(null)}
   >
@@ -2121,7 +2122,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         >
           <option value={0} disabled>—</option>
           {products.map((p: any)=> (
-            <option key={p.id} value={p.id}>{p.name}</option>
+            <option key={p.id} value={p.id}>{getProductLabel(p.id, p.name)}</option>
           ))}
         </select>
       </label>
@@ -2353,18 +2354,23 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         setProductionAdvanceSaving(true);
         setProductionAdvanceError(null);
         try {
-          const { batch, targetStatus, startedAt, expectedReadyAt, readyAt, actualQuantity } = productionAdvanceModal;
+          const { batch, targetStatus, startedAt, expectedReadyAt, readyAt, actualQuantity, variantName } = productionAdvanceModal;
           await advanceProductionBatch(batch.id, batch, targetStatus, {
             startedAt: startedAt || null,
             expectedReadyAt: expectedReadyAt || null,
             readyAt: readyAt || null,
             actualQuantity,
+            variantName: variantName || null,
           });
           setProductionAdvanceModal(null);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.startsWith("INSUFFICIENT:")) {
             setProductionAdvanceError(`${copy.productionAdvanceInsufficient} ${msg.slice("INSUFFICIENT:".length)}`);
+          } else if (msg === "VARIANT_REQUIRED") {
+            setProductionAdvanceError(language === "MN" ? "Variant сонгоно уу." : "Please select a variant.");
+          } else if (msg === "VARIANT_NOT_FOUND") {
+            setProductionAdvanceError(language === "MN" ? "Сонгосон variant олдсонгүй." : "Selected variant not found.");
           } else {
             setProductionAdvanceError(msg);
           }
@@ -2428,7 +2434,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           </p>
         </>
       )}
-      {productionAdvanceModal.targetStatus === "ready" && (
+      {productionAdvanceModal.targetStatus === "ready" && (() => {
+        const advProduct = products.find((p: any) => p.id === productionAdvanceModal.batch.productId);
+        const advVariants = (advProduct?.variants ?? []) as Array<{ name: string }>;
+        return (
         <>
           <p style={{ marginBottom: "0.75rem" }}>{copy.productionAdvanceConfirmReady}</p>
           <label className="admin-field admin-field-wide">
@@ -2446,6 +2455,23 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               required
             />
           </label>
+          {advVariants.length > 0 && (
+            <label className="admin-field admin-field-wide">
+              <span>{language === "MN" ? "Variant (нөөц нэмэгдэх)" : "Variant (stock target)"}</span>
+              <select
+                value={productionAdvanceModal.variantName}
+                onChange={(e: any)=>
+                  setProductionAdvanceModal({ ...productionAdvanceModal, variantName: e.target.value })
+                }
+                required
+              >
+                <option value="" disabled>—</option>
+                {advVariants.map((v) => (
+                  <option key={v.name} value={v.name}>{v.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="admin-field admin-field-wide">
             <span>{copy.productionBatchReadyAt}</span>
             <input
@@ -2457,7 +2483,8 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             />
           </label>
         </>
-      )}
+        );
+      })()}
       {productionAdvanceError && <div className="admin-modal-error">{productionAdvanceError}</div>}
       <div className="admin-modal-footer">
         <button type="button" className="btn btn-outline" onClick={() => setProductionAdvanceModal(null)} disabled={productionAdvanceSaving}>
@@ -2918,7 +2945,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               const pRemaining = pStock - pSold;
                               return (
                                 <option key={p.id} value={p.id}>
-                                  {p.name} ({pRemaining}/{pStock} - {pSold})
+                                  {getProductLabel(p.id, p.name)} ({pRemaining}/{pStock} - {pSold})
                                 </option>
                               );
                             })}
@@ -3665,7 +3692,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                   )}
                 </div>
                 <div className="admin-order-item-copy">
-                  <strong>{item.name}</strong>
+                  <strong>{getProductLabel(item.productId, item.name)}</strong>
                   <div className="admin-order-item-meta">
                     <span>{item.variant || (language === "MN" ? "Сонголтгүй" : "No variant")}</span>
                     <span>{item.category}</span>

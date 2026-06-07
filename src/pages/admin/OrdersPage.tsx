@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pencil } from "lucide-react";
 import type { AdminCtx } from "./adminShellTypes";
+import { getProductLabel } from "./adminHelpers";
 
 export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -122,7 +123,7 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                         <div className="admin-order-table-item-names">
                           {order.items.map((item: any, itemIndex: number) => (
                             <span key={`${order.id}-${item.productId}-${item.variant ?? "default"}-${itemIndex}`}>
-                              {item.name}
+                              {getProductLabel(item.productId, item.name)}
                               {item.variant ? ` / ${item.variant}` : ""}
                               {` × ${item.quantity}`}
                             </span>

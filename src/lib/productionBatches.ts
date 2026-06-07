@@ -38,6 +38,8 @@ export interface ProductionBatch {
   startedAt: string | null;
   expectedReadyAt: string | null;
   readyAt: string | null;
+  /** For variant products: which variant received the produced quantity. */
+  producedVariant: string | null;
   supplies: ProductionBatchSupply[];
   totalCost: number;
   notes: string;
@@ -110,6 +112,8 @@ function deserializeBatch(
     expectedReadyAt:
       typeof data.expectedReadyAt === "string" ? data.expectedReadyAt : null,
     readyAt: typeof data.readyAt === "string" ? data.readyAt : null,
+    producedVariant:
+      typeof data.producedVariant === "string" ? data.producedVariant : null,
     supplies: Array.isArray(data.supplies)
       ? data.supplies
           .map((item): ProductionBatchSupply | null => {
@@ -292,6 +296,8 @@ export interface AdvancePatch {
   expectedReadyAt?: string | null;
   readyAt?: string | null;
   actualQuantity?: number;
+  /** Required when the target product has variants: which variant to add stock to. */
+  variantName?: string | null;
 }
 
 export async function advanceProductionBatch(
@@ -349,18 +355,54 @@ export async function advanceProductionBatch(
     }
     const productData = productSnap.data() as Record<string, unknown>;
     const currentTotalStock = Number(productData.totalStock ?? 0);
+    const variants = Array.isArray(productData.variants)
+      ? (productData.variants as Array<Record<string, unknown>>)
+      : null;
+    const hasVariants = variants !== null && variants.length > 0;
 
     const batch = writeBatch(db);
-    batch.update(batchRef, {
-      status: "ready",
-      actualQuantity,
-      readyAt: patch.readyAt ?? new Date().toISOString().slice(0, 10),
-      updatedAt: serverTimestamp(),
-    });
-    batch.update(productRef, {
-      totalStock: currentTotalStock + actualQuantity,
-      updatedAt: serverTimestamp(),
-    });
+
+    if (hasVariants) {
+      // Variant products: produced units must be assigned to a specific variant.
+      const variantName = patch.variantName;
+      if (!variantName) {
+        throw new Error("VARIANT_REQUIRED");
+      }
+      const idx = variants!.findIndex((v) => v.name === variantName);
+      if (idx < 0) {
+        throw new Error("VARIANT_NOT_FOUND");
+      }
+      const nextVariants = variants!.map((v, i) =>
+        i === idx ? { ...v, quantity: Number(v.quantity ?? 0) + actualQuantity } : v,
+      );
+      // Keep totalStock mirroring the sum of variant quantities.
+      const nextTotalStock = nextVariants.reduce((sum, v) => sum + Number(v.quantity ?? 0), 0);
+
+      batch.update(batchRef, {
+        status: "ready",
+        actualQuantity,
+        producedVariant: variantName,
+        readyAt: patch.readyAt ?? new Date().toISOString().slice(0, 10),
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(productRef, {
+        variants: nextVariants,
+        totalStock: nextTotalStock,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      batch.update(batchRef, {
+        status: "ready",
+        actualQuantity,
+        producedVariant: null,
+        readyAt: patch.readyAt ?? new Date().toISOString().slice(0, 10),
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(productRef, {
+        totalStock: currentTotalStock + actualQuantity,
+        updatedAt: serverTimestamp(),
+      });
+    }
     await batch.commit();
     return;
   }
@@ -401,11 +443,31 @@ export async function deleteProductionBatch(
   if (productSnap.exists() && actualQuantity > 0) {
     const productData = productSnap.data() as Record<string, unknown>;
     const currentTotalStock = Number(productData.totalStock ?? 0);
-    const nextTotalStock = Math.max(0, currentTotalStock - actualQuantity);
-    batch.update(productRef, {
-      totalStock: nextTotalStock,
-      updatedAt: serverTimestamp(),
-    });
+    const variants = Array.isArray(productData.variants)
+      ? (productData.variants as Array<Record<string, unknown>>)
+      : null;
+    const idx =
+      previous.producedVariant && variants
+        ? variants.findIndex((v) => v.name === previous.producedVariant)
+        : -1;
+
+    if (idx >= 0 && variants) {
+      // Reverse the produced quantity from the specific variant.
+      const nextVariants = variants.map((v, i) =>
+        i === idx ? { ...v, quantity: Math.max(0, Number(v.quantity ?? 0) - actualQuantity) } : v,
+      );
+      const nextTotalStock = nextVariants.reduce((sum, v) => sum + Number(v.quantity ?? 0), 0);
+      batch.update(productRef, {
+        variants: nextVariants,
+        totalStock: nextTotalStock,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      batch.update(productRef, {
+        totalStock: Math.max(0, currentTotalStock - actualQuantity),
+        updatedAt: serverTimestamp(),
+      });
+    }
   }
   await batch.commit();
 }

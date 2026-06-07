@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Pencil, Plus, RotateCcw, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import type { AdminCtx } from "./adminShellTypes";
+import { getProductLabel } from "./adminHelpers";
 
 const STATUS_ORDER = ["planning", "curing", "ready"] as const;
 type BatchStatus = typeof STATUS_ORDER[number];
@@ -120,6 +121,8 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
     const target = nextStatusOf(batch.status);
     if (!target) return;
     const today = new Date().toISOString().slice(0, 10);
+    const product = products.find((p: any) => p.id === batch.productId);
+    const firstVariant = product?.variants?.[0]?.name ?? "";
     setProductionAdvanceError(null);
     setProductionAdvanceModal({
       batch, targetStatus: target,
@@ -127,6 +130,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
       expectedReadyAt: batch.expectedReadyAt ?? "",
       readyAt: today,
       actualQuantity: batch.plannedQuantity,
+      variantName: firstVariant,
     });
   };
 
@@ -239,7 +243,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
                       </td>
                       <td>{idx + 1}</td>
                       <td><strong>{batch.batchCode}</strong></td>
-                      <td>{batch.productName}</td>
+                      <td>{getProductLabel(batch.productId, batch.productName)}</td>
                       <td>
                         <span style={{
                           display: "inline-block",
