@@ -50,6 +50,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     res.status(200).json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Invoice creation failed';
+    console.error('[bonum/invoice] failed:', err);
     res.status(500).json({ error: message });
   }
 }

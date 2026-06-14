@@ -61,6 +61,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     res.status(200).json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Status check failed';
+    console.error('[bonum/check] failed:', err);
     res.status(500).json({ error: message });
   }
 }

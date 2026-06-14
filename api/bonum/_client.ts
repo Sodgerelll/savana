@@ -14,11 +14,20 @@ export async function getAccessToken(): Promise<string> {
     return _tokenCache.token;
   }
 
+  const appSecret = process.env.BONUM_APP_SECRET;
+  const terminalId = process.env.BONUM_TERMINAL_ID;
+
+  if (!appSecret || !terminalId) {
+    throw new Error(
+      'Bonum credentials are not configured. Set BONUM_APP_SECRET and BONUM_TERMINAL_ID in the Vercel project environment variables.',
+    );
+  }
+
   const res = await fetch(`${BASE_URL}/bonum-gateway/ecommerce/auth/create`, {
     method: 'GET',
     headers: {
-      Authorization: `AppSecret ${process.env.BONUM_APP_SECRET ?? ''}`,
-      'X-TERMINAL-ID': process.env.BONUM_TERMINAL_ID ?? '',
+      Authorization: `AppSecret ${appSecret}`,
+      'X-TERMINAL-ID': terminalId,
       'Accept-Language': 'mn',
     },
   });

@@ -708,13 +708,7 @@ export default function Checkout() {
 
               {pendingOrder ? (
                 <div className="checkout-payment-card">
-                  <div className="checkout-payment-header">
-                    <span className="checkout-payment-badge">Bonum</span>
-                    <div>
-                      <h3>{copy.paymentTitle}</h3>
-                      <p>{copy.paymentText}</p>
-                    </div>
-                  </div>
+                  
 
                   <div className="checkout-payment-meta">
                     <div>
