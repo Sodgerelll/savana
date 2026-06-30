@@ -2,6 +2,8 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -449,4 +451,16 @@ export function subscribeToUserOrders({
     },
     onError,
   );
+}
+
+export async function searchOrderByNumber(orderNumber: string): Promise<OrderRecord | null> {
+  const snapshot = await getDocs(
+    query(
+      collection(db, ORDERS_COLLECTION),
+      where("orderNumber", "==", orderNumber.toUpperCase().trim()),
+      limit(1),
+    ),
+  );
+  if (snapshot.empty) return null;
+  return deserializeOrder(snapshot.docs[0]);
 }

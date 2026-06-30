@@ -25,17 +25,19 @@ import {
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
 import { useStorefront } from "../context/StorefrontContext";
-import type { Collection, Product } from "../data/products";
+import type { Collection, Discount, Product } from "../data/products";
 import type { JournalEntry } from "../data/storefront";
 import {
+  applyDiscount,
   formatStorePrice,
-  getActiveCollections,
+  getActiveDiscount,
   getActiveHeroBanners,
   getActiveJournalEntries,
   getActiveProducts,
   getActiveTestimonials,
   getCategoryGradient,
   getCollectionPrimaryImage,
+  getCollectionsWithProducts,
   getProductPrimaryImage,
   getRenderableSettings,
   SYSTEM_COLLECTION_SLUG,
@@ -46,7 +48,6 @@ import "./Home.css";
 import "./Journal.css";
 
 const HERO_ROTATION_INTERVAL = 5000;
-const PRODUCT_IMAGE_ROTATION_INTERVAL = 3000;
 
 function parseIngredients(ingredients?: string): string[] {
   if (!ingredients) return [];
@@ -56,23 +57,18 @@ function parseIngredients(ingredients?: string): string[] {
     .filter(Boolean);
 }
 
-function ProductCardHome({ product, gradient }: { product: Product; gradient: string }) {
+function ProductCardHome({ product, gradient, discount }: { product: Product; gradient: string; discount?: Discount }) {
   const { addItem } = useCart();
   const { t } = useLanguage();
   const [hovered, setHovered] = useState(false);
   const allImages = product.images.filter(Boolean);
-  const hasMultiple = allImages.length > 1;
-  const imageIndexRef = useRef(0);
-  const [activeImage, setActiveImage] = useState(allImages[0] || "");
+  const primaryImage = allImages[0] || "";
+  const coverImage = allImages[1] || "";
 
-  useEffect(() => {
-    if (!hasMultiple) return undefined;
-    const interval = window.setInterval(() => {
-      imageIndexRef.current = (imageIndexRef.current + 1) % allImages.length;
-      setActiveImage(allImages[imageIndexRef.current]);
-    }, PRODUCT_IMAGE_ROTATION_INTERVAL);
-    return () => window.clearInterval(interval);
-  }, [hasMultiple, allImages]);
+  const basePrice = product.variants?.length
+    ? Math.min(...product.variants.map((v) => v.price))
+    : product.price;
+  const discountedPrice = discount ? applyDiscount(basePrice, discount) : null;
 
   return (
     <div
@@ -82,8 +78,8 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
     >
       <Link to={`/product/${product.id}`} className="home-product-image-wrap">
         <div className="home-product-image-bg" style={{ background: gradient }}>
-          {activeImage ? (
-            <img src={activeImage} alt={product.name} className="home-product-photo" loading="lazy" />
+          {primaryImage ? (
+            <img src={primaryImage} alt={product.name} className="home-product-photo home-product-photo-primary" loading="lazy" />
           ) : (
             <div className="home-product-icon">
               <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -93,9 +89,26 @@ function ProductCardHome({ product, gradient }: { product: Product; gradient: st
               </svg>
             </div>
           )}
+          {coverImage && (
+            <img src={coverImage} alt={product.name} className="home-product-photo home-product-photo-cover" loading="lazy" />
+          )}
         </div>
         {product.badge && <span className="home-product-badge">{product.badge}</span>}
-        <p className="home-product-price-bar">{formatStorePrice(product.price)}</p>
+        {discount && (
+          <span className="home-product-discount-badge">
+            {discount.type === "percent" ? `-${discount.value}%` : `-${formatStorePrice(discount.value)}`}
+          </span>
+        )}
+        <p className="home-product-price-bar">
+          {discountedPrice !== null ? (
+            <>
+              <span className="home-price-original">{formatStorePrice(basePrice)}</span>
+              {formatStorePrice(discountedPrice)}
+            </>
+          ) : (
+            formatStorePrice(basePrice)
+          )}
+        </p>
         <div className="home-product-overlay">
           <h3 className="home-product-title">{product.name}</h3>
           <button
@@ -264,7 +277,7 @@ function getIngredientVisual(ingredient: string): { icon: LucideIcon; tone: stri
 
 export default function Home() {
   const { language, t } = useLanguage();
-  const { collections, heroBanners, products, settings, testimonials } = useStorefront();
+  const { collections, heroBanners, products, settings, testimonials, discounts, loading } = useStorefront();
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
   const [heroHovered, setHeroHovered] = useState(false);
   const [heroProductHovered, setHeroProductHovered] = useState(false);
@@ -272,7 +285,7 @@ export default function Home() {
 
   const visibleSettings = getRenderableSettings(settings);
   const latestJournalEntries = getActiveJournalEntries(visibleSettings.journalEntries).slice(0, 3);
-  const activeCollections = getActiveCollections(collections);
+  const activeCollections = getCollectionsWithProducts(collections, products);
 
   const collectionsViewportRef = useRef<HTMLDivElement>(null);
   const [collectionSlide, setCollectionSlide] = useState(0);
@@ -541,7 +554,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="categories-section section">
+      {!loading && <section className="categories-section section">
         <div className="container">
           <div className="section-header">
             <h2>{t.categoriesHeading}</h2>
@@ -555,7 +568,6 @@ export default function Home() {
                   : undefined) ?? collectionProducts[0];
               const featuredProductImage = featuredProduct ? getProductPrimaryImage(featuredProduct) : "";
               const previewImage = featuredProductImage || getCollectionPrimaryImage(collection) || resolveCollectionImage(collection, activeProducts);
-              const ingredients: string[] = [];
 
               return (
                 <Link key={collection.id} to={`/collections/${collection.slug}`} className="category-tile">
@@ -575,42 +587,14 @@ export default function Home() {
                         </svg>
                       </div>
                     )}
-                    <div className="category-tile-title-bar">
-                      <p className="category-tile-name">{collection.name}</p>
-                    </div>
-                    <div className="category-tile-overlay">
-                      {ingredients.length > 0 ? (
-                        <div className="category-tile-ingredients">
-                          <p className="category-tile-ingredients-title">
-                            {language === "MN" ? "Орц найрлага" : "Ingredients"}
-                          </p>
-                          <ul className="category-tile-ingredients-list">
-                            {ingredients.slice(0, 5).map((ingredient) => (
-                              <li key={ingredient} className="category-tile-ingredient-tag">
-                                {ingredient}
-                              </li>
-                            ))}
-                            {ingredients.length > 5 && (
-                              <li className="category-tile-ingredient-tag category-tile-ingredient-more">
-                                +{ingredients.length - 5}
-                              </li>
-                            )}
-                          </ul>
-                        </div>
-                      ) : (
-                        <p className="category-tile-name">{collection.name}</p>
-                      )}
-                      <span className="category-tile-overlay-btn">
-                        {t.shopNow} <ArrowRight size={12} />
-                      </span>
-                    </div>
                   </div>
+                  <p className="category-tile-name">{collection.name}</p>
                 </Link>
               );
             })}
           </div>
         </div>
-      </section>
+      </section>}
 
       {bestSellersVisible && bestSellerProducts.length > 0 && (
         <section className="best-sellers-section section">
@@ -627,6 +611,7 @@ export default function Home() {
                   key={product.id}
                   product={product}
                   gradient={getCategoryGradient(collections, product.category)}
+                  discount={getActiveDiscount(discounts, product.id)}
                 />
               ))}
             </div>

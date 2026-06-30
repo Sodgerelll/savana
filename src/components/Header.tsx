@@ -1,27 +1,102 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ShoppingBag, Search, User, Menu, X } from "lucide-react";
+import { ShoppingBag, Search, User, Menu, X, Package } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import {
   getActiveSiteNavigation,
+  getActiveProducts,
   getPageBannerNavigationItem,
+  getProductPrimaryImage,
+  formatStorePrice,
   getRenderableSettings,
   getSiteNavigationPath,
 } from "../lib/storefrontHelpers";
+import { searchOrderByNumber, type OrderRecord, type OrderStatus } from "../lib/orders";
+import type { Product } from "../data/products";
 import logoBlack from "../assets/logoBlack.png";
 import logoWhite from "../assets/logoWhite.png";
 import "./Header.css";
+
+const ORDER_STATUS_LABELS: Record<OrderStatus, { mn: string; en: string; color: string }> = {
+  new:        { mn: "Шинэ захиалга",        en: "New order",    color: "#6b7280" },
+  paid:       { mn: "Төлбөр хийгдсэн",      en: "Paid",         color: "#16a34a" },
+  delivering: { mn: "Хүргэлтэнд гарсан",    en: "Delivering",   color: "#d97706" },
+  delivered:  { mn: "Хүргэгдсэн",           en: "Delivered",    color: "#2563eb" },
+};
 
 export default function Header() {
   const { pathname } = useLocation();
   const { totalItems, setIsCartOpen } = useCart();
   const { language, setLanguage, t } = useLanguage();
-  const { settings } = useStorefront();
+  const { settings, products, collections } = useStorefront();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [productResults, setProductResults] = useState<Product[]>([]);
+  const [orderResult, setOrderResult] = useState<OrderRecord | "not-found" | null>(null);
+  const [orderLoading, setOrderLoading] = useState(false);
+
+  const activeProducts = getActiveProducts(products, collections);
+  const isOrderQuery = /^ORD-/i.test(searchQuery.trim());
+  const isPriceQuery = /^\d[\d,. ]*$/.test(searchQuery.trim()) && searchQuery.trim().length >= 3;
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setProductResults([]);
+      setOrderResult(null);
+      return;
+    }
+
+    if (isOrderQuery) {
+      setProductResults([]);
+      const timer = setTimeout(async () => {
+        setOrderLoading(true);
+        try {
+          const result = await searchOrderByNumber(q);
+          setOrderResult(result ?? "not-found");
+        } catch {
+          setOrderResult("not-found");
+        } finally {
+          setOrderLoading(false);
+        }
+      }, 450);
+      return () => clearTimeout(timer);
+    }
+
+    if (isPriceQuery) {
+      const target = Number(q.replace(/[,. ]/g, ""));
+      const filtered = activeProducts
+        .filter((p) => {
+          const base = p.variants?.length
+            ? Math.min(...p.variants.map((v) => v.price))
+            : p.price;
+          return base >= target * 0.9 && base <= target * 1.1;
+        })
+        .slice(0, 6);
+      setProductResults(filtered);
+      setOrderResult(null);
+      return;
+    }
+
+    const filtered = activeProducts
+      .filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
+      .slice(0, 6);
+    setProductResults(filtered);
+    setOrderResult(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setProductResults([]);
+    setOrderResult(null);
+    setOrderLoading(false);
+  }
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -111,17 +186,111 @@ export default function Header() {
       </div>
 
       {searchOpen && (
-        <div className="search-overlay" onClick={() => setSearchOpen(false)}>
-          <div className="search-inner container" onClick={(e) => e.stopPropagation()}>
-            <input
-              autoFocus
-              type="text"
-              placeholder={t.searchPlaceholder}
-              className="search-field"
-            />
-            <button className="icon-btn" onClick={() => setSearchOpen(false)}>
-              <X size={20} />
-            </button>
+        <div className="search-overlay" onClick={closeSearch}>
+          <div className="search-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="search-inner">
+              <Search size={18} className="search-icon-left" />
+              <input
+                autoFocus
+                type="text"
+                placeholder={t.searchPlaceholder}
+                className="search-field"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <button className="icon-btn" onClick={closeSearch}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {searchQuery.trim() && (
+              <div className="search-results">
+                {/* Order search */}
+                {isOrderQuery && (
+                  <>
+                    {orderLoading && (
+                      <div className="search-empty">
+                        {language === "MN" ? "Хайж байна..." : "Searching..."}
+                      </div>
+                    )}
+                    {!orderLoading && orderResult === "not-found" && (
+                      <div className="search-empty">
+                        {language === "MN" ? "Захиалга олдсонгүй" : "Order not found"}
+                      </div>
+                    )}
+                    {!orderLoading && orderResult && orderResult !== "not-found" && (
+                      <div className="search-order-card">
+                        <div className="search-order-head">
+                          <div className="search-order-meta">
+                            <Package size={16} />
+                            <strong>{orderResult.orderNumber}</strong>
+                          </div>
+                          <span
+                            className="search-order-status"
+                            style={{ color: ORDER_STATUS_LABELS[orderResult.status].color }}
+                          >
+                            {language === "MN"
+                              ? ORDER_STATUS_LABELS[orderResult.status].mn
+                              : ORDER_STATUS_LABELS[orderResult.status].en}
+                          </span>
+                        </div>
+                        <div className="search-order-items">
+                          {orderResult.items.map((item) => (
+                            <div key={`${item.productId}-${item.variant}`} className="search-order-item">
+                              {item.image && (
+                                <img src={item.image} alt={item.name} className="search-order-item-img" />
+                              )}
+                              <span className="search-order-item-name">{item.name}</span>
+                              {item.variant && (
+                                <span className="search-order-item-variant">{item.variant}</span>
+                              )}
+                              <span className="search-order-item-qty">×{item.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Product search */}
+                {!isOrderQuery && productResults.length > 0 && (
+                  <div className="search-product-list">
+                    {productResults.map((product) => {
+                      const img = getProductPrimaryImage(product);
+                      const price = product.variants?.length
+                        ? Math.min(...product.variants.map((v) => v.price))
+                        : product.price;
+                      return (
+                        <Link
+                          key={product.id}
+                          to={`/product/${product.id}`}
+                          className="search-result-item"
+                          onClick={closeSearch}
+                        >
+                          <div className="search-result-img-wrap">
+                            {img
+                              ? <img src={img} alt={product.name} className="search-result-img" />
+                              : <div className="search-result-img-placeholder" />
+                            }
+                          </div>
+                          <div className="search-result-info">
+                            <span className="search-result-name">{product.name}</span>
+                            <span className="search-result-price">{formatStorePrice(price)}</span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!isOrderQuery && productResults.length === 0 && searchQuery.trim().length > 1 && (
+                  <div className="search-empty">
+                    {language === "MN" ? "Бараа олдсонгүй" : "No products found"}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

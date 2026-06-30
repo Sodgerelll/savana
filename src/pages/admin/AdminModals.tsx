@@ -7,9 +7,25 @@ import { getProductCode, getProductLabel } from "./adminHelpers";
 import type { EntityStatus } from "../../data/products";
 import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
+import { buildCategoryTree } from "../../lib/storefrontHelpers";
 import type { CustomerType } from "../../lib/customers";
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
+
+function CatLeaf({ node, selected, onSelect, indent, bold }: { node: any; selected: boolean; onSelect: () => void; indent: number; bold?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`admin-cat-item${selected ? " admin-cat-selected" : ""}`}
+      style={{ paddingLeft: 10 + indent, fontWeight: bold ? 600 : 400 }}
+      onClick={onSelect}
+    >
+      <span className="admin-cat-code">{node.code}</span>
+      {node.collection.name}
+      {selected && <span className="admin-cat-check">✓</span>}
+    </button>
+  );
+}
 
 export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -17,6 +33,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     language,
     customers,
     products,
+    collections,
     selectableCategories,
     bannerCategories,
     rawMaterials,
@@ -910,9 +927,28 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <option value="inactive">{copy.inactive}</option>
           </select>
         </label>
-        <label className="admin-field">
+        {(collectionModal.draft.level ?? 1) >= 2 && (() => {
+          const parentCollection = collections.find((c: any) => c.id === collectionModal.draft.parentId);
+          const levelLabel =
+            collectionModal.draft.level === 2 ? copy.categoryLevelCategory : copy.categoryLevelType;
+          return (
+            <div className="admin-field admin-field-wide">
+              <span>{copy.categoryLevel}</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <strong>{levelLabel}</strong>
+                {parentCollection && (
+                  <small style={{ opacity: 0.6 }}>
+                    {copy.categoryParentLabel} {parentCollection.name}
+                  </small>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+        <label className="admin-field admin-field-wide">
           <span>{copy.name}</span>
           <input
+            autoFocus
             value={collectionModal.draft.name}
             onChange={(event: any)=>
               setCollectionModal({
@@ -1205,25 +1241,24 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             }
           />
         </label>
-        <label className="admin-field">
+        <div className="admin-field admin-field-wide">
           <span>{copy.category}</span>
-          <select
-            value={productModal.draft.category}
-            disabled={selectableCategories.length === 0}
-            onChange={(event: any)=>
-              setProductModal({
-                ...productModal,
-                draft: { ...productModal.draft, category: event.target.value },
-              })
-            }
-          >
-            {selectableCategories.map((collection: any)=> (
-              <option key={collection.id} value={collection.slug}>
-                {collection.name}
-              </option>
+          <div className="admin-category-tree-picker">
+            {buildCategoryTree(collections).map((g: any) => (
+              <div key={g.collection.id} className="admin-cat-group">
+                <CatLeaf node={g} selected={productModal.draft.category === g.collection.slug} onSelect={() => setProductModal({ ...productModal, draft: { ...productModal.draft, category: g.collection.slug } })} indent={0} bold />
+                {g.children.map((cat: any) => (
+                  <div key={cat.collection.id}>
+                    <CatLeaf node={cat} selected={productModal.draft.category === cat.collection.slug} onSelect={() => setProductModal({ ...productModal, draft: { ...productModal.draft, category: cat.collection.slug } })} indent={16} />
+                    {cat.children.map((typ: any) => (
+                      <CatLeaf key={typ.collection.id} node={typ} selected={productModal.draft.category === typ.collection.slug} onSelect={() => setProductModal({ ...productModal, draft: { ...productModal.draft, category: typ.collection.slug } })} indent={32} />
+                    ))}
+                  </div>
+                ))}
+              </div>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
         <label className="admin-field">
           <span>{copy.price}</span>
           <input
@@ -3738,6 +3773,102 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         </button>
         <button type="submit" className="btn btn-primary" disabled={savingOrderModal}>
           {savingOrderModal ? "..." : copy.save}
+        </button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{ctx.discountModal && (
+  <AdminModal
+    title={ctx.discountModal.mode === "create" ? copy.discountModalCreate : copy.discountModalEdit}
+    onClose={() => ctx.setDiscountModal(null)}
+  >
+    <form
+      className="admin-modal-form"
+      onSubmit={(event: any) => {
+        event.preventDefault();
+        ctx.saveDiscountDraft(ctx.discountModal.draft);
+        ctx.setDiscountModal(null);
+      }}
+    >
+      <div className="admin-form-grid">
+        <label className="admin-field admin-field-wide">
+          <span>{copy.discountProduct}</span>
+          <select
+            value={ctx.discountModal.draft.productId}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, productId: Number(e.target.value) } } : cur)}
+            required
+          >
+            <option value={0} disabled>{language === "MN" ? "Бүтээгдэхүүн сонгоно уу" : "Select a product"}</option>
+            {products.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="admin-field">
+          <span>{copy.discountType}</span>
+          <select
+            value={ctx.discountModal.draft.type}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, type: e.target.value } } : cur)}
+          >
+            <option value="percent">{copy.discountTypePercent}</option>
+            <option value="amount">{copy.discountTypeAmount}</option>
+          </select>
+        </label>
+
+        <label className="admin-field">
+          <span>{copy.discountValue} {ctx.discountModal.draft.type === "percent" ? "(%)" : "(₮)"}</span>
+          <input
+            type="number"
+            min={0}
+            max={ctx.discountModal.draft.type === "percent" ? 100 : undefined}
+            step={1}
+            value={ctx.discountModal.draft.value}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, value: Number(e.target.value) } } : cur)}
+            required
+          />
+        </label>
+
+        <label className="admin-field">
+          <span>{copy.discountStartAt}</span>
+          <input
+            type="date"
+            value={ctx.discountModal.draft.startAt}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, startAt: e.target.value } } : cur)}
+            required
+          />
+        </label>
+
+        <label className="admin-field">
+          <span>{copy.discountEndAt}</span>
+          <input
+            type="date"
+            value={ctx.discountModal.draft.endAt}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, endAt: e.target.value } } : cur)}
+            required
+          />
+        </label>
+
+        <label className="admin-field">
+          <span>{copy.status}</span>
+          <select
+            value={ctx.discountModal.draft.status}
+            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, status: e.target.value } } : cur)}
+          >
+            <option value="active">{copy.active}</option>
+            <option value="inactive">{copy.inactive}</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => ctx.setDiscountModal(null)}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary">
+          {copy.save}
         </button>
       </div>
     </form>

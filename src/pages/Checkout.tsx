@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
-import { CheckCircle2, ChevronLeft, PackageCheck, QrCode, RefreshCcw, Trash2, Truck, WalletCards } from "lucide-react";
+import { CheckCircle2, ChevronLeft, HandHeart, Leaf, PackageCheck, QrCode, RefreshCcw, ShieldCheck, Trash2, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -13,7 +13,8 @@ import {
   type OrderItemPayload,
   type OrderPaymentPayload,
 } from "../lib/orders";
-import { formatStorePrice, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import { applyDiscount, formatStorePrice, getActiveDiscount, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import { useStorefront } from "../context/StorefrontContext";
 import "./Checkout.css";
 
 interface CheckoutFormState {
@@ -46,6 +47,7 @@ export default function Checkout() {
   const { user, profile, authMethod, loading, signInAsGuest } = useAuth();
   const { items, totalPrice, clearCart, setIsCartOpen, updateQuantity, removeItem } = useCart();
   const { language } = useLanguage();
+  const { discounts } = useStorefront();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [guestSessionPending, setGuestSessionPending] = useState(false);
@@ -214,27 +216,34 @@ export default function Checkout() {
     [formState.districtOrSoum],
   );
   const shippingFee = SHIPPING_FEE;
-  const liveTotals = useMemo<CheckoutTotals>(
-    () => ({
-      subtotal: totalPrice,
-      shippingFee,
-      grandTotal: totalPrice + shippingFee,
-    }),
-    [shippingFee, totalPrice],
-  );
   const liveSummaryItems = useMemo<OrderItemPayload[]>(
     () =>
-      items.map((item) => ({
-        productId: item.product.id,
-        name: item.product.name,
-        category: item.product.category,
-        image: getProductPrimaryImage(item.product) || null,
-        variant: item.variant ?? null,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        lineTotal: item.unitPrice * item.quantity,
-      })),
-    [items],
+      items.map((item) => {
+        const discount = getActiveDiscount(discounts, item.product.id);
+        const effectivePrice = discount ? applyDiscount(item.unitPrice, discount) : item.unitPrice;
+        return {
+          productId: item.product.id,
+          name: item.product.name,
+          category: item.product.category,
+          image: getProductPrimaryImage(item.product) || null,
+          variant: item.variant ?? null,
+          quantity: item.quantity,
+          unitPrice: effectivePrice,
+          lineTotal: effectivePrice * item.quantity,
+        };
+      }),
+    [items, discounts],
+  );
+  const discountSavings = useMemo(
+    () => liveSummaryItems.reduce((sum, s, i) => sum + (items[i].unitPrice - s.unitPrice) * s.quantity, 0),
+    [liveSummaryItems, items],
+  );
+  const liveTotals = useMemo<CheckoutTotals>(
+    () => {
+      const subtotal = totalPrice - discountSavings;
+      return { subtotal, shippingFee, grandTotal: subtotal + shippingFee };
+    },
+    [shippingFee, totalPrice, discountSavings],
   );
   const summaryItems = pendingOrder?.items ?? liveSummaryItems;
   const summaryTotals = pendingOrder?.totals ?? liveTotals;
@@ -685,6 +694,25 @@ export default function Checkout() {
                 </div>
               </section>
 
+              <div className="checkout-trust-badges">
+                <div className="checkout-trust-badge">
+                  <div className="checkout-trust-icon"><Leaf size={18} strokeWidth={1.5} /></div>
+                  <span>{language === "MN" ? "100% Байгалийн найрлага" : "100% Natural Herbs & Oils"}</span>
+                </div>
+                <div className="checkout-trust-badge">
+                  <div className="checkout-trust-icon"><HandHeart size={18} strokeWidth={1.5} /></div>
+                  <span>{language === "MN" ? "Гараар бэлтгэсэн" : "Handmade in Small Batches"}</span>
+                </div>
+                <div className="checkout-trust-badge">
+                  <div className="checkout-trust-icon"><ShieldCheck size={18} strokeWidth={1.5} /></div>
+                  <span>{language === "MN" ? "Мэдрэмтгий арьсанд тохиромжтой" : "Great for Sensitive Skin"}</span>
+                </div>
+                <div className="checkout-trust-badge">
+                  <div className="checkout-trust-icon"><Truck size={18} strokeWidth={1.5} /></div>
+                  <span>{language === "MN" ? "Улсын хэмжээнд хүргэлт" : "Nationwide Delivery"}</span>
+                </div>
+              </div>
+
               {isOrderLocked ? (
                 <button
                   type="button"
@@ -807,6 +835,18 @@ export default function Checkout() {
               ))}
             </div>
 
+            {discountSavings > 0 && !pendingOrder && (
+              <div className="checkout-summary-row checkout-discount-row">
+                <span>{language === "MN" ? "Барааны үнэ" : "Items subtotal"}</span>
+                <span>{formatStorePrice(totalPrice)}</span>
+              </div>
+            )}
+            {discountSavings > 0 && !pendingOrder && (
+              <div className="checkout-summary-row checkout-discount-row checkout-discount-savings">
+                <span>{language === "MN" ? "Хямдрал" : "Discount"}</span>
+                <strong style={{ color: "#c0392b" }}>-{formatStorePrice(discountSavings)}</strong>
+              </div>
+            )}
             <div className="checkout-summary-row">
               <span>{copy.subtotal}</span>
               <strong>{formatStorePrice(summaryTotals.subtotal)}</strong>

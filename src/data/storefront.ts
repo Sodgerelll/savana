@@ -2,6 +2,7 @@ import {
   collections as defaultCollections,
   products as defaultProducts,
   type Collection,
+  type Discount,
   type EntityStatus,
   type Product,
 } from "./products";
@@ -94,6 +95,7 @@ export interface StorefrontData {
   heroBanners: HeroBanner[];
   markets: MarketItem[];
   testimonials: Testimonial[];
+  discounts: Discount[];
 }
 
 export const LEGACY_STOREFRONT_STORAGE_KEY = "savana.storefront.v1";
@@ -499,6 +501,7 @@ export function createDefaultStorefrontData(): StorefrontData {
     heroBanners: createDefaultHeroBanners(clonedCollections),
     markets: defaultMarkets.map((market) => ({ ...market })),
     testimonials: defaultTestimonials.map((testimonial) => ({ ...testimonial })),
+    discounts: [],
   };
 }
 
@@ -544,6 +547,7 @@ export function getLegacyStorefrontCandidate(): StorefrontData | null {
       ),
       markets: parsed.markets.map((market) => ({ ...market })),
       testimonials: parsed.testimonials.map((testimonial) => ({ ...testimonial })),
+      discounts: [],
     };
   } catch {
     return null;

@@ -4,7 +4,7 @@ import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import type { Product } from "../data/products";
-import { formatStorePrice, getCategoryGradient } from "../lib/storefrontHelpers";
+import { applyDiscount, formatStorePrice, getActiveDiscount, getCategoryGradient } from "../lib/storefrontHelpers";
 import "./ProductCard.css";
 
 const IMAGE_ROTATION_INTERVAL = 3000;
@@ -16,9 +16,15 @@ interface ProductCardProps {
 export default function ProductCard({ product }: ProductCardProps) {
   const { addItem } = useCart();
   const { t } = useLanguage();
-  const { collections } = useStorefront();
+  const { collections, discounts } = useStorefront();
   const [hovered, setHovered] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const activeDiscount = getActiveDiscount(discounts, product.id);
+  const basePrice = product.variants
+    ? Math.min(...product.variants.map((v) => v.price))
+    : product.price;
+  const discountedPrice = activeDiscount ? applyDiscount(basePrice, activeDiscount) : null;
 
   const gradient = getCategoryGradient(collections, product.category);
   const allImages = product.images.filter(Boolean);
@@ -55,10 +61,20 @@ export default function ProductCard({ product }: ProductCardProps) {
           )}
         </div>
         {product.badge && <span className="product-badge">{product.badge}</span>}
+        {activeDiscount && (
+          <span className="product-discount-badge">
+            {activeDiscount.type === "percent" ? `-${activeDiscount.value}%` : `-${formatStorePrice(activeDiscount.value)}`}
+          </span>
+        )}
         <p className="product-card-price-badge">
-          {product.variants
-            ? `${t.from} ${formatStorePrice(Math.min(...product.variants.map((v) => v.price)))}`
-            : formatStorePrice(product.price)}
+          {discountedPrice !== null ? (
+            <>
+              <span className="product-price-original">{formatStorePrice(basePrice)}</span>
+              {formatStorePrice(discountedPrice)}
+            </>
+          ) : (
+            formatStorePrice(basePrice)
+          )}
         </p>
         <div className="product-card-overlay">
           <h3 className="product-card-title">{product.name}</h3>

@@ -3,8 +3,8 @@ import ProductCard from "../components/ProductCard";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import {
-  getActiveCollections,
   getActiveProducts,
+  getCollectionsWithProducts,
   getPageBannerNavigationItem,
   getPageBannerStyle,
   getRenderableSettings,
@@ -17,7 +17,7 @@ export default function Collections() {
   const { t } = useLanguage();
   const { products, collections, settings } = useStorefront();
   const visibleSettings = getRenderableSettings(settings);
-  const activeCollections = getActiveCollections(collections);
+  const activeCollections = getCollectionsWithProducts(collections, products);
   const visibleProducts = getActiveProducts(products, collections);
   const isBestSellersRoute = slug === SYSTEM_COLLECTION_SLUG;
   const pageBanner = getPageBannerNavigationItem(

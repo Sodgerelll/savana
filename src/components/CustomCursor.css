@@ -1,0 +1,76 @@
+/* Hide system cursor only while custom cursor is active */
+.custom-cursor-on *,
+.custom-cursor-on *::before,
+.custom-cursor-on *::after {
+  cursor: none !important;
+}
+
+.cc-dot,
+.cc-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 99999;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.cc-dot.visible,
+.cc-ring.visible {
+  opacity: 1;
+}
+
+/* Small filled dot — follows cursor instantly */
+.cc-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--color-accent);
+  transform: translate(-50%, -50%);
+  z-index: 100000;
+  transition: opacity 0.3s ease, transform 0.15s ease, background 0.25s ease;
+  will-change: left, top;
+}
+
+/* Large hollow ring — follows with lag */
+.cc-ring {
+  width: 38px;
+  height: 38px;
+  border: 1.5px solid var(--color-accent);
+  transform: translate(-50%, -50%);
+  transition:
+    opacity 0.3s ease,
+    width 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    height 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    background 0.35s ease,
+    border-color 0.35s ease;
+  will-change: left, top;
+}
+
+/* Hover over clickable elements */
+.cc-ring.expanded {
+  width: 58px;
+  height: 58px;
+  background: rgba(var(--color-accent-rgb, 139, 105, 20), 0.08);
+  border-color: var(--color-accent);
+}
+
+.cc-dot.shrunk {
+  transform: translate(-50%, -50%) scale(0.4);
+  background: var(--color-accent);
+}
+
+/* Mobile — restore default cursor, hide custom one */
+@media (hover: none) or (pointer: coarse) {
+  .custom-cursor-on *,
+  .custom-cursor-on *::before,
+  .custom-cursor-on *::after {
+    cursor: auto !important;
+  }
+
+  .cc-dot,
+  .cc-ring {
+    display: none;
+  }
+}

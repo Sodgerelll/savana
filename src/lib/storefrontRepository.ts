@@ -17,7 +17,7 @@ import {
   type Unsubscribe,
   writeBatch,
 } from "firebase/firestore";
-import type { Collection, Product } from "../data/products";
+import type { Collection, Discount, Product } from "../data/products";
 import {
   normalizeShopSettings,
   resolveNavigationItemLabel,
@@ -46,6 +46,7 @@ const bannersRef = collection(db, "sites", STOREFRONT_SITE_ID, "heroBanners");
 const marketsRef = collection(db, "sites", STOREFRONT_SITE_ID, "markets");
 const testimonialsRef = collection(db, "sites", STOREFRONT_SITE_ID, "testimonials");
 const packagingRef = collection(db, "packaging");
+const discountsRef = collection(db, "sites", STOREFRONT_SITE_ID, "discounts");
 
 export interface PackagingItem {
   id: number;
@@ -120,6 +121,8 @@ function serializeCollection(collectionItem: Collection) {
     ...collectionItem,
     siteId: STOREFRONT_SITE_ID,
     sortOrder: collectionItem.id,
+    level: collectionItem.level ?? null,
+    parentId: collectionItem.parentId ?? null,
     updatedAt: serverTimestamp(),
   };
 }
@@ -182,6 +185,8 @@ function deserializeCollection(snapshot: QueryDocumentSnapshot<DocumentData>): C
     image: String(data.image ?? ""),
     featuredProductId: data.featuredProductId ? Number(data.featuredProductId) : undefined,
     status: deserializeStatus(data.status),
+    level: data.level ? (Number(data.level) as 1 | 2 | 3) : undefined,
+    parentId: data.parentId ? Number(data.parentId) : undefined,
   };
 }
 
@@ -436,6 +441,7 @@ export async function readStorefront(): Promise<StorefrontData> {
     bannersSnapshot,
     marketsSnapshot,
     testimonialsSnapshot,
+    discountsSnapshot,
   ] =
     await Promise.all([
       getDoc(siteRef),
@@ -448,6 +454,7 @@ export async function readStorefront(): Promise<StorefrontData> {
       getDocs(query(bannersRef, orderBy("sortOrder"))),
       getDocs(query(marketsRef, orderBy("sortOrder"))),
       getDocs(query(testimonialsRef, orderBy("sortOrder"))),
+      getDocs(discountsRef),
     ]);
 
   const defaults = createDefaultStorefrontData();
@@ -484,6 +491,7 @@ export async function readStorefront(): Promise<StorefrontData> {
     testimonials: testimonialsSnapshot.empty
       ? fallbackTestimonials
       : testimonialsSnapshot.docs.map((snapshot) => deserializeTestimonial(snapshot)),
+    discounts: discountsSnapshot.docs.map((snapshot) => deserializeDiscount(snapshot)),
   };
 }
 
@@ -495,6 +503,7 @@ interface StorefrontListeners {
   onHeroBanners: (heroBanners: HeroBanner[]) => void;
   onMarkets: (markets: MarketItem[]) => void;
   onTestimonials: (testimonials: Testimonial[]) => void;
+  onDiscounts: (discounts: Discount[]) => void;
   onError: (error: FirestoreError) => void;
 }
 
@@ -524,6 +533,9 @@ export function subscribeToStorefront(listeners: StorefrontListeners): Unsubscri
     }, listeners.onError),
     onSnapshot(query(testimonialsRef, orderBy("sortOrder")), (snapshot) => {
       listeners.onTestimonials(snapshot.docs.map((docSnapshot) => deserializeTestimonial(docSnapshot)));
+    }, listeners.onError),
+    onSnapshot(discountsRef, (snapshot) => {
+      listeners.onDiscounts(snapshot.docs.map((docSnapshot) => deserializeDiscount(docSnapshot)));
     }, listeners.onError),
   ];
 }
@@ -578,6 +590,39 @@ export async function saveTestimonial(testimonial: Testimonial) {
 
 export async function deleteTestimonial(testimonialId: number) {
   await deleteDoc(doc(testimonialsRef, String(testimonialId)));
+}
+
+function serializeDiscount(discount: Discount) {
+  return {
+    id: discount.id,
+    productId: discount.productId,
+    type: discount.type,
+    value: discount.value,
+    startAt: discount.startAt,
+    endAt: discount.endAt,
+    status: discount.status,
+  };
+}
+
+function deserializeDiscount(snapshot: QueryDocumentSnapshot<DocumentData>): Discount {
+  const data = snapshot.data();
+  return {
+    id: Number(data.id),
+    productId: Number(data.productId),
+    type: data.type === "amount" ? "amount" : "percent",
+    value: Number(data.value ?? 0),
+    startAt: String(data.startAt ?? ""),
+    endAt: String(data.endAt ?? ""),
+    status: data.status === "inactive" ? "inactive" : "active",
+  };
+}
+
+export async function saveDiscount(discount: Discount) {
+  await setDoc(doc(discountsRef, String(discount.id)), serializeDiscount(discount), { merge: true });
+}
+
+export async function deleteDiscount(discountId: number) {
+  await deleteDoc(doc(discountsRef, String(discountId)));
 }
 
 export async function resetStorefrontDocuments(seedData: StorefrontData = createDefaultStorefrontData()) {

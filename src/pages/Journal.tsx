@@ -217,14 +217,17 @@ export default function Journal() {
               <h3 id="journal-modal-title">{selectedEntryTitle}</h3>
               <div className="journal-card-meta journal-modal-meta">
                 <span>
-                  <CalendarDays size={15} />
+                  <CalendarDays size={14} />
                   {formatJournalDate(selectedEntry.publishedAt, language)}
                 </span>
-                <span>
-                  <UserCircle2 size={15} />
-                  {selectedEntry.author}
-                </span>
+                {selectedEntry.author && (
+                  <span>
+                    <UserCircle2 size={14} />
+                    {selectedEntry.author}
+                  </span>
+                )}
               </div>
+              <div className="journal-modal-divider" />
               <div className="journal-modal-content">
                 {(selectedEntryParagraphs.length > 0 ? selectedEntryParagraphs : [selectedEntryExcerpt]).map((paragraph, index) => (
                   <p key={`${selectedEntry.id}-${index}`}>{paragraph}</p>

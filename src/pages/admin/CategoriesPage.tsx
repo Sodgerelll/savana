@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Package, Pencil, Plus, Trash2 } from "lucide-react";
+import type { JSX } from "react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Package, Pencil, Plus, Trash2 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
+import { buildCategoryTree } from "../../lib/storefrontHelpers";
+import type { CategoryTreeNode } from "../../lib/storefrontHelpers";
 
 export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -18,6 +22,145 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
     setActiveSection,
   } = ctx;
 
+  const tree = buildCategoryTree(collections);
+
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  function toggle(id: number) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function renderNode(node: CategoryTreeNode, parentCollapsed: boolean): JSX.Element[] {
+    const { collection, code, children } = node;
+    const level = collection.level ?? 1;
+    const isCollapsed = collapsed.has(collection.id);
+    const hasChildren = children.length > 0;
+
+    const levelLabel =
+      level === 1 ? copy.categoryLevelGroup :
+      level === 2 ? copy.categoryLevelCategory :
+      copy.categoryLevelType;
+
+    const addChildLabel =
+      level === 1 ? copy.addCategoryChild :
+      level === 2 ? copy.addTypeChild : null;
+
+    const indent = level === 1 ? 0 : level === 2 ? 24 : 48;
+
+    const rows: JSX.Element[] = [];
+
+    if (!parentCollapsed) {
+      rows.push(
+        <tr key={collection.id} data-level={level}>
+          <td style={{ paddingLeft: indent }}>
+            <div className="admin-table-primary-row">
+              <button
+                type="button"
+                onClick={() => hasChildren && toggle(collection.id)}
+                style={{
+                  width: 20,
+                  height: 20,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: hasChildren ? "pointer" : "default",
+                  opacity: hasChildren ? 1 : 0,
+                  color: "var(--admin-muted, #888)",
+                }}
+                aria-label={isCollapsed ? "Нээх" : "Хаах"}
+              >
+                {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <div
+                className="admin-product-thumb"
+                style={{
+                  width: level === 1 ? 34 : level === 2 ? 28 : 24,
+                  height: level === 1 ? 34 : level === 2 ? 28 : 24,
+                  fontSize: level === 1 ? undefined : "0.7em",
+                  flexShrink: 0,
+                }}
+              >
+                {getCollectionPrimaryImage(collection) ? (
+                  <img src={getCollectionPrimaryImage(collection)} alt={collection.name} />
+                ) : (
+                  <span>{collection.name.slice(0, 1).toUpperCase() || "C"}</span>
+                )}
+              </div>
+              <div className="admin-table-primary">
+                <strong style={{ fontSize: level === 1 ? "0.95em" : level === 2 ? "0.88em" : "0.83em" }}>
+                  <span style={{ opacity: 0.4, marginRight: 6, fontWeight: 400, fontVariantNumeric: "tabular-nums" }}>{code}</span>
+                  {collection.name || copy.collections}
+                </strong>
+                <small style={{ opacity: 0.5 }}>
+                  {levelLabel}
+                  {hasChildren && (
+                    <span style={{ marginLeft: 6 }}>
+                      · {children.length}
+                    </span>
+                  )}
+                  {isSystemCollection(collection) ? ` · ${copy.categorySystemNote}` : ""}
+                </small>
+              </div>
+            </div>
+          </td>
+          <td>{productCountByCategory.get(collection.slug) ?? 0}</td>
+          <td>
+            <StatusBadge
+              status={collection.status}
+              activeLabel={copy.active}
+              inactiveLabel={copy.inactive}
+            />
+          </td>
+          <td>
+            <div className="admin-table-actions">
+              {addChildLabel && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => openCollectionModal(undefined, collection)}
+                >
+                  <Plus size={13} />
+                  {addChildLabel}
+                </button>
+              )}
+              <button
+                type="button"
+                className="admin-icon-btn admin-icon-btn-neutral"
+                onClick={() => openCollectionModal(collection)}
+                aria-label={`${copy.edit} ${collection.name}`}
+              >
+                <Pencil size={15} />
+              </button>
+              <button
+                type="button"
+                className="admin-icon-btn"
+                onClick={() => handleCollectionDeleteRequest(collection)}
+                aria-label={`${copy.delete} ${collection.name}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    for (const child of children) {
+      rows.push(...renderNode(child, parentCollapsed || isCollapsed));
+    }
+
+    return rows;
+  }
+
   return (
     <>
       <div className="admin-topbar">
@@ -33,7 +176,7 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
           </button>
           <button type="button" className="btn btn-primary" onClick={() => openCollectionModal()}>
             <Plus size={16} />
-            {copy.createCollection}
+            {copy.addGroup}
           </button>
         </div>
       </div>
@@ -73,7 +216,6 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
             <thead>
               <tr>
                 <th>{copy.name}</th>
-                <th>{copy.description}</th>
                 <th>{copy.linkedProducts}</th>
                 <th>{copy.status}</th>
                 <th>{copy.actions}</th>
@@ -82,64 +224,12 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
             <tbody>
               {collections.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="admin-table-empty">
+                  <td colSpan={4} className="admin-table-empty">
                     {copy.emptyCategories}
                   </td>
                 </tr>
               ) : (
-                collections.map((collection: any) => (
-                  <tr key={collection.id}>
-                    <td>
-                      <div className="admin-table-primary-row">
-                        <div className="admin-product-thumb">
-                          {getCollectionPrimaryImage(collection) ? (
-                            <img src={getCollectionPrimaryImage(collection)} alt={collection.name} />
-                          ) : (
-                            <span>{collection.name.slice(0, 1) || "C"}</span>
-                          )}
-                        </div>
-                        <div className="admin-table-primary">
-                          <strong>{collection.name || copy.collections}</strong>
-                          <small>
-                            #{collection.id}
-                            {isSystemCollection(collection) ? ` • ${copy.categorySystemNote}` : ""}
-                          </small>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-description">{collection.description || "-"}</div>
-                    </td>
-                    <td>{productCountByCategory.get(collection.slug) ?? 0}</td>
-                    <td>
-                      <StatusBadge
-                        status={collection.status}
-                        activeLabel={copy.active}
-                        inactiveLabel={copy.inactive}
-                      />
-                    </td>
-                    <td>
-                      <div className="admin-table-actions">
-                        <button
-                          type="button"
-                          className="admin-icon-btn admin-icon-btn-neutral"
-                          onClick={() => openCollectionModal(collection)}
-                          aria-label={`${copy.edit} ${collection.name}`}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-icon-btn"
-                          onClick={() => handleCollectionDeleteRequest(collection)}
-                          aria-label={`${copy.delete} ${collection.name}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                tree.flatMap((node) => renderNode(node, false))
               )}
             </tbody>
           </table>

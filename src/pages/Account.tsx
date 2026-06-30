@@ -10,6 +10,7 @@ import {
   MessageSquareQuote,
   Package,
   Pencil,
+  Percent,
   RotateCcw,
   Store,
   Trash2,
@@ -23,7 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useCart } from "../context/CartContext";
-import type { Collection, Product } from "../data/products";
+import type { Collection, Discount, Product } from "../data/products";
 import {
   cloneShopSettings,
   type HeroBanner,
@@ -115,6 +116,7 @@ import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
 import DirectSalesPage from "./admin/DirectSalesPage";
 import AdminModals from "./admin/AdminModals";
+import DiscountsPage from "./admin/DiscountsPage";
 import { getAdminCopy } from "./admin/adminCopy";
 import {
   cloneVariants,
@@ -143,6 +145,7 @@ type AdminSection =
   | "website"
   | "categories"
   | "products"
+  | "discounts"
   | "directSales"
   | "messages"
   | "orders"
@@ -207,6 +210,11 @@ interface MarketModalState {
 interface TestimonialModalState {
   mode: ModalMode;
   draft: Testimonial;
+}
+
+interface DiscountModalState {
+  mode: ModalMode;
+  draft: Discount;
 }
 
 interface ConfirmModalState {
@@ -319,7 +327,7 @@ interface AdminMenuGroup {
 }
 
 const VALID_SECTIONS = new Set<string>([
-  "dashboard", "website", "categories", "products", "messages", "orders", "users",
+  "dashboard", "website", "categories", "products", "discounts", "messages", "orders", "users",
   "commonSettings", "activityLog",
   "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
@@ -340,6 +348,7 @@ export default function Account() {
     heroBanners,
     markets,
     testimonials,
+    discounts,
     loading,
     saving,
     error,
@@ -357,6 +366,8 @@ export default function Account() {
     deleteMarket,
     saveTestimonialDraft,
     deleteTestimonial,
+    saveDiscountDraft,
+    deleteDiscount,
   } = useStorefront();
 
   const copy = getAdminCopy(language);
@@ -384,6 +395,7 @@ export default function Account() {
   const [heroBannerModal, setHeroBannerModal] = useState<HeroBannerModalState | null>(null);
   const [marketModal, setMarketModal] = useState<MarketModalState | null>(null);
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
+  const [discountModal, setDiscountModal] = useState<DiscountModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [confirmModalLoading, setConfirmModalLoading] = useState(false);
@@ -599,6 +611,7 @@ export default function Account() {
     "website",
     "categories",
     "products",
+    "discounts",
     "directSales",
     "messages",
     "orders",
@@ -689,6 +702,13 @@ export default function Account() {
                 label: "Ангилал",
                 description: "Catalog taxonomy, collection structure.",
                 icon: <Store size={18} />,
+                implemented: true,
+              },
+              {
+                id: "discounts",
+                label: copy.discountsMenu,
+                description: copy.discountsText,
+                icon: <Percent size={18} />,
                 implemented: true,
               },
             ],
@@ -980,6 +1000,13 @@ export default function Account() {
                 label: "Categories",
                 description: "Catalog taxonomy and collection structure.",
                 icon: <Store size={18} />,
+                implemented: true,
+              },
+              {
+                id: "discounts",
+                label: copy.discountsMenu,
+                description: copy.discountsText,
+                icon: <Percent size={18} />,
                 implemented: true,
               },
             ],
@@ -1491,7 +1518,7 @@ export default function Account() {
     });
   };
 
-  const openCollectionModal = (collection?: Collection) => {
+  const openCollectionModal = (collection?: Collection, parent?: Collection) => {
     if (collection) {
       setCollectionModal({
         mode: "edit",
@@ -1501,6 +1528,9 @@ export default function Account() {
     }
 
     const nextId = Math.max(0, ...collections.map((item) => item.id)) + 1;
+    const level: 1 | 2 | 3 = parent
+      ? (parent.level ?? 1) === 1 ? 2 : 3
+      : 1;
     setCollectionModal({
       mode: "create",
       draft: {
@@ -1511,6 +1541,8 @@ export default function Account() {
         gradient: DEFAULT_COLLECTION_GRADIENT,
         image: "",
         status: "active",
+        level,
+        parentId: parent?.id,
       },
     });
   };
@@ -1681,6 +1713,39 @@ export default function Account() {
         author: "",
         location: "",
         status: "active",
+      },
+    });
+  };
+
+  const openDiscountModal = (discount?: Discount) => {
+    if (discount) {
+      setDiscountModal({ mode: "edit", draft: { ...discount } });
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const nextId = Math.max(0, ...discounts.map((d) => d.id)) + 1;
+    setDiscountModal({
+      mode: "create",
+      draft: {
+        id: nextId,
+        productId: products[0]?.id ?? 0,
+        type: "percent",
+        value: 10,
+        startAt: today,
+        endAt: today,
+        status: "active",
+      },
+    });
+  };
+
+  const handleDiscountDeleteRequest = (discount: Discount) => {
+    openConfirmModal({
+      title: copy.confirmDeleteTitle,
+      description: copy.deleteDiscountDescription,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: async () => {
+        deleteDiscount(discount.id);
       },
     });
   };
@@ -2302,6 +2367,7 @@ export default function Account() {
     heroBanners,
     markets,
     testimonials,
+    discounts,
     loading,
     saving,
     error,
@@ -2432,6 +2498,7 @@ export default function Account() {
     handleTestimonialDeleteRequest,
     handleNavigationDeleteRequest,
     handleJournalEntryDeleteRequest,
+    handleDiscountDeleteRequest,
     // helpers
     formatAdminDateTime,
     formatStorePrice,
@@ -2475,6 +2542,7 @@ export default function Account() {
     saveHeroBannerDraft,
     saveMarketDraft,
     saveTestimonialDraft,
+    saveDiscountDraft,
     saveSettingsSection,
     savePackaging,
     saveRawMaterial,
@@ -2534,6 +2602,9 @@ export default function Account() {
     setMarketModal,
     testimonialModal,
     setTestimonialModal,
+    discountModal,
+    setDiscountModal,
+    openDiscountModal,
     packagingModal,
     rawMaterialModal,
     rawMaterialSaving,
@@ -2796,6 +2867,8 @@ export default function Account() {
             <UsersPage ctx={adminCtx} />
           ) : activeSection === "categories" ? (
             <CategoriesPage ctx={adminCtx} />
+          ) : activeSection === "discounts" ? (
+            <DiscountsPage ctx={adminCtx} />
           ) : activeSection === "crmOverview" ? (
             <CrmOverviewPage ctx={adminCtx} />
           ) : activeSection === "crmCustomers" ? (

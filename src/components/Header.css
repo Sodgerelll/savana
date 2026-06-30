@@ -356,33 +356,232 @@
   background: rgba(0,0,0,0.45);
   display: flex;
   align-items: flex-start;
-  padding-top: 128px;
+  padding-top: 100px;
   animation: fadeIn 0.2s;
 }
-.search-inner {
-  background: #faf9f6;
+
+.search-modal {
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
   display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  border-radius: 0 0 0.75rem 0.75rem;
+  overflow: hidden;
+}
+
+.search-inner {
+  background: #faf9f6;
+  display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1rem 1.5rem;
+  padding: 1rem 1.25rem;
   border: 1px solid #d8d9cd;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
+
+.search-icon-left {
+  color: #9a9a88;
+  flex-shrink: 0;
+}
+
 .search-field {
   flex: 1;
-  padding: 0.6rem 0.5rem;
+  padding: 0.5rem 0.25rem;
   border: none;
-  border-bottom: 1px solid #d8d9cd;
   background: transparent;
   font-family: var(--font-body);
   font-size: var(--fs-base);
   color: var(--color-heading);
   outline: none;
 }
-.search-field:focus { border-color: var(--color-accent); }
+
+/* ── Results panel ── */
+.search-results {
+  background: #fff;
+  border: 1px solid #d8d9cd;
+  border-top: none;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.search-empty {
+  padding: 1.25rem 1.5rem;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: #9a9a88;
+  text-align: center;
+}
+
+/* Product results */
+.search-product-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  text-decoration: none;
+  border-bottom: 1px solid #f0efe8;
+  transition: background 0.15s;
+}
+
+.search-result-item:last-child { border-bottom: none; }
+
+.search-result-item:hover { background: #f7f6f2; }
+
+.search-result-img-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f0efe8;
+}
+
+.search-result-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-result-img-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #e8e7e0;
+}
+
+.search-result-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--color-heading);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-price {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Order results */
+.search-order-card {
+  margin: 0.75rem 1.25rem 1rem;
+  border: 1px solid #e2e1d8;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.search-order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  background: #f7f6f2;
+  border-bottom: 1px solid #e2e1d8;
+}
+
+.search-order-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-heading);
+}
+
+.search-order-meta strong {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+}
+
+.search-order-status {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.search-order-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.search-order-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #f0efe8;
+}
+
+.search-order-item:last-child { border-bottom: none; }
+
+.search-order-item-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f0efe8;
+}
+
+.search-order-item-name {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--color-heading);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-order-item-variant {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: #9a9a88;
+  white-space: nowrap;
+}
+
+.search-order-item-qty {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: #9a9a88;
+  flex-shrink: 0;
+}
+
+.search-order-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #f7f6f2;
+  border-top: 1px solid #e2e1d8;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--color-heading);
+}
+
+.search-order-footer strong {
+  font-size: var(--fs-base);
+  color: var(--color-accent);
+}
 
 /* ============================================================
    MOBILE DRAWER
@@ -480,7 +679,9 @@
     gap: 0.5rem;
     justify-content: space-between;
   }
-  .search-overlay { padding-top: 92px; }
+  .search-overlay { padding-top: 72px; }
+  .search-modal { border-radius: 0; }
+  .search-results { max-height: 60vh; }
 }
 @media (max-width: 480px) {
   .site-logo { width: 92px; }

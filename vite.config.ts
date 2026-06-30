@@ -27,6 +27,20 @@ function loadLocalEnv(): Record<string, string> {
 }
 
 let _devToken: { value: string; expiresAt: number } | null = null
+let _adminDb: unknown | null = null
+
+async function getDevAdminDb(env: Record<string, string>): Promise<unknown> {
+  if (_adminDb) return _adminDb
+  const serviceAccountJson = env['FIREBASE_SERVICE_ACCOUNT_JSON']
+  if (!serviceAccountJson) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON not set')
+  const { initializeApp, getApps, cert } = await import('firebase-admin/app')
+  const { getFirestore } = await import('firebase-admin/firestore')
+  if (!getApps().length) {
+    initializeApp({ credential: cert(JSON.parse(serviceAccountJson) as object) })
+  }
+  _adminDb = getFirestore()
+  return _adminDb
+}
 
 async function getDevBonumToken(env: Record<string, string>): Promise<string> {
   if (_devToken && Date.now() < _devToken.expiresAt) return _devToken.value
@@ -152,6 +166,53 @@ function bonumDevPlugin(): Plugin {
             json(res, 200, result)
           } catch (e) {
             json(res, 500, { error: e instanceof Error ? e.message : 'Status check failed' })
+          }
+          return
+        }
+
+        // ── GET /api/orders/lookup?orderNumber=xxx ───────────────────────
+        if (url.startsWith('/api/orders/lookup') && req.method === 'GET') {
+          try {
+            const orderNumber = new URL(url, 'http://localhost').searchParams.get('orderNumber')
+            if (!orderNumber?.trim()) {
+              json(res, 400, { error: 'orderNumber is required' })
+              return
+            }
+            const db = await getDevAdminDb(env) as {
+              collection: (name: string) => {
+                where: (...args: unknown[]) => { limit: (n: number) => { get: () => Promise<{ empty: boolean; docs: Array<{ data: () => Record<string, unknown> }> }> } }
+              }
+            }
+            const snapshot = await db.collection('orders')
+              .where('orderNumber', '==', orderNumber.toUpperCase().trim())
+              .limit(1)
+              .get()
+            if (snapshot.empty) {
+              json(res, 404, { error: 'Order not found' })
+              return
+            }
+            const data = snapshot.docs[0].data()
+            json(res, 200, {
+              orderNumber: data['orderNumber'],
+              status: data['status'],
+              items: ((data['items'] ?? []) as Record<string, unknown>[]).map((item) => ({
+                productId: item['productId'],
+                name: item['name'],
+                image: item['image'] ?? null,
+                variant: item['variant'] ?? null,
+                quantity: item['quantity'],
+                unitPrice: item['unitPrice'],
+                lineTotal: item['lineTotal'],
+              })),
+              totals: {
+                subtotal: (data['totals'] as Record<string, unknown>)?.['subtotal'] ?? 0,
+                shippingFee: (data['totals'] as Record<string, unknown>)?.['shippingFee'] ?? 0,
+                grandTotal: (data['totals'] as Record<string, unknown>)?.['grandTotal'] ?? 0,
+              },
+              createdAt: data['createdAt'] ?? null,
+            })
+          } catch (e) {
+            json(res, 500, { error: e instanceof Error ? e.message : 'Order lookup failed' })
           }
           return
         }

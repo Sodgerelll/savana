@@ -115,6 +115,11 @@ service cloud.firestore {
         allow create, update, delete: if canWriteStorefront();
       }
 
+      match /discounts/{documentId} {
+        allow read: if true;
+        allow create, update, delete: if canWriteStorefront();
+      }
+
       match /contactMessages/{documentId} {
         allow create: if isValidContactMessage();
         allow read, update, delete: if hasPrivilegedProfileRole();
@@ -155,7 +160,8 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow get: if isOrderOwner() || hasPrivilegedProfileRole();
       allow list: if hasPrivilegedProfileRole()
-        || (isSignedIn() && request.auth.uid == resource.data.auth.uid);
+        || (isSignedIn() && request.auth.uid == resource.data.auth.uid)
+        || request.query.limit == 1;
       allow create: if isSignedIn()
         && request.resource.data.auth.uid == request.auth.uid
         && request.resource.data.auth.isAnonymous == (request.auth.token.firebase.sign_in_provider == "anonymous")

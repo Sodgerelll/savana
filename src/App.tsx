@@ -11,6 +11,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import CartDrawer from "./components/CartDrawer";
+import CustomCursor from "./components/CustomCursor";
+import SoapBubbles from "./components/SoapBubbles";
 import Home from "./pages/Home";
 import Collections from "./pages/Collections";
 import ProductDetail from "./pages/ProductDetail";
@@ -37,7 +39,7 @@ function ScrollToTop() {
 function AppShell() {
   const { pathname } = useLocation();
   const { settings } = useStorefront();
-  const { isPrivilegedUser } = useAuth();
+  const { user, isPrivilegedUser } = useAuth();
   const isAdminPath = pathname.startsWith("/account") || pathname.startsWith("/admin");
   const hideHeader = isAdminPath && isPrivilegedUser;
   const hideFooter = (isAdminPath && isPrivilegedUser) || pathname === "/checkout";
@@ -54,6 +56,8 @@ function AppShell() {
 
   return (
     <>
+      {!(isAdminPath && user) && <CustomCursor />}
+      <SoapBubbles />
       <ScrollToTop />
       {!hideHeader && <Header />}
       <main className={mainClasses}>

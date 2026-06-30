@@ -399,7 +399,7 @@ const mn: Translations = {
   visitUs: "Биднийг зочлоорой",
   marketSchedule: "Зах зээлийн хуваарь",
   storeHours: "Дэлгүүрийн цагийн хуваарь",
-  searchPlaceholder: "Дэлгүүрт хайх...",
+  searchPlaceholder: "Бүтээгдэхүүн, захиалга хайх...",
   account: "Бүртгэл",
   login: "Нэвтрэх",
   logout: "Гарах",

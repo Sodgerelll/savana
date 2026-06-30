@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Minus, Plus, Truck, Leaf, RotateCcw, FlaskConical, Sparkles, BookOpen, AlertTriangle, Clock } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
+import {
+  DrawLeafIcon, DrawHandmadeIcon, DrawFlowerIcon, DrawBoxIcon, DrawAlertIcon, DrawShelfLifeIcon,
+} from "../components/NatureIcons";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import ProductCard from "../components/ProductCard";
-import { formatStorePrice, getActiveProducts, getCategoryGradient } from "../lib/storefrontHelpers";
+import { applyDiscount, formatStorePrice, getActiveDiscount, getActiveProducts, getCategoryGradient } from "../lib/storefrontHelpers";
 import "./ProductDetail.css";
 
 export default function ProductDetail() {
   const { id } = useParams();
   const { addItem, items } = useCart();
   const { language, t } = useLanguage();
-  const { products, collections } = useStorefront();
+  const { products, collections, discounts } = useStorefront();
   const visibleProducts = getActiveProducts(products, collections);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<string | undefined>();
@@ -48,6 +51,8 @@ export default function ProductDetail() {
   const currentPrice = selectedVariant
     ? product.variants?.find((v) => v.name === selectedVariant)?.price ?? product.price
     : product.price;
+  const activeDiscount = getActiveDiscount(discounts, product.id);
+  const effectivePrice = activeDiscount ? applyDiscount(currentPrice, activeDiscount) : currentPrice;
 
   const hasVariants = (product.variants?.length ?? 0) > 0;
   // Remaining stock for the current selection (a variant must be picked first).
@@ -94,6 +99,11 @@ export default function ProductDetail() {
               {product.badge && (
                 <span className="pd-badge">{product.badge}</span>
               )}
+              {activeDiscount && (
+                <span className="pd-discount-img-badge">
+                  {activeDiscount.type === "percent" ? `-${activeDiscount.value}%` : `-${formatStorePrice(activeDiscount.value)}`}
+                </span>
+              )}
             </div>
             {allImages.length > 1 && (
               <div className="product-thumbnails">
@@ -115,7 +125,17 @@ export default function ProductDetail() {
           {/* Info */}
           <div className="product-detail-info">
             <h1>{product.name}</h1>
-            <p className="pd-price">{formatStorePrice(currentPrice)}</p>
+            {activeDiscount ? (
+              <div className="pd-price-row">
+                <span className="pd-price-original">{formatStorePrice(currentPrice)}</span>
+                <p className="pd-price pd-price-discounted">{formatStorePrice(effectivePrice)}</p>
+                <span className="pd-discount-badge">
+                  {activeDiscount.type === "percent" ? `-${activeDiscount.value}%` : `-${formatStorePrice(activeDiscount.value)}`}
+                </span>
+              </div>
+            ) : (
+              <p className="pd-price">{formatStorePrice(currentPrice)}</p>
+            )}
             {(() => {
               const stock = product.variants?.length
                 ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
@@ -186,7 +206,7 @@ export default function ProductDetail() {
                 </div>
                 {quantity > 1 && (
                   <span className="pd-quantity-total">
-                    = {formatStorePrice(currentPrice * quantity)}
+                    = {formatStorePrice(effectivePrice * quantity)}
                   </span>
                 )}
               </div>
@@ -206,54 +226,41 @@ export default function ProductDetail() {
                   : t.addToCart}
             </button>
 
-            <div className="pd-features">
-              <div className="pd-feature">
-                <Truck size={16} strokeWidth={1.5} />
-                <span>Nationwide delivery available</span>
-              </div>
-              <div className="pd-feature">
-                <Leaf size={16} strokeWidth={1.5} />
-                <span>100% Natural Ingredients</span>
-              </div>
-              <div className="pd-feature">
-                <RotateCcw size={16} strokeWidth={1.5} />
-                <span>Made in Mongolia</span>
-              </div>
-            </div>
+          
 
             <div className="pd-accordion">
               {product.ingredients && (
                 <details>
-                  <summary><FlaskConical size={16} strokeWidth={1.5} /> {t.ingredients}</summary>
+                  <summary><DrawLeafIcon size={28} strokeWidth={1.3} /> {t.ingredients}</summary>
                   <p>{product.ingredients}</p>
                 </details>
               )}
               {product.usage && (
                 <details>
-                  <summary><Sparkles size={16} strokeWidth={1.5} /> {t.usage}</summary>
+                  <summary><DrawFlowerIcon size={28} strokeWidth={1.3} /> {t.usage}</summary>
                   <p>{product.usage}</p>
                 </details>
               )}
               {product.howToUse && (
                 <details>
-                  <summary><BookOpen size={16} strokeWidth={1.5} /> {t.howToUse}</summary>
+                  <summary><DrawHandmadeIcon size={28} strokeWidth={1.3} /> {t.howToUse}</summary>
                   <p>{product.howToUse}</p>
                 </details>
               )}
               {product.caution && (
                 <details>
-                  <summary><AlertTriangle size={16} strokeWidth={1.5} /> {t.caution}</summary>
+                  <summary><DrawAlertIcon size={28} strokeWidth={1.3} /> {t.caution}</summary>
                   <p>{product.caution}</p>
                 </details>
               )}
               {product.shelfLife && (
                 <details>
-                  <summary><Clock size={16} strokeWidth={1.5} /> {t.shelfLife}</summary>
+                  <summary><DrawShelfLifeIcon size={28} strokeWidth={1.3} /> {t.shelfLife}</summary>
                   <p>{product.shelfLife}</p>
                 </details>
               )}
               <details>
-                <summary><Truck size={16} strokeWidth={1.5} /> {t.shippingReturns}</summary>
+                <summary><DrawBoxIcon size={28} strokeWidth={1.3} /> {t.shippingReturns}</summary>
                 <p>
                   Delivery timing and fees depend on your location. Please review checkout details
                   before confirming your order.

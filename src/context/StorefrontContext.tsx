@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Collection, Product } from "../data/products";
+import type { Collection, Discount, Product } from "../data/products";
 import {
   clearLegacyStorefrontCandidate,
   createDefaultStorefrontData,
@@ -15,6 +15,7 @@ import {
 import {
   deleteHeroBanner as deleteHeroBannerDocument,
   deleteCollection as deleteCollectionDocument,
+  deleteDiscount as deleteDiscountDocument,
   deleteMarket as deleteMarketDocument,
   deleteProduct as deleteProductDocument,
   deleteTestimonial as deleteTestimonialDocument,
@@ -24,6 +25,7 @@ import {
   resetStorefrontDocuments,
   saveHeroBanner,
   saveCollection,
+  saveDiscount,
   saveMarket,
   saveProduct,
   saveSettings,
@@ -65,6 +67,8 @@ interface StorefrontContextType extends StorefrontData {
   updateTestimonial: (testimonialId: number, updates: Partial<Testimonial>) => void;
   addTestimonial: () => void;
   deleteTestimonial: (testimonialId: number) => void;
+  saveDiscountDraft: (discount: Discount) => void;
+  deleteDiscount: (discountId: number) => void;
   resetStorefront: () => void;
 }
 
@@ -205,6 +209,12 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
           onTestimonials: (testimonials) => {
             if (!active) return;
             const nextStorefront = { ...storefrontRef.current, testimonials };
+            storefrontRef.current = nextStorefront;
+            setStorefront(nextStorefront);
+          },
+          onDiscounts: (discounts) => {
+            if (!active) return;
+            const nextStorefront = { ...storefrontRef.current, discounts };
             storefrontRef.current = nextStorefront;
             setStorefront(nextStorefront);
           },
@@ -701,6 +711,27 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
     runWrite(deleteTestimonialDocument(testimonialId));
   };
 
+  const saveDiscountDraft = (discount: Discount) => {
+    const existing = storefrontRef.current.discounts.find((d) => d.id === discount.id);
+    const nextDiscounts = existing
+      ? storefrontRef.current.discounts.map((d) => (d.id === discount.id ? discount : d))
+      : [...storefrontRef.current.discounts, discount];
+    const nextStorefront = { ...storefrontRef.current, discounts: nextDiscounts };
+    storefrontRef.current = nextStorefront;
+    setStorefront(nextStorefront);
+    runWrite(saveDiscount(discount));
+  };
+
+  const deleteDiscountItem = (discountId: number) => {
+    const nextStorefront = {
+      ...storefrontRef.current,
+      discounts: storefrontRef.current.discounts.filter((d) => d.id !== discountId),
+    };
+    storefrontRef.current = nextStorefront;
+    setStorefront(nextStorefront);
+    runWrite(deleteDiscountDocument(discountId));
+  };
+
   const resetStorefront = () => {
     const defaults = createDefaultStorefrontData();
     storefrontRef.current = defaults;
@@ -738,6 +769,8 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
         updateTestimonial,
         addTestimonial,
         deleteTestimonial,
+        saveDiscountDraft,
+        deleteDiscount: deleteDiscountItem,
         resetStorefront,
       }}
     >

@@ -31,6 +31,18 @@ export interface Collection {
   image: string;
   featuredProductId?: number;
   status: EntityStatus;
+  level?: 1 | 2 | 3;
+  parentId?: number;
+}
+
+export interface Discount {
+  id: number;
+  productId: number;
+  type: "percent" | "amount";
+  value: number;
+  startAt: string; // "YYYY-MM-DD"
+  endAt: string;   // "YYYY-MM-DD"
+  status: EntityStatus;
 }
 
 export const collections: Collection[] = [

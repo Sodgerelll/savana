@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Collection, EntityStatus, Product } from "../data/products";
+import type { Collection, Discount, EntityStatus, Product } from "../data/products";
 import {
   createDefaultStorefrontData,
   type HeroBanner,
@@ -55,6 +55,55 @@ export function getCollectionPrimaryImage(collection: Collection) {
   return collection.image.trim();
 }
 
+export function getCategoryCode(collections: Collection[], collection: Collection): string {
+  const level = collection.level ?? 1;
+  const level1 = collections.filter((c) => (c.level ?? 1) === 1);
+
+  if (level === 1) {
+    const idx = level1.findIndex((c) => c.id === collection.id);
+    return idx >= 0 ? String(idx + 1) : "?";
+  }
+
+  if (level === 2) {
+    const parent = collections.find((c) => c.id === collection.parentId);
+    if (!parent) return "?";
+    const parentCode = getCategoryCode(collections, parent);
+    const siblings = collections.filter((c) => c.level === 2 && c.parentId === collection.parentId);
+    const idx = siblings.findIndex((c) => c.id === collection.id);
+    return idx >= 0 ? `${parentCode}.${idx + 1}` : "?";
+  }
+
+  const parent = collections.find((c) => c.id === collection.parentId);
+  if (!parent) return "?";
+  const parentCode = getCategoryCode(collections, parent);
+  const siblings = collections.filter((c) => c.level === 3 && c.parentId === collection.parentId);
+  const idx = siblings.findIndex((c) => c.id === collection.id);
+  return idx >= 0 ? `${parentCode}.${idx + 1}` : "?";
+}
+
+export type CategoryTreeNode = {
+  collection: Collection;
+  code: string;
+  children: CategoryTreeNode[];
+};
+
+export function buildCategoryTree(collections: Collection[]): CategoryTreeNode[] {
+  const level1 = collections.filter((c) => (c.level ?? 1) === 1);
+  return level1.map((c, i) => {
+    const code = String(i + 1);
+    const children = collections
+      .filter((c2) => c2.level === 2 && c2.parentId === c.id)
+      .map((c2, j) => {
+        const code2 = `${code}.${j + 1}`;
+        const grandchildren = collections
+          .filter((c3) => c3.level === 3 && c3.parentId === c2.id)
+          .map((c3, k) => ({ collection: c3, code: `${code2}.${k + 1}`, children: [] }));
+        return { collection: c2, code: code2, children: grandchildren };
+      });
+    return { collection: c, code, children };
+  });
+}
+
 export function getProductPrimaryImage(product: Product) {
   return product.images.find((image) => image.trim().length > 0) ?? "";
 }
@@ -74,6 +123,17 @@ export function isActiveStatus(status?: EntityStatus | null) {
 
 export function getActiveCollections(collections: Collection[]) {
   return collections.filter((collection) => isActiveStatus(collection.status));
+}
+
+export function getCollectionsWithProducts(collections: Collection[], products: Product[]) {
+  const activeCollections = getActiveCollections(collections);
+  const activeProducts = getActiveProducts(products, collections);
+  const slugsWithProducts = new Set(activeProducts.map((p) => p.category));
+  return activeCollections.filter(
+    (c) => c.slug === SYSTEM_COLLECTION_SLUG
+      ? activeProducts.some((p) => p.bestSeller)
+      : slugsWithProducts.has(c.slug)
+  );
 }
 
 export function getActiveProducts(products: Product[], collections: Collection[]) {
@@ -197,4 +257,18 @@ export function hasPageBanner(items: SiteNavigationItem[], pathname: string) {
 
 export function getRenderableSettings(settings: ShopSettings) {
   return isActiveStatus(settings.status) ? settings : createDefaultStorefrontData().settings;
+}
+
+export function getActiveDiscount(discounts: Discount[], productId: number): Discount | undefined {
+  const today = new Date().toISOString().slice(0, 10);
+  return discounts.find(
+    (d) => d.productId === productId && d.status === "active" && d.startAt <= today && d.endAt >= today,
+  );
+}
+
+export function applyDiscount(price: number, discount: Discount): number {
+  if (discount.type === "percent") {
+    return Math.round(price * (1 - discount.value / 100));
+  }
+  return Math.max(0, price - discount.value);
 }

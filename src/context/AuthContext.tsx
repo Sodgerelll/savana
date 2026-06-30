@@ -233,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setProfile(null);
     await signOut(auth);
+    window.location.replace("/");
   };
 
   const role = resolveUserRole({
