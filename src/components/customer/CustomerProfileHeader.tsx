@@ -154,7 +154,7 @@ export function CustomerProfileHeader({ customer, onNewTransfer, onEdit }: Props
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-5 gap-3 mt-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5">
         {stats.map((stat) => (
           <div key={stat.label} className="bg-gray-50 rounded-2xl px-4 py-3 text-center">
             <div className="text-xl font-bold text-gray-900">

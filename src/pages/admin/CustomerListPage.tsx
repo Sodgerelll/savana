@@ -103,8 +103,8 @@ export default function CustomerListPage() {
       <ToastContainer />
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Харилцагчид</h1>
             <p className="text-sm text-gray-500 mt-0.5">{filtered.length} харилцагч</p>
@@ -120,7 +120,7 @@ export default function CustomerListPage() {
         </div>
       </div>
 
-      <div className="px-6 py-5 max-w-7xl mx-auto">
+      <div className="px-4 sm:px-6 py-5 max-w-7xl mx-auto">
         {/* Search & Filters */}
         <div className="flex flex-wrap gap-3 mb-5">
           <div className="relative flex-1 min-w-48">
@@ -207,7 +207,8 @@ export default function CustomerListPage() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left px-5 py-3 font-medium text-gray-500">Нэр</th>
@@ -289,6 +290,7 @@ export default function CustomerListPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

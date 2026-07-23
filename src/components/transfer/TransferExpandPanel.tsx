@@ -89,7 +89,7 @@ export function TransferExpandPanel({ transfer, deliveredTransfers, unpaidTransf
         </div>
 
         {/* Totals */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-1.5 text-sm">
             <div className="flex justify-between text-gray-600">
               <span>Дүн:</span>

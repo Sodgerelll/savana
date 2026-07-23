@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
@@ -225,7 +226,69 @@ function bonumDevPlugin(): Plugin {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), bonumDevPlugin()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    bonumDevPlugin(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['apple-touch-icon.png', 'vite.svg'],
+      manifest: {
+        name: 'SAVANA — Natural Handcrafted Soap & Skincare',
+        short_name: 'SAVANA',
+        description: 'SAVANA дэлгүүр ба админ удирдлагын систем',
+        lang: 'mn',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'any',
+        theme_color: '#f3efe6',
+        background_color: '#f3efe6',
+        icons: [
+          { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/pwa-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        shortcuts: [
+          {
+            name: 'Админ самбар',
+            short_name: 'Админ',
+            url: '/account',
+            icons: [{ src: '/pwa-192.png', sizes: '192x192' }],
+          },
+          {
+            name: 'Захиалгууд',
+            short_name: 'Захиалга',
+            url: '/account/orders',
+            icons: [{ src: '/pwa-192.png', sizes: '192x192' }],
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        navigateFallback: '/index.html',
+        // Never serve the SPA shell for API or Firebase traffic
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            // Firestore/Firebase realtime traffic must always hit the network
+            urlPattern: /^https:\/\/(firestore|firebasestorage|identitytoolkit|securetoken)\.googleapis\.com\/.*/,
+            handler: 'NetworkOnly',
+          },
+          {
+            // Uploaded storefront images
+            urlPattern: /^https:\/\/.*\.(?:googleusercontent|firebasestorage)\.com\/.*\.(?:png|jpg|jpeg|webp|gif)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'remote-images',
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 14 },
+            },
+          },
+        ],
+      },
+    }),
+  ],
   build: {
     chunkSizeWarningLimit: 1500,
     rollupOptions: {

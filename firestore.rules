@@ -250,6 +250,21 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    match /financeEntries/{entryId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /financeWeeklyKpis/{weekId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /financeRecurring/{ruleId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     // CRM: Transfers
     match /transfers/{transferId} {
       allow read, list: if hasPrivilegedProfileRole();
@@ -285,9 +300,26 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // CRM: Counters (sequence generation) — only "transfers" document is valid
+    // CRM: Counters (sequence generation) — only these documents are valid
     match /counters/{counterId} {
-      allow read, write: if hasPrivilegedProfileRole() && counterId == "transfers";
+      allow read, write: if hasPrivilegedProfileRole()
+        && (counterId == "transfers" || counterId == "journalEntries");
+    }
+
+    // Finance: Chart of accounts
+    match /accounts/{code} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update: if hasPrivilegedProfileRole();
+      allow delete: if false;
+    }
+
+    // Finance: Journal entries (double-entry ledger) — immutable once posted; corrections
+    // happen via a reversal entry, never an edit. Online-order entries are posted server-side
+    // via the Admin SDK (api/_lib/postOrderPaidEntry.ts), which bypasses these rules entirely.
+    match /journalEntries/{entryId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create: if hasPrivilegedProfileRole();
+      allow update, delete: if false;
     }
 
     match /users/{userId} {

@@ -99,6 +99,10 @@ import {
 } from "../lib/customerTransactions";
 import { checkProductHasTransfers, deleteCustomerCascade } from "../services/transferService";
 import { createDirectSale, updateDirectSale, deleteDirectSale, subscribeToDirectSales, type DirectSaleRecord } from "../lib/directSales";
+import { createFinanceEntry, updateFinanceEntry, deleteFinanceEntry, subscribeToFinanceEntries, type FinanceEntryRecord } from "../lib/financeEntries";
+import { saveWeeklyKpi, subscribeToWeeklyKpis, type FinanceWeeklyKpiRecord } from "../lib/financeKpis";
+import { createFinanceRecurring, updateFinanceRecurring, deleteFinanceRecurring, subscribeToFinanceRecurring, materializeDueRecurringEntries, type FinanceRecurringRecord } from "../lib/financeRecurring";
+import { subscribeToCrmPayments, type CrmPaymentRecord } from "../lib/crmPayments";
 import logoBlack from "../assets/logoBlack.png";
 import DashboardPage from "./admin/DashboardPage";
 import WebsitePage from "./admin/WebsitePage";
@@ -115,8 +119,18 @@ import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
 import DirectSalesPage from "./admin/DirectSalesPage";
+import FinancePage from "./admin/FinancePage";
+import FinancePaymentsPage from "./admin/FinancePaymentsPage";
+import FinanceReconciliationPage from "./admin/FinanceReconciliationPage";
+import FinanceReportsPage from "./admin/FinanceReportsPage";
 import AdminModals from "./admin/AdminModals";
 import DiscountsPage from "./admin/DiscountsPage";
+import {
+  subscribeToJournalEntries,
+  subscribeToChartOfAccounts,
+  type JournalEntryRecord,
+  type AccountRecord,
+} from "../lib/accounting/journalQueries";
 import { getAdminCopy } from "./admin/adminCopy";
 import {
   cloneVariants,
@@ -375,6 +389,9 @@ export default function Account() {
   const activeSection = resolvedSection;
   const setActiveSection = (section: AdminSection) => {
     navigate(section === "dashboard" ? "/account" : `/account/${section}`, { replace: true });
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches) {
+      setSidebarOpen(false);
+    }
   };
   const [productSearchName, setProductSearchName] = useState("");
   const [productFilterCategory, setProductFilterCategory] = useState("");
@@ -448,6 +465,14 @@ export default function Account() {
   const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
   const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
   const [directSales, setDirectSales] = useState<DirectSaleRecord[]>([]);
+  const [financeEntries, setFinanceEntries] = useState<FinanceEntryRecord[]>([]);
+  const [financeEntriesError, setFinanceEntriesError] = useState<string | null>(null);
+  const [financeWeeklyKpis, setFinanceWeeklyKpis] = useState<FinanceWeeklyKpiRecord[]>([]);
+  const [financeRecurring, setFinanceRecurring] = useState<FinanceRecurringRecord[]>([]);
+  const [crmPayments, setCrmPayments] = useState<CrmPaymentRecord[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntryRecord[]>([]);
+  const [journalEntriesError, setJournalEntriesError] = useState<string | null>(null);
+  const [chartOfAccounts, setChartOfAccounts] = useState<AccountRecord[]>([]);
   const [transactionModal, setTransactionModal] = useState<CustomerTransactionModalState | null>(null);
   const [transactionSavingState, setTransactionSavingState] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
@@ -461,7 +486,20 @@ export default function Account() {
     finance: false,
     factory: false,
   });
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof window === "undefined" || !window.matchMedia("(max-width: 900px)").matches
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.matchMedia("(max-width: 900px)").matches;
+    if (isMobile && sidebarOpen) {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }
+  }, [sidebarOpen]);
 
   const visibleSettings = useMemo(() => getRenderableSettings(settings), [settings]);
   const activeNavigationItems = useMemo(
@@ -623,6 +661,10 @@ export default function Account() {
     "crmOverview",
     "crmCustomers",
     "crmCustomerTransactions",
+    "financeOverview",
+    "financePayments",
+    "financeReconciliation",
+    "financeReports",
   ]);
   const adminMenuGroups: AdminMenuGroup[] =
     language === "MN"
@@ -849,27 +891,35 @@ export default function Account() {
             items: [
               {
                 id: "financeOverview",
-                label: "Finance overview",
-                description: "Cashflow, payable, receivable, finance control tower.",
+                label: "Орлого, зарлага",
+                description: "Сарын орлого, зарлагын бүртгэл, өдрийн календарь, баланс.",
                 icon: <WalletCards size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financePayments",
                 label: "Төлбөр",
-                description: "Payment queue, settlement, exception handling.",
+                description: "Бүх сувгийн орсон төлбөр, хүлээгдэж буй нэхэмжлэх.",
                 icon: <CheckCircle2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financeReconciliation",
-                label: "Reconciliation",
-                description: "Provider vs order vs bank statement matching.",
+                label: "Тулгалт",
+                description: "Захиалга, борлуулалт ↔ журналын бичилтийн тулгалт.",
                 icon: <RotateCcw size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financeReports",
                 label: "Санхүүгийн тайлан",
-                description: "Daily, monthly, tax-ready finance reporting.",
+                description: "Захирлын самбар: P&L, мөнгөн урсгал, журнал, дансны үлдэгдэл.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
             ],
           },
@@ -1147,27 +1197,35 @@ export default function Account() {
             items: [
               {
                 id: "financeOverview",
-                label: "Finance overview",
-                description: "Cashflow, payable, receivable, and finance control tower.",
+                label: "Income & expenses",
+                description: "Monthly income/expense ledger with a daily calendar and balance.",
                 icon: <WalletCards size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financePayments",
                 label: "Payments",
-                description: "Payment queue, settlement, and exception handling.",
+                description: "All-channel received payments and pending invoices.",
                 icon: <CheckCircle2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financeReconciliation",
                 label: "Reconciliation",
-                description: "Provider vs order vs bank statement matching.",
+                description: "Documents ↔ journal entry matching.",
                 icon: <RotateCcw size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "financeReports",
                 label: "Financial reports",
-                description: "Daily, monthly, and tax-ready finance reporting.",
+                description: "Director dashboard: P&L, cashflow, journal, and trial balance.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
             ],
           },
@@ -1312,6 +1370,85 @@ export default function Account() {
     return subscribeToDirectSales({
       onData: (next) => setDirectSales(next),
     });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceEntries([]);
+      setFinanceEntriesError(null);
+      return;
+    }
+    return subscribeToFinanceEntries({
+      onData: (next) => {
+        setFinanceEntries(next);
+        setFinanceEntriesError(null);
+      },
+      onError: (subscriptionError) => {
+        setFinanceEntriesError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceWeeklyKpis([]);
+      return;
+    }
+    return subscribeToWeeklyKpis({
+      onData: (next) => setFinanceWeeklyKpis(next),
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceRecurring([]);
+      return;
+    }
+    return subscribeToFinanceRecurring({
+      onData: (next) => setFinanceRecurring(next),
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setCrmPayments([]);
+      return;
+    }
+    return subscribeToCrmPayments({
+      onData: (next) => setCrmPayments(next),
+    });
+  }, [isPrivilegedUser]);
+
+  // Materialize due recurring finance entries. Idempotent (deterministic entry
+  // ids + lastGeneratedDate floor), so re-runs and concurrent sessions are safe.
+  useEffect(() => {
+    if (!isPrivilegedUser || financeRecurring.length === 0) return;
+    void materializeDueRecurringEntries(financeRecurring).catch(() => {});
+  }, [isPrivilegedUser, financeRecurring]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setJournalEntries([]);
+      setJournalEntriesError(null);
+      setChartOfAccounts([]);
+      return;
+    }
+    const unsubscribeEntries = subscribeToJournalEntries({
+      onData: (next) => {
+        setJournalEntries(next);
+        setJournalEntriesError(null);
+      },
+      onError: (subscriptionError) => {
+        setJournalEntriesError(subscriptionError.message);
+      },
+    });
+    const unsubscribeAccounts = subscribeToChartOfAccounts({
+      onData: (next) => setChartOfAccounts(next),
+    });
+    return () => {
+      unsubscribeEntries();
+      unsubscribeAccounts();
+    };
   }, [isPrivilegedUser]);
 
   useEffect(() => {
@@ -2425,6 +2562,22 @@ export default function Account() {
     createDirectSale,
     updateDirectSale,
     deleteDirectSale,
+    // finance
+    journalEntries,
+    journalEntriesError,
+    chartOfAccounts,
+    financeEntries,
+    financeEntriesError,
+    createFinanceEntry,
+    updateFinanceEntry,
+    deleteFinanceEntry,
+    financeWeeklyKpis,
+    saveWeeklyKpi,
+    financeRecurring,
+    createFinanceRecurring,
+    updateFinanceRecurring,
+    deleteFinanceRecurring,
+    crmPayments,
     // customers / transactions
     customers,
     customersError,
@@ -2657,6 +2810,13 @@ export default function Account() {
   return (
     <div className="admin-page">
       <div className={`admin-shell ${sidebarOpen ? "" : "admin-shell-collapsed"}`}>
+        {sidebarOpen && (
+          <div
+            className="admin-sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
         <aside className={`admin-sidebar ${sidebarOpen ? "" : "admin-sidebar-hidden"}`}>
           <div className="admin-sidebar-brand">
             <img src={logoBlack} alt="Savana" className="admin-sidebar-logo" />
@@ -2885,6 +3045,14 @@ export default function Account() {
             <FactoryInventoryPage ctx={adminCtx} />
           ) : activeSection === "directSales" ? (
             <DirectSalesPage ctx={adminCtx} />
+          ) : activeSection === "financeOverview" ? (
+            <FinancePage ctx={adminCtx} />
+          ) : activeSection === "financePayments" ? (
+            <FinancePaymentsPage ctx={adminCtx} />
+          ) : activeSection === "financeReconciliation" ? (
+            <FinanceReconciliationPage ctx={adminCtx} />
+          ) : activeSection === "financeReports" ? (
+            <FinanceReportsPage ctx={adminCtx} />
           ) : (
             <ProductsPage ctx={adminCtx} />
           )}

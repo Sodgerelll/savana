@@ -11,6 +11,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import CartDrawer from "./components/CartDrawer";
+import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import CustomCursor from "./components/CustomCursor";
 import SoapBubbles from "./components/SoapBubbles";
 import Home from "./pages/Home";
@@ -113,6 +114,7 @@ function AppShell() {
       </main>
       {!hideFooter && <Footer />}
       <CartDrawer />
+      <PwaInstallPrompt />
     </>
   );
 }

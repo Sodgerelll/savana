@@ -72,7 +72,7 @@ export default function CustomerProfilePage() {
       <ToastContainer />
 
       {/* Top nav */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center gap-3">
         <button
           onClick={() => navigate("/admin/customers")}
           className="text-gray-500 hover:text-gray-700 transition-colors"
@@ -81,7 +81,7 @@ export default function CustomerProfilePage() {
         </button>
         <span className="text-sm text-gray-500">Харилцагчид</span>
         <span className="text-gray-300">/</span>
-        <span className="text-sm text-gray-900 font-medium">{customer.name}</span>
+        <span className="text-sm text-gray-900 font-medium truncate">{customer.name}</span>
       </div>
 
       {/* Inline Transfer Wizard */}
@@ -103,13 +103,13 @@ export default function CustomerProfilePage() {
       />
 
       {/* Tab Navigation */}
-      <div className="bg-white border-b border-gray-200 px-6">
-        <div className="flex gap-0.5">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6">
+        <div className="flex gap-0.5 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 sm:px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === tab.key
                   ? "border-green-600 text-green-700"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -122,7 +122,7 @@ export default function CustomerProfilePage() {
       </div>
 
       {/* Tab Content */}
-      <div className="px-6 py-6 max-w-7xl mx-auto">
+      <div className="px-4 sm:px-6 py-6 max-w-7xl mx-auto">
         {activeTab === "transfers" && (
           <TransferListTab
             customerId={customer.id}

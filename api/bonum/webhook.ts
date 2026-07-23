@@ -10,6 +10,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHmac } from 'node:crypto';
+import { getAdminFirestore } from './_firebaseAdmin.js';
+import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 
 // Validate x-checksum-v2 header using HmacSHA256 over the compact JSON body string
 function isValidChecksum(bodyStr: string, signature: string): boolean {
@@ -72,31 +74,13 @@ export default async function handler(req: any, res: any): Promise<void> {
 }
 
 async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPayment): Promise<void> {
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!serviceAccountJson) {
+  const dbPromise = getAdminFirestore();
+  if (!dbPromise) {
     // Firebase Admin SDK not configured — frontend polling will handle status
     return;
   }
 
-  // Dynamic import so the module is only loaded when credentials are present
-  const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-  const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
-
-  if (!getApps().length) {
-    initializeApp({ credential: cert(JSON.parse(serviceAccountJson) as object) });
-  }
-
-  const db = getFirestore();
-  const orderRef = db.collection('orders').doc(orderId);
-  const snap = await orderRef.get();
-
-  if (!snap.exists) {
-    console.warn(`[bonum/webhook] Order ${orderId} not found in Firestore`);
-    return;
-  }
-
-  const data = snap.data() as Record<string, unknown>;
-  const currentPayment = (data['payment'] as Record<string, unknown>) ?? {};
+  const db = await dbPromise;
 
   const bonumFields: Record<string, unknown> = {};
   if (paymentBody.paymentVendor) bonumFields['bonumPaymentVendor'] = String(paymentBody.paymentVendor);
@@ -104,14 +88,5 @@ async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPaymen
   if (paymentBody.terminalId != null) bonumFields['bonumTerminalId'] = String(paymentBody.terminalId);
   if (paymentBody.amount != null) bonumFields['bonumAmount'] = Number(paymentBody.amount);
 
-  await orderRef.update({
-    status: 'paid',
-    payment: {
-      ...currentPayment,
-      status: 'paid',
-      paidAt: new Date().toISOString(),
-      ...bonumFields,
-    },
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await postOrderPaidEntry(db, orderId, bonumFields);
 }

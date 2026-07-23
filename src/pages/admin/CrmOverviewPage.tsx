@@ -173,7 +173,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── KPI row 1: customers ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "0.75rem" }}>
+      <div className="admin-kpi-grid" style={{ marginBottom: "0.75rem" }}>
         {kpi(<Users size={16} />, copy.totalCustomers, customers.length,
           undefined, `${activeCustomers.length} ${mn ? "идэвхтэй" : "active"}`)}
         {kpi(<AlertTriangle size={16} />, copy.totalOutstanding, formatStorePrice(totalOutstanding),
@@ -185,7 +185,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── KPI row 2: sales ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div className="admin-kpi-grid" style={{ marginBottom: "1.5rem" }}>
         {kpi(<TrendingUp size={16} />, copy.txTodaySales, formatStorePrice(todaySales),
           todaySales > 0 ? "#10b981" : undefined)}
         {kpi(<TrendingUp size={16} />, copy.txMonthSales, formatStorePrice(monthSales),
@@ -198,7 +198,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── Row 1: Outstanding customers + Recent transactions ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+      <div className="admin-two-col-grid" style={{ marginBottom: "1.25rem" }}>
 
         {/* Outstanding balances */}
         <div className="admin-data-card">
@@ -323,7 +323,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── Row 2: Top customers + Segments & Online orders ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+      <div className="admin-two-col-grid">
 
         {/* Top customers */}
         <div className="admin-data-card">

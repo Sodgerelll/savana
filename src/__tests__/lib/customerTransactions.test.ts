@@ -25,6 +25,15 @@ vi.mock("firebase/firestore", () => ({
   onSnapshot: vi.fn(),
   orderBy: vi.fn(),
   query: vi.fn(),
+  // Used by generateJournalEntryNumber (postEntryClient) — runs the callback
+  // against an empty counter doc so numbering always starts at 1 in tests.
+  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) =>
+    fn({
+      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
+      set: vi.fn(),
+      update: vi.fn(),
+    }),
+  ),
   serverTimestamp: vi.fn(() => ({ _serverTimestamp: true })),
   where: vi.fn(),
   writeBatch: vi.fn(() => mockBatch),

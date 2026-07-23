@@ -12,6 +12,8 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { buildDirectSaleEntry, buildReversalEntry } from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry, JOURNAL_ENTRIES_COLLECTION } from "./accounting/postEntryClient";
 
 export const DIRECT_SALES_COLLECTION = "directSales";
 
@@ -29,6 +31,7 @@ export interface DirectSaleRecord {
   note: string;
   createdByUid: string;
   createdAt: string | null;
+  journalEntryId?: string | null;
 }
 
 export interface CreateDirectSaleInput {
@@ -88,38 +91,32 @@ function deserializeDirectSale(snapshot: QueryDocumentSnapshot<DocumentData>): D
     note: String(data.note ?? ""),
     createdByUid: String(data.createdByUid ?? ""),
     createdAt: parseTimestamp(data.createdAt),
+    journalEntryId: typeof data.journalEntryId === "string" ? data.journalEntryId : null,
   };
 }
 
 export async function createDirectSale(input: CreateDirectSaleInput): Promise<string> {
   const saleNumber = createSaleNumber();
-  const batch = writeBatch(db);
   const saleRef = doc(collection(db, DIRECT_SALES_COLLECTION));
-
+  const lineTotal = input.quantity * input.unitPrice;
   const now = new Date().toISOString();
 
-  batch.set(saleRef, {
-    saleNumber,
-    productId: input.productId,
-    productName: input.productName,
-    productImage: input.productImage ?? null,
-    category: input.category,
-    variant: input.variant ?? null,
-    quantity: input.quantity,
-    unitPrice: input.unitPrice,
-    lineTotal: input.quantity * input.unitPrice,
-    note: input.note,
-    createdByUid: input.createdByUid,
-    createdAt: now,
-  });
-
-  // Update product soldCount
+  // Read the product first (for stock validation, soldCount update, and best-effort COGS)
+  // so the journal entry id is known before the sale doc itself is written.
   const productRef = doc(db, "products", String(input.productId));
   const productSnap = await getDoc(productRef);
+
+  const batch = writeBatch(db);
+  let cogsAmount = 0;
+
   if (productSnap.exists()) {
     const data = productSnap.data() as Record<string, unknown>;
     const currentSoldCount = Number(data.soldCount ?? 0);
     const variants = Array.isArray(data.variants) ? data.variants as Array<Record<string, unknown>> : null;
+    const costPrice = Number(data.costPrice ?? 0);
+    if (costPrice > 0) {
+      cogsAmount = costPrice * input.quantity;
+    }
 
     // Block overselling: quantity must not exceed available remaining stock.
     let available: number;
@@ -151,31 +148,60 @@ export async function createDirectSale(input: CreateDirectSaleInput): Promise<st
     batch.update(productRef, update);
   }
 
+  const entryNumber = await generateJournalEntryNumber();
+  const entryRef = postJournalEntry(batch, entryNumber, buildDirectSaleEntry({ lineTotal, cogsAmount }), {
+    sourceType: "directSale",
+    sourceId: saleRef.id,
+    sourceNumber: saleNumber,
+    description: `Шууд борлуулалт: ${input.productName}`,
+    createdBy: input.createdByUid,
+  });
+
+  batch.set(saleRef, {
+    saleNumber,
+    productId: input.productId,
+    productName: input.productName,
+    productImage: input.productImage ?? null,
+    category: input.category,
+    variant: input.variant ?? null,
+    quantity: input.quantity,
+    unitPrice: input.unitPrice,
+    lineTotal,
+    note: input.note,
+    createdByUid: input.createdByUid,
+    createdAt: now,
+    journalEntryId: entryRef.id,
+  });
+
   await batch.commit();
   return saleRef.id;
 }
 
 export async function updateDirectSale(
   id: string,
-  oldSale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity">,
+  oldSale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity" | "journalEntryId">,
   updates: { quantity: number; unitPrice: number; note: string },
 ): Promise<void> {
   const batch = writeBatch(db);
   const saleRef = doc(db, DIRECT_SALES_COLLECTION, id);
+  const newLineTotal = updates.quantity * updates.unitPrice;
 
   batch.update(saleRef, {
     quantity: updates.quantity,
     unitPrice: updates.unitPrice,
-    lineTotal: updates.quantity * updates.unitPrice,
+    lineTotal: newLineTotal,
     note: updates.note,
   });
 
   const diff = updates.quantity - oldSale.quantity;
-  if (diff !== 0) {
-    const productRef = doc(db, "products", String(oldSale.productId));
-    const productSnap = await getDoc(productRef);
-    if (productSnap.exists()) {
-      const data = productSnap.data() as Record<string, unknown>;
+  let costPrice = 0;
+  const productRef = doc(db, "products", String(oldSale.productId));
+  const productSnap = await getDoc(productRef);
+  if (productSnap.exists()) {
+    const data = productSnap.data() as Record<string, unknown>;
+    costPrice = Number(data.costPrice ?? 0);
+
+    if (diff !== 0) {
       const currentSoldCount = Number(data.soldCount ?? 0);
       const variants = Array.isArray(data.variants) ? (data.variants as Array<Record<string, unknown>>) : null;
 
@@ -212,12 +238,44 @@ export async function updateDirectSale(
     }
   }
 
+  // Reverse the previously posted entry, then post a fresh one for the updated amounts.
+  if (oldSale.journalEntryId) {
+    const oldEntrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, oldSale.journalEntryId));
+    if (oldEntrySnap.exists()) {
+      const oldLines = (oldEntrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
+      const reversalEntryNumber = await generateJournalEntryNumber();
+      postJournalEntry(batch, reversalEntryNumber, buildReversalEntry(oldLines), {
+        sourceType: "directSale",
+        sourceId: id,
+        sourceNumber: id,
+        description: "Шууд борлуулалт засварласан — хуучин бичилтийг цуцаллаа",
+        reversalOf: oldSale.journalEntryId,
+        createdBy: "system",
+      });
+    }
+  }
+
+  const newEntryNumber = await generateJournalEntryNumber();
+  const newEntryRef = postJournalEntry(
+    batch,
+    newEntryNumber,
+    buildDirectSaleEntry({ lineTotal: newLineTotal, cogsAmount: costPrice > 0 ? costPrice * updates.quantity : 0 }),
+    {
+      sourceType: "directSale",
+      sourceId: id,
+      sourceNumber: id,
+      description: "Шууд борлуулалт засварласан",
+      createdBy: "system",
+    },
+  );
+  batch.update(saleRef, { journalEntryId: newEntryRef.id });
+
   await batch.commit();
 }
 
 export async function deleteDirectSale(
   id: string,
-  sale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity">,
+  sale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity" | "journalEntryId">,
 ): Promise<void> {
   const batch = writeBatch(db);
   batch.delete(doc(db, DIRECT_SALES_COLLECTION, id));
@@ -244,6 +302,22 @@ export async function deleteDirectSale(
     }
 
     batch.update(productRef, update);
+  }
+
+  if (sale.journalEntryId) {
+    const entrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, sale.journalEntryId));
+    if (entrySnap.exists()) {
+      const lines = (entrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
+      const entryNumber = await generateJournalEntryNumber();
+      postJournalEntry(batch, entryNumber, buildReversalEntry(lines), {
+        sourceType: "directSale",
+        sourceId: id,
+        sourceNumber: id,
+        description: "Шууд борлуулалт устгасан — бичилтийг цуцаллаа",
+        reversalOf: sale.journalEntryId,
+        createdBy: "system",
+      });
+    }
   }
 
   await batch.commit();

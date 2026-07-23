@@ -529,6 +529,10 @@
   border-color: rgba(183, 185, 167, 0.8);
 }
 
+.admin-sidebar-backdrop {
+  display: none;
+}
+
 .admin-sidebar {
   position: sticky;
   top: 0;
@@ -2866,6 +2870,31 @@
   cursor: not-allowed;
 }
 
+/* Responsive helper grids for overview pages */
+.admin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-two-col-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 1100px) {
+  .admin-two-col-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1200px) {
   .admin-product-layout {
     grid-template-columns: 1fr;
@@ -2888,16 +2917,49 @@
 }
 
 @media (max-width: 900px) {
-  .admin-shell {
+  .admin-shell,
+  .admin-shell-collapsed {
     grid-template-columns: 1fr;
   }
 
+  /* Off-canvas drawer sidebar */
   .admin-sidebar {
-    position: static;
-    height: auto;
-    overflow: visible;
-    border-right: none;
-    border-bottom: 1px solid rgba(183, 185, 167, 0.6);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100dvh;
+    width: min(85vw, 320px);
+    z-index: 105;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-right: 1px solid rgba(183, 185, 167, 0.7);
+    box-shadow: 18px 0 40px rgba(31, 27, 14, 0.18);
+    transform: translateX(0);
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    padding-top: 3.4rem;
+  }
+
+  .admin-sidebar-hidden {
+    width: min(85vw, 320px);
+    padding: 3.4rem 1.25rem 1.25rem;
+    transform: translateX(-105%);
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: none;
+  }
+
+  .admin-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(31, 27, 14, 0.4);
+    backdrop-filter: blur(2px);
+  }
+
+  .admin-sidebar-toggle {
+    z-index: 110;
   }
 
   .admin-sidebar-footer {
@@ -2906,6 +2968,7 @@
 
   .admin-content {
     padding: 1.25rem;
+    padding-top: 3.6rem;
   }
 
   .admin-topbar,
@@ -2946,11 +3009,11 @@
   }
 
   .admin-sidebar {
-    padding: 1.25rem 1rem;
+    padding: 3.4rem 1rem 1.25rem;
   }
 
   .admin-content {
-    padding: 1rem;
+    padding: 3.6rem 1rem 1rem;
   }
 
   .admin-topbar h1 {
@@ -3696,4 +3759,399 @@ select.admin-search-input {
   margin-left: auto;
   color: var(--color-accent, #5a5103);
   font-size: 0.9em;
+}
+
+/* ── Admin mobile polish ─────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* Prevent iOS auto-zoom on focus: inputs must be >= 16px */
+  .admin-content input,
+  .admin-content select,
+  .admin-content textarea,
+  .admin-modal input,
+  .admin-modal select,
+  .admin-modal textarea {
+    font-size: 16px;
+  }
+
+  .admin-data-card-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-filter-bar {
+    padding: 0.6rem 0.75rem;
+  }
+
+  .admin-filter-search {
+    flex: 1 1 100%;
+  }
+
+  .admin-filter-group {
+    flex: 1 1 auto;
+  }
+
+  .admin-filter-group select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .admin-filter-meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .admin-topbar-actions {
+    width: 100%;
+  }
+
+  .admin-topbar-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .admin-section-head .btn,
+  .admin-repeater-toolbar .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Comfortable touch targets */
+  .admin-nav-parent,
+  .admin-nav-child {
+    min-height: 44px;
+  }
+
+  .admin-icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Denser table cells so more fits before horizontal scroll */
+  .admin-data-table thead th,
+  .admin-data-table tbody td {
+    padding: 0.7rem 0.85rem;
+  }
+
+  .admin-data-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-two-col-grid {
+    gap: 1rem;
+  }
+}
+
+/* Safe-area support for phones with notches (PWA standalone) */
+@supports (padding: env(safe-area-inset-left)) {
+  @media (max-width: 900px) {
+    .admin-content {
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    }
+
+    .admin-sidebar {
+      padding-left: max(1.25rem, env(safe-area-inset-left));
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* ── Finance: income/expense ledger ── */
+
+.finance-amount-income {
+  color: #1a6b3c;
+}
+
+.finance-amount-expense {
+  color: #8f3321;
+}
+
+.finance-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.finance-calendar-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  min-width: 180px;
+  text-align: center;
+}
+
+.finance-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.finance-calendar-weekday {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(58, 54, 48, 0.55);
+  padding-bottom: 4px;
+}
+
+.finance-calendar-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 84px;
+  padding: 6px 8px;
+  border: 1px solid rgba(183, 185, 167, 0.55);
+  border-radius: 10px;
+  background: #fdfcf9;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.finance-calendar-cell:hover {
+  border-color: rgba(90, 81, 3, 0.45);
+  background: #fff;
+}
+
+.finance-calendar-cell-empty {
+  border: none;
+  background: transparent;
+  cursor: default;
+  pointer-events: none;
+}
+
+.finance-calendar-cell-today {
+  border-color: rgba(90, 81, 3, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(90, 81, 3, 0.35);
+}
+
+.finance-calendar-cell-selected {
+  border-color: #5a5103;
+  background: rgba(90, 81, 3, 0.06);
+  box-shadow: 0 0 0 2px rgba(90, 81, 3, 0.12);
+}
+
+.finance-calendar-daynum {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(58, 54, 48, 0.75);
+}
+
+.finance-calendar-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.finance-calendar-figures > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.finance-calendar-figures-empty {
+  color: rgba(58, 54, 48, 0.25);
+  font-weight: 400;
+}
+
+.finance-calendar-balance {
+  border-top: 1px dashed rgba(58, 54, 48, 0.18);
+  padding-top: 1px;
+  margin-top: 1px;
+}
+
+.finance-calendar-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(58, 54, 48, 0.5);
+}
+
+.finance-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.finance-type-income {
+  color: #1a6b3c;
+  background: rgba(26, 107, 60, 0.09);
+}
+
+.finance-type-expense {
+  color: #8f3321;
+  background: rgba(143, 51, 33, 0.09);
+}
+
+.finance-type-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.finance-type-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.6rem;
+  border-radius: 9px;
+  border: 1px solid rgba(183, 185, 167, 0.75);
+  background: #fdfcf9;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: rgba(58, 54, 48, 0.6);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.finance-type-toggle-btn.active.income {
+  border-color: #1a6b3c;
+  color: #1a6b3c;
+  background: rgba(26, 107, 60, 0.07);
+}
+
+.finance-type-toggle-btn.active.expense {
+  border-color: #8f3321;
+  color: #8f3321;
+  background: rgba(143, 51, 33, 0.07);
+}
+
+@media (max-width: 900px) {
+  .finance-calendar {
+    gap: 3px;
+  }
+
+  .finance-calendar-cell {
+    min-height: 64px;
+    padding: 4px 5px;
+  }
+
+  .finance-calendar-figures {
+    font-size: 0.6rem;
+  }
+}
+
+/* ── Finance: director-level reports ── */
+
+.finance-row-loss td {
+  background: rgba(143, 51, 33, 0.045);
+}
+
+.finance-databar {
+  width: 100%;
+  max-width: 220px;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(183, 185, 167, 0.25);
+  overflow: hidden;
+}
+
+.finance-databar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: #6f66b8;
+  transition: width 0.25s ease;
+}
+
+.finance-kpi-input {
+  width: 88px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(196, 168, 61, 0.55);
+  border-radius: 7px;
+  background: rgba(247, 227, 154, 0.28);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: right;
+  color: var(--color-heading, #3a3630);
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.finance-kpi-input:focus {
+  border-color: #b3922b;
+  background: rgba(247, 227, 154, 0.45);
+}
+
+/* ── Finance: recurring rules ── */
+
+.finance-recurring-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: #6f66b8;
+  vertical-align: middle;
+}
+
+.finance-recurring-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.finance-recurring-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(183, 185, 167, 0.55);
+  border-radius: 10px;
+  background: #fdfcf9;
+}
+
+.finance-recurring-row-paused {
+  opacity: 0.55;
+}
+
+.finance-recurring-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.finance-recurring-row-main strong {
+  font-size: 0.95rem;
+}
+
+.finance-recurring-row-main span {
+  font-size: 0.82rem;
+  color: rgba(58, 54, 48, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-recurring-row-main small {
+  font-size: 0.72rem;
+  color: rgba(58, 54, 48, 0.45);
+}
+
+/* Journal-derived automated ledger rows */
+.finance-auto-badge {
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #b3922b;
 }

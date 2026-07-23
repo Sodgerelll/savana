@@ -71,7 +71,12 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
     try {
       await updateDirectSale(
         editModal.sale.id,
-        { productId: editModal.sale.productId, variant: editModal.sale.variant, quantity: editModal.sale.quantity },
+        {
+          productId: editModal.sale.productId,
+          variant: editModal.sale.variant,
+          quantity: editModal.sale.quantity,
+          journalEntryId: editModal.sale.journalEntryId,
+        },
         { quantity: editModal.quantity, unitPrice: editModal.unitPrice, note: editModal.note },
       );
       setEditModal(null);
@@ -90,7 +95,13 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
         : `Delete sale record for "${getProductLabel(sale.productId, sale.productName)}"? Product sold count will be adjusted.`,
       confirmLabel: copy.delete ?? (language === "MN" ? "Устгах" : "Delete"),
       destructive: true,
-      onConfirm: () => deleteDirectSale(sale.id, { productId: sale.productId, variant: sale.variant, quantity: sale.quantity }),
+      onConfirm: () =>
+        deleteDirectSale(sale.id, {
+          productId: sale.productId,
+          variant: sale.variant,
+          quantity: sale.quantity,
+          journalEntryId: sale.journalEntryId,
+        }),
     });
   };
 

@@ -367,12 +367,39 @@ async function verifyBonumPayment(invoiceId: string): Promise<BonumCheckResult> 
   return res.json() as Promise<BonumCheckResult>;
 }
 
+/**
+ * Marks an order paid via the server (POST /api/orders/mark-paid), which re-verifies with
+ * Bonum and posts the accounting journal entry using the Admin SDK — the online-order ledger
+ * entry must never be self-authored by the customer's own browser. Falls back to the previous
+ * direct-Firestore write (no journal entry) only when the server reports it has no Admin SDK
+ * credentials configured (local dev without FIREBASE_SERVICE_ACCOUNT_JSON).
+ */
 export async function markOrderAsPaid(orderId: string) {
+  const res = await fetch("/api/orders/mark-paid", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId }),
+  });
+
+  if (res.ok) {
+    const { payment } = (await res.json()) as { payment: OrderPaymentPayload };
+    return payment;
+  }
+
+  const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (err.fallback) {
+    return markOrderAsPaidClientFallback(orderId);
+  }
+
+  throw new Error(String(err["error"] ?? `Mark-paid failed: ${res.status}`));
+}
+
+/** Dev-only fallback used when the server has no Admin SDK credentials — does not post a journal entry. */
+async function markOrderAsPaidClientFallback(orderId: string) {
   const currentPayment = await getOrderPaymentSnapshot(orderId);
 
   let bonumDetails: Omit<BonumCheckResult, "paid"> = {};
 
-  // Verify with Bonum before marking as paid
   if (currentPayment.invoiceId) {
     const checkResult = await verifyBonumPayment(currentPayment.invoiceId);
     if (!checkResult.paid) {

@@ -15,6 +15,12 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { CUSTOMERS_COLLECTION } from "./customers";
+import {
+  buildCustomerTransactionSaleEntry,
+  buildCustomerTransactionReturnEntry,
+  buildReversalEntry,
+} from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry, JOURNAL_ENTRIES_COLLECTION } from "./accounting/postEntryClient";
 
 export const CUSTOMER_TRANSACTIONS_COLLECTION = "customerTransactions";
 export const CUSTOMER_TRANSACTION_SCHEMA_VERSION = 1;
@@ -69,6 +75,7 @@ export interface CustomerTransactionRecord {
   createdByUid: string;
   createdAt: string | null;
   updatedAt: string | null;
+  journalEntryId?: string | null;
 }
 
 export interface CreateCustomerTransactionInput {
@@ -117,6 +124,7 @@ export function createEmptyTransactionDraft(): CustomerTransactionRecord {
     createdByUid: "",
     createdAt: null,
     updatedAt: null,
+    journalEntryId: null,
   };
 }
 
@@ -207,6 +215,7 @@ function deserializeTransaction(
     createdByUid: String(data.createdByUid ?? ""),
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
+    journalEntryId: typeof data.journalEntryId === "string" ? data.journalEntryId : null,
   };
 }
 
@@ -256,6 +265,7 @@ interface ProductStockPatch {
   productId: number;
   totalStock: number;
   soldCount: number;
+  costPrice: number;
   variants: Array<{ name: string; price: number; quantity: number; soldCount?: number }> | null;
 }
 
@@ -277,6 +287,7 @@ async function loadProductPatches(
         productId,
         totalStock: Number(data.totalStock ?? 0),
         soldCount: Number(data.soldCount ?? 0),
+        costPrice: Number(data.costPrice ?? 0),
         variants: Array.isArray(data.variants)
           ? (data.variants as ProductStockPatch["variants"])
           : null,
@@ -285,6 +296,14 @@ async function loadProductPatches(
   );
 
   return patches;
+}
+
+/** Best-effort COGS for a set of items — 0 for any product missing a costPrice. */
+function cogsForItems(patches: Map<number, ProductStockPatch>, items: CustomerTransactionItem[]): number {
+  return items.reduce((sum, item) => {
+    const patch = patches.get(item.productId);
+    return patch && patch.costPrice > 0 ? sum + patch.costPrice * item.quantity : sum;
+  }, 0);
 }
 
 function applyItemsToPatches(
@@ -346,12 +365,31 @@ export async function createCustomerTransaction(
   const txRef = doc(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION));
 
   const productPatches = await loadProductPatches(input.items);
+  const cogsAmount = cogsForItems(productPatches, input.items);
   applyItemsToPatches(productPatches, input.items, stockSignForType(input.type));
 
   const customer = await loadCustomerAggregates(input.customerId);
   const delta = customerDeltaForTransaction(input.type, input.totals, input.payment);
 
   const batch = writeBatch(db);
+
+  const entryNumber = await generateJournalEntryNumber();
+  const builtEntry =
+    input.type === "return"
+      ? buildCustomerTransactionReturnEntry({ grandTotal: input.totals.grandTotal, cogsAmount })
+      : buildCustomerTransactionSaleEntry({
+          paymentMethod: input.payment.method,
+          paidAmount: input.payment.paidAmount,
+          grandTotal: input.totals.grandTotal,
+          cogsAmount,
+        });
+  const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
+    sourceType: "customerTransaction",
+    sourceId: txRef.id,
+    sourceNumber: txNumber,
+    description: `Харилцагчийн гүйлгээ: ${txNumber} — ${input.customerSnapshot.name}`,
+    createdBy: input.createdByUid,
+  });
 
   batch.set(txRef, {
     schemaVersion: CUSTOMER_TRANSACTION_SCHEMA_VERSION,
@@ -368,6 +406,7 @@ export async function createCustomerTransaction(
     createdByUid: input.createdByUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    journalEntryId: entryRef.id,
   });
 
   writeProductPatches(batch, productPatches);
@@ -401,6 +440,43 @@ export async function updateCustomerTransaction(
 
   const batch = writeBatch(db);
 
+  // Reverse the previously posted entry (from its stored lines, not recomputed), then post a
+  // fresh one reflecting the updated type/items/payment.
+  if (previous.journalEntryId) {
+    const oldEntrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, previous.journalEntryId));
+    if (oldEntrySnap.exists()) {
+      const oldLines = (oldEntrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
+      const reversalEntryNumber = await generateJournalEntryNumber();
+      postJournalEntry(batch, reversalEntryNumber, buildReversalEntry(oldLines), {
+        sourceType: "customerTransaction",
+        sourceId: id,
+        sourceNumber: previous.txNumber,
+        description: `Гүйлгээ засварласан — хуучин бичилтийг цуцаллаа: ${previous.txNumber}`,
+        reversalOf: previous.journalEntryId,
+        createdBy: next.createdByUid,
+      });
+    }
+  }
+
+  const nextCogsAmount = cogsForItems(productPatches, next.items);
+  const nextEntryNumber = await generateJournalEntryNumber();
+  const nextBuiltEntry =
+    next.type === "return"
+      ? buildCustomerTransactionReturnEntry({ grandTotal: next.totals.grandTotal, cogsAmount: nextCogsAmount })
+      : buildCustomerTransactionSaleEntry({
+          paymentMethod: next.payment.method,
+          paidAmount: next.payment.paidAmount,
+          grandTotal: next.totals.grandTotal,
+          cogsAmount: nextCogsAmount,
+        });
+  const nextEntryRef = postJournalEntry(batch, nextEntryNumber, nextBuiltEntry, {
+    sourceType: "customerTransaction",
+    sourceId: id,
+    sourceNumber: previous.txNumber,
+    description: `Гүйлгээ засварласан: ${previous.txNumber}`,
+    createdBy: next.createdByUid,
+  });
+
   batch.update(txRef, {
     type: next.type,
     customerId: next.customerId,
@@ -412,6 +488,7 @@ export async function updateCustomerTransaction(
     transactionDate: next.transactionDate ?? null,
     note: next.note ?? "",
     updatedAt: serverTimestamp(),
+    journalEntryId: nextEntryRef.id,
   });
 
   writeProductPatches(batch, productPatches);
@@ -474,6 +551,22 @@ export async function deleteCustomerTransaction(
   const batch = writeBatch(db);
   batch.delete(txRef);
   writeProductPatches(batch, productPatches);
+
+  if (previous.journalEntryId) {
+    const entrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, previous.journalEntryId));
+    if (entrySnap.exists()) {
+      const lines = (entrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
+      const entryNumber = await generateJournalEntryNumber();
+      postJournalEntry(batch, entryNumber, buildReversalEntry(lines), {
+        sourceType: "customerTransaction",
+        sourceId: previous.id,
+        sourceNumber: previous.txNumber,
+        description: `Гүйлгээ устгасан — бичилтийг цуцаллаа: ${previous.txNumber}`,
+        reversalOf: previous.journalEntryId,
+        createdBy: previous.createdByUid,
+      });
+    }
+  }
 
   try {
     const customer = await loadCustomerAggregates(previous.customerId);

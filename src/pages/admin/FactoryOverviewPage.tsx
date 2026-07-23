@@ -189,7 +189,7 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── KPI: Production ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "0.75rem" }}>
+      <div className="admin-kpi-grid" style={{ marginBottom: "0.75rem" }}>
         {kpi(<Zap size={16} />, mn ? "Боловсорч буй" : "Curing", curingBatches.length,
           curingBatches.length > 0 ? "#8b5cf6" : undefined,
           curingBatches.length > 0 ? curingBatches.map((b: any) => b.productName).slice(0, 2).join(", ") : undefined)}
@@ -201,7 +201,7 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── KPI: Operations ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div className="admin-kpi-grid" style={{ marginBottom: "1.5rem" }}>
         {kpi(<AlertTriangle size={16} />, mn ? "Нөөцийн анхааруулга" : "Stock alerts", totalAlerts,
           totalAlerts > 0 ? "#dc2626" : undefined,
           totalAlerts > 0 ? `${lowRaw.length} материал · ${lowPkg.length} савлагаа` : mn ? "Нөөц хангалттай" : "All stocks OK")}
@@ -214,7 +214,7 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── Row 1: Active batches + Order pipeline ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+      <div className="admin-two-col-grid" style={{ marginBottom: "1.25rem" }}>
 
         {/* Active batches */}
         <div className="admin-data-card">
@@ -355,7 +355,7 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {/* ── Row 2: Raw materials + Packaging & Output ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+      <div className="admin-two-col-grid">
 
         {/* Raw materials */}
         <div className="admin-data-card">

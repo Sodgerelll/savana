@@ -25,6 +25,13 @@ import type {
   CrmProduct,
   CustomerPricing,
 } from "../types/crm";
+import {
+  buildTransferConfirmedEntry,
+  buildReversalEntry,
+  buildTransferReturnEntry,
+  buildPaymentReceivedEntry,
+} from "../lib/accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry, readJournalEntryLines } from "../lib/accounting/postEntryClient";
 
 export const TRANSFERS_COLLECTION = "transfers";
 export const CUSTOMERS_COLLECTION = "customers";
@@ -214,6 +221,7 @@ export async function confirmTransfer(
   userName: string
 ): Promise<{ success: boolean; lowStockAlerts: string[] }> {
   const lowStockAlerts: string[] = [];
+  const entryNumber = await generateJournalEntryNumber();
 
   await runTransaction(db, async (t) => {
     const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
@@ -228,6 +236,7 @@ export async function confirmTransfer(
     if (!customerSnap.exists()) throw new Error("Харилцагч олдсонгүй");
 
     // Check & deduct stock for each item
+    let cogsAmount = 0;
     for (const item of transfer.items) {
       const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
       const productSnap = await t.get(productRef);
@@ -240,6 +249,10 @@ export async function confirmTransfer(
         throw new Error(
           `"${item.productName}" барааны нөөц хүрэлцэхгүй байна. Нөөц: ${currentStock}, Шаардлага: ${item.quantity}`
         );
+      }
+
+      if (product.costPrice > 0) {
+        cogsAmount += product.costPrice * item.quantity;
       }
 
       const newStock = currentStock - item.quantity;
@@ -267,9 +280,28 @@ export async function confirmTransfer(
       }
     }
 
+    // Post accounting journal entry (cash/AR debit, revenue/VAT credit, COGS if known)
+    const builtEntry = buildTransferConfirmedEntry({
+      paymentMethod: transfer.paymentMethod,
+      paidAmount: transfer.paidAmount,
+      remainingAmount: transfer.remainingAmount,
+      subtotal: transfer.subtotal,
+      taxAmount: transfer.taxAmount,
+      cogsAmount,
+    });
+    const entryRef = postJournalEntry(t, entryNumber, builtEntry, {
+      sourceType: "transfer",
+      sourceId: transferId,
+      sourceNumber: transfer.transferNumber,
+      description: `Шилжүүлэг батлагдлаа: ${transfer.transferNumber}`,
+      createdBy: userId,
+      createdByName: userName,
+    });
+
     // Update transfer status
     t.update(transferRef, {
       status: "CONFIRMED",
+      journalEntryId: entryRef.id,
       updatedAt: serverTimestamp(),
     });
 
@@ -374,6 +406,11 @@ export async function cancelTransfer(
   userId: string,
   userName: string
 ): Promise<void> {
+  // Reserved even if this cancel turns out to be a no-op reversal (DRAFT transfer) — a
+  // harmless skipped sequence number, avoided doing this inside the transaction below since
+  // it would require a counter read after the writes further down.
+  const entryNumber = await generateJournalEntryNumber();
+
   await runTransaction(db, async (t) => {
     const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
     const transferSnap = await t.get(transferRef);
@@ -383,6 +420,12 @@ export async function cancelTransfer(
     if (!["DRAFT", "CONFIRMED", "SHIPPED"].includes(transfer.status)) {
       throw new Error("Зөвхөн ноорог, батлагдсан эсвэл илгээгдсэн шилжүүлгийг цуцлах боломжтой");
     }
+
+    // Must read before any writes are issued in this transaction.
+    const originalLines =
+      transfer.status !== "DRAFT" && transfer.journalEntryId
+        ? await readJournalEntryLines(t, transfer.journalEntryId)
+        : null;
 
     // DRAFT transfers have no stock deducted yet — just mark cancelled
     if (transfer.status !== "DRAFT") {
@@ -429,6 +472,19 @@ export async function cancelTransfer(
         totalRevenue: increment(-transfer.totalAmount),
         ...(balanceDelta > 0 ? { balance: increment(-balanceDelta) } : {}),
       });
+
+      // Reverse the original confirm entry (mirror image) if one was posted.
+      if (originalLines) {
+        postJournalEntry(t, entryNumber, buildReversalEntry(originalLines), {
+          sourceType: "transfer",
+          sourceId: transferId,
+          sourceNumber: transfer.transferNumber,
+          description: `Цуцлагдлаа: ${transfer.transferNumber}`,
+          reversalOf: transfer.journalEntryId,
+          createdBy: userId,
+          createdByName: userName,
+        });
+      }
     }
 
     t.update(transferRef, { status: "CANCELLED", updatedAt: serverTimestamp() });
@@ -463,6 +519,8 @@ export interface AddPaymentInput {
 }
 
 export async function addPayment(input: AddPaymentInput): Promise<void> {
+  const entryNumber = await generateJournalEntryNumber();
+
   await runTransaction(db, async (t) => {
     const customerRef = doc(db, CUSTOMERS_COLLECTION, input.customerId);
 
@@ -503,6 +561,16 @@ export async function addPayment(input: AddPaymentInput): Promise<void> {
       createdAt: serverTimestamp(),
     });
 
+    // Post accounting journal entry (cash/bank/clearing debit, AR credit)
+    postJournalEntry(t, entryNumber, buildPaymentReceivedEntry({ amount: input.amount, method: input.method }), {
+      sourceType: "payment",
+      sourceId: paymentRef.id,
+      sourceNumber: paymentRef.id,
+      description: `Төлбөр хүлээн авлаа — ${input.customerName}`,
+      createdBy: input.createdBy,
+      createdByName: input.createdByName,
+    });
+
     // Timeline
     const timelineRef = doc(collection(db, CUSTOMER_TIMELINE_COLLECTION));
     t.set(timelineRef, {
@@ -537,6 +605,7 @@ export async function createReturn(
   createdByName: string
 ): Promise<string> {
   let returnId = "";
+  const entryNumber = await generateJournalEntryNumber();
 
   await runTransaction(db, async (t) => {
     const origRef = doc(db, TRANSFERS_COLLECTION, originalTransferId);
@@ -591,11 +660,15 @@ export async function createReturn(
     });
 
     // Restore stock
+    let cogsAmount = 0;
     for (const item of returnItems) {
       const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
       const productSnap = await t.get(productRef);
       if (!productSnap.exists()) continue;
       const product = productSnap.data() as CrmProduct;
+      if (product.costPrice > 0) {
+        cogsAmount += product.costPrice * item.quantity;
+      }
       const newStock = (product.currentStock ?? 0) + item.quantity;
       t.update(productRef, { currentStock: newStock });
 
@@ -622,6 +695,22 @@ export async function createReturn(
       balance: increment(-returnTotal),
       totalReturns: increment(returnTotal),
     });
+
+    // Post accounting journal entry (sales returns debit, AR credit, reverse COGS if known)
+    const entryRef = postJournalEntry(
+      t,
+      entryNumber,
+      buildTransferReturnEntry({ returnTotal, cogsAmount }),
+      {
+        sourceType: "transfer",
+        sourceId: returnRef.id,
+        sourceNumber: transferNumber,
+        description: `Буцаалт: ${transferNumber}`,
+        createdBy,
+        createdByName,
+      },
+    );
+    t.update(returnRef, { journalEntryId: entryRef.id });
 
     // Timeline
     const timelineRef = doc(collection(db, CUSTOMER_TIMELINE_COLLECTION));

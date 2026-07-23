@@ -71,6 +71,8 @@ export interface Transfer {
   notes: string;
   parentTransferId: string | null;
   deliveredAt: Timestamp | null;
+  /** journalEntries doc id posted when this transfer was confirmed — used to reverse on cancel. */
+  journalEntryId?: string | null;
   createdBy: string;
   createdByName: string;
   createdAt: Timestamp | null;
