@@ -11,6 +11,10 @@
   padding-top: 0;
 }
 
+.app-route-loading {
+  min-height: 40vh;
+}
+
 @media (max-width: 768px) {
   .app-main {
     padding-top: 72px;

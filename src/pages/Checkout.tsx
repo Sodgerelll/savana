@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import QRCode from "qrcode";
 import { CheckCircle2, ChevronLeft, HandHeart, Leaf, PackageCheck, QrCode, RefreshCcw, ShieldCheck, Trash2, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
@@ -337,14 +336,17 @@ export default function Checkout() {
 
     let active = true;
 
-    void QRCode.toDataURL(pendingOrder.payment.qrPayload, {
-      width: 280,
-      margin: 1,
-      color: {
-        dark: "#5A5103",
-        light: "#FFFFFF",
-      },
-    })
+    void import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(pendingOrder.payment.qrPayload, {
+          width: 280,
+          margin: 1,
+          color: {
+            dark: "#5A5103",
+            light: "#FFFFFF",
+          },
+        }),
+      )
       .then((dataUrl: string) => {
         if (active) {
           setPaymentQrUrl(dataUrl);
