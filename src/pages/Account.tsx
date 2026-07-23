@@ -99,6 +99,9 @@ import {
 } from "../lib/customerTransactions";
 import { checkProductHasTransfers, deleteCustomerCascade } from "../services/transferService";
 import { createDirectSale, updateDirectSale, deleteDirectSale, subscribeToDirectSales, type DirectSaleRecord } from "../lib/directSales";
+import { createFinanceEntry, updateFinanceEntry, deleteFinanceEntry, subscribeToFinanceEntries, type FinanceEntryRecord } from "../lib/financeEntries";
+import { saveWeeklyKpi, subscribeToWeeklyKpis, type FinanceWeeklyKpiRecord } from "../lib/financeKpis";
+import { createFinanceRecurring, updateFinanceRecurring, deleteFinanceRecurring, subscribeToFinanceRecurring, materializeDueRecurringEntries, type FinanceRecurringRecord } from "../lib/financeRecurring";
 import logoBlack from "../assets/logoBlack.png";
 import DashboardPage from "./admin/DashboardPage";
 import WebsitePage from "./admin/WebsitePage";
@@ -115,6 +118,8 @@ import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
 import DirectSalesPage from "./admin/DirectSalesPage";
+import FinancePage from "./admin/FinancePage";
+import FinanceReportsPage from "./admin/FinanceReportsPage";
 import AdminModals from "./admin/AdminModals";
 import DiscountsPage from "./admin/DiscountsPage";
 import { getAdminCopy } from "./admin/adminCopy";
@@ -448,6 +453,10 @@ export default function Account() {
   const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
   const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
   const [directSales, setDirectSales] = useState<DirectSaleRecord[]>([]);
+  const [financeEntries, setFinanceEntries] = useState<FinanceEntryRecord[]>([]);
+  const [financeEntriesError, setFinanceEntriesError] = useState<string | null>(null);
+  const [financeWeeklyKpis, setFinanceWeeklyKpis] = useState<FinanceWeeklyKpiRecord[]>([]);
+  const [financeRecurring, setFinanceRecurring] = useState<FinanceRecurringRecord[]>([]);
   const [transactionModal, setTransactionModal] = useState<CustomerTransactionModalState | null>(null);
   const [transactionSavingState, setTransactionSavingState] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
@@ -623,6 +632,8 @@ export default function Account() {
     "crmOverview",
     "crmCustomers",
     "crmCustomerTransactions",
+    "financeOverview",
+    "financeReports",
   ]);
   const adminMenuGroups: AdminMenuGroup[] =
     language === "MN"
@@ -849,9 +860,10 @@ export default function Account() {
             items: [
               {
                 id: "financeOverview",
-                label: "Finance overview",
-                description: "Cashflow, payable, receivable, finance control tower.",
+                label: "Орлого, зарлага",
+                description: "Сарын орлого, зарлагын бүртгэл, өдрийн календарь, баланс.",
                 icon: <WalletCards size={18} />,
+                implemented: true,
               },
               {
                 id: "financePayments",
@@ -868,8 +880,9 @@ export default function Account() {
               {
                 id: "financeReports",
                 label: "Санхүүгийн тайлан",
-                description: "Daily, monthly, tax-ready finance reporting.",
+                description: "Захирлын самбар: P&L, мөнгөн урсгал, зардлын задаргаа, KPI.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
               },
             ],
           },
@@ -1147,9 +1160,10 @@ export default function Account() {
             items: [
               {
                 id: "financeOverview",
-                label: "Finance overview",
-                description: "Cashflow, payable, receivable, and finance control tower.",
+                label: "Income & expenses",
+                description: "Monthly income/expense ledger with a daily calendar and balance.",
                 icon: <WalletCards size={18} />,
+                implemented: true,
               },
               {
                 id: "financePayments",
@@ -1166,8 +1180,9 @@ export default function Account() {
               {
                 id: "financeReports",
                 label: "Financial reports",
-                description: "Daily, monthly, and tax-ready finance reporting.",
+                description: "Director dashboard: P&L, cashflow, expense breakdown, KPIs.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
               },
             ],
           },
@@ -1313,6 +1328,49 @@ export default function Account() {
       onData: (next) => setDirectSales(next),
     });
   }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceEntries([]);
+      return;
+    }
+    return subscribeToFinanceEntries({
+      onData: (next) => {
+        setFinanceEntries(next);
+        setFinanceEntriesError(null);
+      },
+      onError: (subscriptionError) => {
+        setFinanceEntriesError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceWeeklyKpis([]);
+      return;
+    }
+    return subscribeToWeeklyKpis({
+      onData: (next) => setFinanceWeeklyKpis(next),
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setFinanceRecurring([]);
+      return;
+    }
+    return subscribeToFinanceRecurring({
+      onData: (next) => setFinanceRecurring(next),
+    });
+  }, [isPrivilegedUser]);
+
+  // Materialize due recurring finance entries. Idempotent (deterministic entry
+  // ids + lastGeneratedDate floor), so re-runs and concurrent sessions are safe.
+  useEffect(() => {
+    if (!isPrivilegedUser || financeRecurring.length === 0) return;
+    void materializeDueRecurringEntries(financeRecurring).catch(() => {});
+  }, [isPrivilegedUser, financeRecurring]);
 
   useEffect(() => {
     if (!isPrivilegedUser) {
@@ -2425,6 +2483,18 @@ export default function Account() {
     createDirectSale,
     updateDirectSale,
     deleteDirectSale,
+    // finance
+    financeEntries,
+    financeEntriesError,
+    createFinanceEntry,
+    updateFinanceEntry,
+    deleteFinanceEntry,
+    financeWeeklyKpis,
+    saveWeeklyKpi,
+    financeRecurring,
+    createFinanceRecurring,
+    updateFinanceRecurring,
+    deleteFinanceRecurring,
     // customers / transactions
     customers,
     customersError,
@@ -2885,6 +2955,10 @@ export default function Account() {
             <FactoryInventoryPage ctx={adminCtx} />
           ) : activeSection === "directSales" ? (
             <DirectSalesPage ctx={adminCtx} />
+          ) : activeSection === "financeOverview" ? (
+            <FinancePage ctx={adminCtx} />
+          ) : activeSection === "financeReports" ? (
+            <FinanceReportsPage ctx={adminCtx} />
           ) : (
             <ProductsPage ctx={adminCtx} />
           )}

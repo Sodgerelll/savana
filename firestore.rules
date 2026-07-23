@@ -250,6 +250,21 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    match /financeEntries/{entryId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /financeWeeklyKpis/{weekId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /financeRecurring/{ruleId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     // CRM: Transfers
     match /transfers/{transferId} {
       allow read, list: if hasPrivilegedProfileRole();
