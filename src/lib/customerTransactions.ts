@@ -235,6 +235,58 @@ async function generateTxNumber(): Promise<string> {
   return `TX-${String(maxNumber + 1).padStart(6, "0")}`;
 }
 
+function roundAmount(value: number): number {
+  return Math.round(Number(value) || 0);
+}
+
+function sanitizeItemImage(image: string | null): string | null {
+  const trimmed = typeof image === "string" ? image.trim() : "";
+  // Embedded data-URL images are 50-350KB each and push the transaction
+  // document past Firestore's 1 MiB limit — only keep real URLs.
+  if (!trimmed || trimmed.startsWith("data:")) {
+    return null;
+  }
+  return trimmed;
+}
+
+function sanitizeItems(items: CustomerTransactionItem[]): CustomerTransactionItem[] {
+  return items.map((item) => {
+    const unitPrice = roundAmount(item.unitPrice);
+    return {
+      ...item,
+      image: sanitizeItemImage(item.image),
+      unitPrice,
+      lineTotal: roundAmount(unitPrice * item.quantity),
+    };
+  });
+}
+
+function sanitizeTotals(totals: CustomerTransactionTotals): CustomerTransactionTotals {
+  return {
+    subtotal: roundAmount(totals.subtotal),
+    discount: roundAmount(totals.discount),
+    grandTotal: roundAmount(totals.grandTotal),
+  };
+}
+
+function sanitizePayment(payment: CustomerTransactionPayment): CustomerTransactionPayment {
+  return {
+    ...payment,
+    paidAmount: roundAmount(payment.paidAmount),
+  };
+}
+
+function sanitizeTransactionInput(
+  input: CreateCustomerTransactionInput,
+): CreateCustomerTransactionInput {
+  return {
+    ...input,
+    items: sanitizeItems(input.items),
+    totals: sanitizeTotals(input.totals),
+    payment: sanitizePayment(input.payment),
+  };
+}
+
 function stockSignForType(type: CustomerTransactionType): number {
   // delivery & sale remove stock; return adds stock back
   if (type === "return") return 1;
@@ -359,8 +411,9 @@ async function loadCustomerAggregates(customerId: string) {
 }
 
 export async function createCustomerTransaction(
-  input: CreateCustomerTransactionInput,
+  rawInput: CreateCustomerTransactionInput,
 ): Promise<string> {
+  const input = sanitizeTransactionInput(rawInput);
   const txNumber = await generateTxNumber();
   const txRef = doc(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION));
 
@@ -426,8 +479,9 @@ export async function createCustomerTransaction(
 export async function updateCustomerTransaction(
   id: string,
   previous: CustomerTransactionRecord,
-  next: CreateCustomerTransactionInput,
+  rawNext: CreateCustomerTransactionInput,
 ): Promise<void> {
+  const next = sanitizeTransactionInput(rawNext);
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, id);
 
   // Combine all items (old + new) so we get a consistent stock snapshot

@@ -2950,14 +2950,16 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           onChange={(event: any)=> {
                             const productId = Number(event.target.value);
                             const product = products.find((p: any)=> p.id === productId);
-                            const unitPrice = product?.price ?? 0;
+                            const unitPrice = Math.round(product?.price ?? 0);
+                            const primaryImage = product ? getProductPrimaryImage(product) : "";
                             const nextItems = [...transactionModal.draft.items];
                             nextItems[idx] = {
                               ...item,
                               productId,
                               productName: product?.name ?? "",
                               category: product?.category ?? "",
-                              image: product ? getProductPrimaryImage(product) : null,
+                              // data-URL images are huge and overflow Firestore's 1 MiB doc limit
+                              image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
                               unitPrice,
                               variant: null,
                               lineTotal: unitPrice * item.quantity,
@@ -2996,7 +2998,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               const variant = selectedProduct.variants?.find(
                                 (v: any)=> v.name === variantName,
                               );
-                              const unitPrice = variant?.price ?? selectedProduct.price;
+                              const unitPrice = Math.round(variant?.price ?? selectedProduct.price);
                               const nextItems = [...transactionModal.draft.items];
                               nextItems[idx] = {
                                 ...item,

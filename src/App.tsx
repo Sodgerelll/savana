@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { CartProvider } from "./context/CartContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StorefrontProvider } from "./context/StorefrontContext";
@@ -14,18 +14,18 @@ import CartDrawer from "./components/CartDrawer";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import CustomCursor from "./components/CustomCursor";
 import SoapBubbles from "./components/SoapBubbles";
-import Home from "./pages/Home";
-import Collections from "./pages/Collections";
-import ProductDetail from "./pages/ProductDetail";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Journal from "./pages/Journal";
-import Login from "./pages/Login";
-import Account from "./pages/Account";
-import Checkout from "./pages/Checkout";
-import Partnerships from "./pages/Partnerships";
 import { getPageBannerNavigationItem, getRenderableSettings } from "./lib/storefrontHelpers";
 
+const Home = lazy(() => import("./pages/Home"));
+const Collections = lazy(() => import("./pages/Collections"));
+const ProductDetail = lazy(() => import("./pages/ProductDetail"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Journal = lazy(() => import("./pages/Journal"));
+const Login = lazy(() => import("./pages/Login"));
+const Account = lazy(() => import("./pages/Account"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const Partnerships = lazy(() => import("./pages/Partnerships"));
 const CustomerListPage = lazy(() => import("./pages/admin/CustomerListPage"));
 const CustomerProfilePage = lazy(() => import("./pages/admin/CustomerProfilePage"));
 
@@ -62,55 +62,53 @@ function AppShell() {
       <ScrollToTop />
       {!hideHeader && <Header />}
       <main className={mainClasses}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/collections" element={<Collections />} />
-          <Route path="/collections/:slug" element={<Collections />} />
-          <Route path="/product/:id" element={<ProductDetail />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/partnerships" element={<Partnerships />} />
-          <Route path="/find-us" element={<Navigate to="/contact" replace />} />
-          <Route path="/journal" element={<Journal />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route
-            path="/account"
-            element={
-              <ProtectedRoute>
-                <Account />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/account/:section"
-            element={
-              <ProtectedRoute>
-                <Account />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/customers"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" /></div>}>
+        <Suspense fallback={<div className="app-route-loading" aria-live="polite" />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/collections" element={<Collections />} />
+            <Route path="/collections/:slug" element={<Collections />} />
+            <Route path="/product/:id" element={<ProductDetail />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/partnerships" element={<Partnerships />} />
+            <Route path="/find-us" element={<Navigate to="/contact" replace />} />
+            <Route path="/journal" element={<Journal />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route
+              path="/account"
+              element={
+                <ProtectedRoute>
+                  <Account />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/account/:section"
+              element={
+                <ProtectedRoute>
+                  <Account />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/customers"
+              element={
+                <ProtectedRoute>
                   <CustomerListPage />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/customers/:id"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" /></div>}>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/customers/:id"
+              element={
+                <ProtectedRoute>
                   <CustomerProfilePage />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </Suspense>
       </main>
       {!hideFooter && <Footer />}
       <CartDrawer />

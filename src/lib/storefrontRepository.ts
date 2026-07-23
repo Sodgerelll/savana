@@ -196,9 +196,9 @@ function deserializeProduct(snapshot: QueryDocumentSnapshot<DocumentData>): Prod
   return {
     id: Number(data.id),
     name: String(data.name ?? ""),
-    price: Number(data.price ?? 0),
+    price: Math.round(Number(data.price ?? 0)),
     compareAtPrice:
-      typeof data.compareAtPrice === "number" ? data.compareAtPrice : undefined,
+      typeof data.compareAtPrice === "number" ? Math.round(data.compareAtPrice) : undefined,
     description: String(data.description ?? ""),
     ingredients: typeof data.ingredients === "string" ? data.ingredients : undefined,
     usage: typeof data.usage === "string" ? data.usage : undefined,
@@ -218,7 +218,7 @@ function deserializeProduct(snapshot: QueryDocumentSnapshot<DocumentData>): Prod
             const variantData = variant as Record<string, unknown>;
             return {
               name: String(variantData.name ?? ""),
-              price: Number(variantData.price ?? 0),
+              price: Math.round(Number(variantData.price ?? 0)),
               quantity: Number(variantData.quantity ?? 0),
               soldCount: Number(variantData.soldCount ?? 0),
             };
