@@ -1522,6 +1522,10 @@
   width: min(960px, calc(100vw - 2rem));
 }
 
+.admin-modal-xl {
+  width: min(1440px, calc(100vw - 2rem));
+}
+
 .admin-modal-header {
   padding: 1.25rem 1.25rem 1rem;
   border-bottom: 1px solid rgba(183, 185, 167, 0.5);

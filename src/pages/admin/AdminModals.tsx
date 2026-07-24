@@ -2686,7 +2686,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     title={transactionModal.mode === "create" ? copy.newTransaction : copy.editTransaction}
     onClose={() => setTransactionModal(null)}
     disableClose={transactionSavingState}
-    wide
+    xl
   >
     <form
       className="admin-modal-form"

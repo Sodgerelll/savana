@@ -7,6 +7,7 @@ export function AdminModal({
   onClose,
   children,
   wide = false,
+  xl = false,
   disableClose = false,
 }: {
   title: string;
@@ -14,6 +15,7 @@ export function AdminModal({
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  xl?: boolean;
   disableClose?: boolean;
 }) {
   const handleClose = () => {
@@ -26,7 +28,7 @@ export function AdminModal({
   return (
     <div className="admin-modal-backdrop">
       <div
-        className={`admin-modal ${wide ? "admin-modal-wide" : ""}`}
+        className={`admin-modal ${xl ? "admin-modal-xl" : wide ? "admin-modal-wide" : ""}`}
         role="dialog"
         aria-modal="true"
       >
