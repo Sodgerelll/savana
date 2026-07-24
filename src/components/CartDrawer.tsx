@@ -3,14 +3,32 @@ import { useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
-import { formatStorePrice, getCategoryGradient, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import {
+  applyDiscount,
+  formatStorePrice,
+  getActiveDiscount,
+  getCategoryGradient,
+  getProductPrimaryImage,
+} from "../lib/storefrontHelpers";
 import "./CartDrawer.css";
 
 export default function CartDrawer() {
   const navigate = useNavigate();
   const { items, removeItem, updateQuantity, totalPrice, isCartOpen, setIsCartOpen } = useCart();
-  const { t } = useLanguage();
-  const { collections } = useStorefront();
+  const { t, language } = useLanguage();
+  const { collections, discounts } = useStorefront();
+
+  // Cart items store the list price; active discounts are applied at display
+  // time (the same way Checkout prices the order).
+  const effectiveUnitPrice = (item: { product: { id: number }; unitPrice: number }) => {
+    const discount = getActiveDiscount(discounts, item.product.id);
+    return discount ? applyDiscount(item.unitPrice, discount) : item.unitPrice;
+  };
+  const discountSavings = items.reduce(
+    (sum, item) => sum + (item.unitPrice - effectiveUnitPrice(item)) * item.quantity,
+    0,
+  );
+  const discountedTotal = totalPrice - discountSavings;
 
   const handleCheckout = () => {
     setIsCartOpen(false);
@@ -63,7 +81,24 @@ export default function CartDrawer() {
                   <div className="cart-item-info">
                     <h4>{item.product.name}</h4>
                     {item.variant && <p className="cart-item-variant">{item.variant}</p>}
-                    <p className="cart-item-price">{formatStorePrice(item.unitPrice)}</p>
+                    {(() => {
+                      const discount = getActiveDiscount(discounts, item.product.id);
+                      const effective = effectiveUnitPrice(item);
+                      if (!discount || effective >= item.unitPrice) {
+                        return <p className="cart-item-price">{formatStorePrice(item.unitPrice)}</p>;
+                      }
+                      return (
+                        <p className="cart-item-price">
+                          <s className="cart-item-price-original">{formatStorePrice(item.unitPrice)}</s>
+                          <span className="cart-item-price-discounted">{formatStorePrice(effective)}</span>
+                          <span className="cart-item-discount-badge">
+                            {discount.type === "percent"
+                              ? `-${discount.value}%`
+                              : `-${formatStorePrice(discount.value)}`}
+                          </span>
+                        </p>
+                      );
+                    })()}
                     <div className="cart-item-quantity">
                       <button
                         onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variant)}
@@ -92,9 +127,15 @@ export default function CartDrawer() {
             </div>
 
             <div className="cart-footer">
+              {discountSavings > 0 && (
+                <div className="cart-discount-row">
+                  <span>{language === "MN" ? "Хямдрал" : "Discount"}</span>
+                  <span>-{formatStorePrice(discountSavings)}</span>
+                </div>
+              )}
               <div className="cart-subtotal">
                 <span>{t.cartSubtotal}</span>
-                <span>{formatStorePrice(totalPrice)}</span>
+                <span>{formatStorePrice(discountedTotal)}</span>
               </div>
               <p className="cart-note">{t.cartNote}</p>
               <button className="btn btn-primary cart-checkout-btn" onClick={handleCheckout}>

@@ -211,3 +211,37 @@
     width: 100%;
   }
 }
+
+/* Discounted price display */
+.cart-item-price-original {
+  color: #9ca3af;
+  font-size: 0.78em;
+  margin-right: 0.4rem;
+}
+
+.cart-item-price-discounted {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+.cart-item-discount-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(192, 57, 43, 0.1);
+  color: #c0392b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.cart-discount-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-sm);
+  color: #c0392b;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}

@@ -33,6 +33,8 @@ export interface OrderItemPayload {
   variant: string | null;
   quantity: number;
   unitPrice: number;
+  /** List price at the time of sale — greater than unitPrice when sold at a discount. */
+  originalUnitPrice?: number;
   lineTotal: number;
 }
 
@@ -81,6 +83,8 @@ export interface CreateOrderInput {
     subtotal: number;
     shippingFee: number;
     grandTotal: number;
+    /** Total amount saved through discounts across all items. */
+    discountTotal?: number;
   };
 }
 
@@ -243,7 +247,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
     },
     items: Array.isArray(data.items)
       ? data.items
-          .map((item) => {
+          .map((item): OrderItemPayload | null => {
             if (typeof item !== "object" || item === null) {
               return null;
             }
@@ -257,6 +261,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
               variant: typeof itemData.variant === "string" ? itemData.variant : null,
               quantity: Number(itemData.quantity ?? 0),
               unitPrice: Number(itemData.unitPrice ?? 0),
+              originalUnitPrice: Number(itemData.originalUnitPrice ?? itemData.unitPrice ?? 0),
               lineTotal: Number(itemData.lineTotal ?? 0),
             } satisfies OrderItemPayload;
           })
@@ -266,6 +271,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
       subtotal: Number(totalsData.subtotal ?? 0),
       shippingFee: Number(totalsData.shippingFee ?? 0),
       grandTotal: Number(totalsData.grandTotal ?? 0),
+      discountTotal: Number(totalsData.discountTotal ?? 0),
     },
     payment: {
       method: normalizePaymentMethod(paymentData.method),

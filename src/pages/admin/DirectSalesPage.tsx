@@ -20,6 +20,7 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
     formatAdminDateTime,
     formatStorePrice,
     collectionNameBySlug,
+    products,
     updateDirectSale,
     deleteDirectSale,
     openConfirmModal,
@@ -44,6 +45,31 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
 
   const totalQty = useMemo(() => filtered.reduce((s: number, r: any) => s + r.quantity, 0), [filtered]);
   const totalRevenue = useMemo(() => filtered.reduce((s: number, r: any) => s + r.lineTotal, 0), [filtered]);
+
+  // Discount for a sale: stored list price at sale time, falling back to the
+  // product's current list price for records saved before originalUnitPrice existed.
+  const getSaleDiscount = (sale: any): { original: number; amount: number } | null => {
+    let original = Number(sale.originalUnitPrice ?? 0);
+    if (original <= 0) {
+      const product = (products as any[])?.find((p: any) => p.id === sale.productId);
+      if (sale.variant && product?.variants?.length) {
+        const v = product.variants.find((vv: any) => vv.name === sale.variant);
+        original = Number(v?.price ?? product?.price ?? 0);
+      } else {
+        original = Number(product?.price ?? 0);
+      }
+    }
+    if (original > sale.unitPrice) {
+      return { original, amount: (original - sale.unitPrice) * sale.quantity };
+    }
+    return null;
+  };
+
+  const totalDiscount = useMemo(
+    () => filtered.reduce((s: number, r: any) => s + (getSaleDiscount(r)?.amount ?? 0), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, products],
+  );
 
   const today = new Date().toISOString().slice(0, 10);
   const todaySales = useMemo(
@@ -142,6 +168,12 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
           <strong>{formatStorePrice(totalRevenue)}</strong>
         </div>
         <div className="admin-summary-card">
+          <span>{language === "MN" ? "Нийт хямдрал" : "Total discount"}</span>
+          <strong style={{ color: totalDiscount > 0 ? "#dc2626" : undefined }}>
+            {totalDiscount > 0 ? `-${formatStorePrice(totalDiscount)}` : formatStorePrice(0)}
+          </strong>
+        </div>
+        <div className="admin-summary-card">
           <span>{language === "MN" ? "Өнөөдрийн борлуулалт" : "Today's sales"}</span>
           <strong>{todaySales.length}</strong>
         </div>
@@ -198,6 +230,7 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
                 <th>{language === "MN" ? "Variant" : "Variant"}</th>
                 <th className="admin-th-right">{language === "MN" ? "Тоо" : "Qty"}</th>
                 <th className="admin-th-right">{language === "MN" ? "Нэгж үнэ" : "Unit price"}</th>
+                <th className="admin-th-right">{language === "MN" ? "Хямдрал" : "Discount"}</th>
                 <th className="admin-th-right">{language === "MN" ? "Нийт" : "Total"}</th>
                 <th>{language === "MN" ? "Тэмдэглэл" : "Note"}</th>
                 <th></th>
@@ -206,12 +239,14 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="admin-table-empty">
+                  <td colSpan={12} className="admin-table-empty">
                     {language === "MN" ? "Борлуулалт байхгүй байна." : "No sales yet."}
                   </td>
                 </tr>
               ) : (
-                filtered.map((sale: any, idx: number) => (
+                filtered.map((sale: any, idx: number) => {
+                  const disc = getSaleDiscount(sale);
+                  return (
                   <tr key={sale.id}>
                     <td style={{ color: "#aaa", fontSize: "0.78rem" }}>{idx + 1}</td>
                     <td>
@@ -235,7 +270,19 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
                     <td>{collectionNameBySlug?.get(sale.category) ?? sale.category}</td>
                     <td>{sale.variant || "—"}</td>
                     <td className="admin-td-right">{sale.quantity}</td>
-                    <td className="admin-td-right">{formatStorePrice(sale.unitPrice)}</td>
+                    <td className="admin-td-right">
+                      {disc ? (
+                        <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1.25 }}>
+                          <s style={{ color: "#9ca3af", fontSize: "0.75rem" }}>{formatStorePrice(disc.original)}</s>
+                          <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatStorePrice(sale.unitPrice)}</span>
+                        </span>
+                      ) : (
+                        formatStorePrice(sale.unitPrice)
+                      )}
+                    </td>
+                    <td className="admin-td-right">
+                      {disc ? <span style={{ color: "#dc2626" }}>-{formatStorePrice(disc.amount)}</span> : "—"}
+                    </td>
                     <td className="admin-td-right">
                       <strong>{formatStorePrice(sale.lineTotal)}</strong>
                     </td>
@@ -261,7 +308,8 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
             {filtered.length > 0 && (
@@ -274,6 +322,9 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
                     <strong>{totalQty}</strong>
                   </td>
                   <td />
+                  <td className="admin-td-right">
+                    {totalDiscount > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(totalDiscount)}</strong> : ""}
+                  </td>
                   <td className="admin-td-right">
                     <strong>{formatStorePrice(totalRevenue)}</strong>
                   </td>

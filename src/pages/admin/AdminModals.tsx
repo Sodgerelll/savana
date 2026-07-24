@@ -7,7 +7,7 @@ import { getProductCode, getProductLabel } from "./adminHelpers";
 import type { EntityStatus } from "../../data/products";
 import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
-import { buildCategoryTree } from "../../lib/storefrontHelpers";
+import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import type { CustomerType } from "../../lib/customers";
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
@@ -33,6 +33,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     language,
     customers,
     products,
+    discounts,
     collections,
     selectableCategories,
     bannerCategories,
@@ -2901,6 +2902,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 quantity: 1,
                 soldQuantity: 0,
                 unitPrice: 0,
+                originalUnitPrice: 0,
                 lineTotal: 0,
               };
               setTransactionModal({
@@ -2950,7 +2952,9 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           onChange={(event: any)=> {
                             const productId = Number(event.target.value);
                             const product = products.find((p: any)=> p.id === productId);
-                            const unitPrice = Math.round(product?.price ?? 0);
+                            const listPrice = Math.round(product?.price ?? 0);
+                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
+                            const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                             const primaryImage = product ? getProductPrimaryImage(product) : "";
                             const nextItems = [...transactionModal.draft.items];
                             nextItems[idx] = {
@@ -2961,6 +2965,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               // data-URL images are huge and overflow Firestore's 1 MiB doc limit
                               image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
                               unitPrice,
+                              originalUnitPrice: listPrice,
                               variant: null,
                               lineTotal: unitPrice * item.quantity,
                             };
@@ -2998,12 +3003,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               const variant = selectedProduct.variants?.find(
                                 (v: any)=> v.name === variantName,
                               );
-                              const unitPrice = Math.round(variant?.price ?? selectedProduct.price);
+                              const listPrice = Math.round(variant?.price ?? selectedProduct.price);
+                              const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
+                              const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                               const nextItems = [...transactionModal.draft.items];
                               nextItems[idx] = {
                                 ...item,
                                 variant: variantName,
                                 unitPrice,
+                                originalUnitPrice: listPrice,
                                 lineTotal: unitPrice * item.quantity,
                               };
                               setTransactionModal({
@@ -3177,6 +3185,12 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           }}
                           style={{ width: "110px" }}
                         />
+                        {(item.originalUnitPrice ?? 0) > item.unitPrice && (
+                          <div style={{ fontSize: "0.7rem", color: "#dc2626", whiteSpace: "nowrap" }}>
+                            <s style={{ color: "#9ca3af" }}>{formatStorePrice(item.originalUnitPrice)}</s>
+                            {" "}−{formatStorePrice((item.originalUnitPrice ?? 0) - item.unitPrice)}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <strong>{formatStorePrice(item.lineTotal)}</strong>
@@ -3781,33 +3795,151 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   </AdminModal>
 )}
 
-{ctx.discountModal && (
+{ctx.discountModal && (() => {
+  const dm = ctx.discountModal;
+  const isCreateMode = dm.mode === "create";
+  const selectedIds = new Set<number>(dm.selectedProductIds ?? []);
+  const setSelectedIds = (ids: number[]) =>
+    ctx.setDiscountModal((cur: any) => (cur ? { ...cur, selectedProductIds: ids } : cur));
+
+  const productsByCategory = new Map<string, any[]>();
+  (products as any[]).forEach((p: any) => {
+    const key = String(p.category ?? "");
+    if (!productsByCategory.has(key)) productsByCategory.set(key, []);
+    productsByCategory.get(key)!.push(p);
+  });
+  const categoryGroups = Array.from(productsByCategory.entries());
+  const allProductIds = (products as any[]).map((p: any) => p.id);
+  const allSelected = allProductIds.length > 0 && allProductIds.every((id: number) => selectedIds.has(id));
+  const toggleAllProducts = () => setSelectedIds(allSelected ? [] : allProductIds);
+  const toggleCategory = (slug: string) => {
+    const ids = (productsByCategory.get(slug) ?? []).map((p: any) => p.id);
+    const everySelected = ids.length > 0 && ids.every((id: number) => selectedIds.has(id));
+    const next = new Set(selectedIds);
+    ids.forEach((id: number) => (everySelected ? next.delete(id) : next.add(id)));
+    setSelectedIds(Array.from(next));
+  };
+  const toggleProduct = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(Array.from(next));
+  };
+  const categoryTitle = (slug: string) =>
+    collectionNameBySlug.get(slug) ?? (slug || (language === "MN" ? "Бусад" : "Other"));
+
+  return (
   <AdminModal
-    title={ctx.discountModal.mode === "create" ? copy.discountModalCreate : copy.discountModalEdit}
+    title={dm.mode === "create" ? copy.discountModalCreate : copy.discountModalEdit}
     onClose={() => ctx.setDiscountModal(null)}
   >
     <form
       className="admin-modal-form"
       onSubmit={(event: any) => {
         event.preventDefault();
-        ctx.saveDiscountDraft(ctx.discountModal.draft);
+        if (isCreateMode) {
+          const ids = Array.from(selectedIds);
+          if (ids.length === 0) return;
+          // One discount record per selected product. A product that already
+          // has a discount gets it replaced instead of duplicated.
+          let nextId = dm.draft.id;
+          const usedIds = new Set(((discounts ?? []) as any[]).map((d: any) => d.id));
+          ids.forEach((pid) => {
+            const existing = ((discounts ?? []) as any[]).find((d: any) => d.productId === pid);
+            let id: number;
+            if (existing) {
+              id = existing.id;
+            } else {
+              while (usedIds.has(nextId)) nextId++;
+              id = nextId;
+              usedIds.add(id);
+            }
+            ctx.saveDiscountDraft({ ...dm.draft, id, productId: pid });
+          });
+        } else {
+          ctx.saveDiscountDraft(dm.draft);
+        }
         ctx.setDiscountModal(null);
       }}
     >
       <div className="admin-form-grid">
-        <label className="admin-field admin-field-wide">
-          <span>{copy.discountProduct}</span>
-          <select
-            value={ctx.discountModal.draft.productId}
-            onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, productId: Number(e.target.value) } } : cur)}
-            required
-          >
-            <option value={0} disabled>{language === "MN" ? "Бүтээгдэхүүн сонгоно уу" : "Select a product"}</option>
-            {products.map((p: any) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
+        {isCreateMode ? (
+          <div className="admin-field admin-field-wide">
+            <span>{copy.discountProduct}</span>
+            <div className="discount-picker">
+              <label className="discount-picker-row discount-picker-all">
+                <input type="checkbox" checked={allSelected} onChange={toggleAllProducts} />
+                {language === "MN" ? "Бүх бүтээгдэхүүн" : "All products"}
+                <span className="discount-picker-count">
+                  {selectedIds.size}/{allProductIds.length}
+                </span>
+              </label>
+              {categoryGroups.map(([slug, catProducts]) => {
+                const ids = catProducts.map((p: any) => p.id);
+                const everySelected = ids.length > 0 && ids.every((id: number) => selectedIds.has(id));
+                const someSelected = ids.some((id: number) => selectedIds.has(id));
+                const selectedInCategory = ids.filter((id: number) => selectedIds.has(id)).length;
+                return (
+                  <div key={slug || "uncategorized"}>
+                    <label className="discount-picker-row discount-picker-group-head">
+                      <input
+                        type="checkbox"
+                        checked={everySelected}
+                        ref={(el) => { if (el) el.indeterminate = !everySelected && someSelected; }}
+                        onChange={() => toggleCategory(slug)}
+                      />
+                      {categoryTitle(slug)}
+                      <span className="discount-picker-count">
+                        {selectedInCategory}/{ids.length}
+                      </span>
+                    </label>
+                    {catProducts.map((p: any) => {
+                      const image = getProductPrimaryImage(p);
+                      const checked = selectedIds.has(p.id);
+                      return (
+                        <label
+                          key={p.id}
+                          className={`discount-picker-row discount-picker-item${checked ? " checked" : ""}`}
+                        >
+                          <input type="checkbox" checked={checked} onChange={() => toggleProduct(p.id)} />
+                          <span className="discount-picker-thumb">
+                            {image ? <img src={image} alt={p.name} /> : (p.name || "?").slice(0, 1)}
+                          </span>
+                          <span className="discount-picker-name">{getProductLabel(p.id, p.name)}</span>
+                          <span className="discount-picker-meta">
+                            ID: {p.id} · {formatStorePrice(p.price)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            <small
+              className="discount-picker-hint"
+              style={{ color: selectedIds.size === 0 ? "#b3261e" : "#2f7a4a" }}
+            >
+              {selectedIds.size === 0
+                ? (language === "MN" ? "Хямдрал оруулах бүтээгдэхүүнээ сонгоно уу." : "Select at least one product.")
+                : `${selectedIds.size} ${language === "MN" ? "бүтээгдэхүүн сонгогдсон" : "products selected"}`}
+            </small>
+          </div>
+        ) : (
+          <label className="admin-field admin-field-wide">
+            <span>{copy.discountProduct}</span>
+            <select
+              value={dm.draft.productId}
+              onChange={(e: any) => ctx.setDiscountModal((cur: any) => cur ? { ...cur, draft: { ...cur.draft, productId: Number(e.target.value) } } : cur)}
+              required
+            >
+              <option value={0} disabled>{language === "MN" ? "Бүтээгдэхүүн сонгоно уу" : "Select a product"}</option>
+              {products.map((p: any) => (
+                <option key={p.id} value={p.id}>{getProductLabel(p.id, p.name)} (ID: {p.id})</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="admin-field">
           <span>{copy.discountType}</span>
@@ -3869,13 +4001,14 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         <button type="button" className="btn btn-outline" onClick={() => ctx.setDiscountModal(null)}>
           {copy.cancel}
         </button>
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-primary" disabled={isCreateMode && selectedIds.size === 0}>
           {copy.save}
         </button>
       </div>
     </form>
   </AdminModal>
-)}
+  );
+})()}
     </>
   );
 }

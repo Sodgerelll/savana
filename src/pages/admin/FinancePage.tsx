@@ -6,6 +6,7 @@ import { AdminModal } from "./AdminModal";
 import type { FinanceEntryRecord, FinanceEntryType } from "../../lib/financeEntries";
 import type { FinanceRecurringRecord, RecurringFrequency } from "../../lib/financeRecurring";
 import { deriveAutoFinanceEntries, type AutoFinanceEntry } from "../../lib/accounting/autoFinanceEntries";
+import { computeDiscountStats } from "../../lib/discountStats";
 
 /** Manual financeEntries record or a display-only row derived from the journal. */
 type LedgerRow = (FinanceEntryRecord & { auto?: undefined }) | AutoFinanceEntry;
@@ -61,6 +62,9 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
     financeEntriesError,
     financeRecurring,
     journalEntries,
+    orders,
+    directSales,
+    customerTransactions,
     language,
     formatStorePrice,
     createFinanceEntry,
@@ -128,6 +132,12 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
     [monthEntries],
   );
   const monthBalance = monthIncome - monthExpense;
+
+  // Discounts given this month across online orders, direct sales & seller transfers.
+  const monthDiscounts = useMemo(
+    () => computeDiscountStats({ orders, directSales, customerTransactions }, monthPrefix),
+    [orders, directSales, customerTransactions, monthPrefix],
+  );
 
   const tableEntries = useMemo(() => {
     const list = selectedDay ? monthEntries.filter((e) => e.date === selectedDay) : monthEntries;
@@ -361,6 +371,19 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
           <strong className={monthBalance >= 0 ? "finance-amount-income" : "finance-amount-expense"}>
             {formatStorePrice(monthBalance)}
           </strong>
+        </div>
+        <div className="admin-summary-card">
+          <span>{mn ? "Сарын хямдрал" : "Monthly discounts"}</span>
+          <strong className={monthDiscounts.total.amount > 0 ? "finance-amount-expense" : ""}>
+            {monthDiscounts.total.amount > 0
+              ? `−${formatStorePrice(monthDiscounts.total.amount)}`
+              : formatStorePrice(0)}
+          </strong>
+          {monthDiscounts.total.count > 0 && (
+            <small style={{ color: "#888" }}>
+              {monthDiscounts.total.count} {mn ? "хямдралтай борлуулалт" : "discounted sales"}
+            </small>
+          )}
         </div>
         <div className="admin-summary-card">
           <span>{mn ? "Бүртгэлийн тоо" : "Entries"}</span>

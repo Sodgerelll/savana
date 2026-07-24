@@ -1,16 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ChevronDown, ChevronUp, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Tag, Trash2, X } from "lucide-react";
 import React, { useState } from "react";
 import { AdminModal } from "./AdminModal";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
+import { isDiscountActive, localDateKey } from "../../lib/storefrontHelpers";
 
 interface DirectSaleModalState {
   product: any;
   variant: string;
   quantity: number;
   unitPrice: number;
+  /** List price of the selected variant/product — kept so the sale records the discount. */
+  originalUnitPrice: number;
   note: string;
 }
 
@@ -33,6 +36,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     customerTransactions,
     productionBatches,
     directSales,
+    discounts,
     productSearchName,
     setProductSearchName,
     productFilterCategory,
@@ -55,6 +59,49 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     openConfirmModal,
     user,
   } = ctx;
+
+  const today = localDateKey();
+  const activeDiscountByProduct = new Map<number, any>();
+  ((discounts ?? []) as any[]).forEach((d) => {
+    if (isDiscountActive(d, today)) {
+      activeDiscountByProduct.set(d.productId, d);
+    }
+  });
+  const getDiscountedPrice = (price: number, d: any) =>
+    d.type === "percent" ? Math.round(price * (1 - d.value / 100)) : Math.max(0, price - d.value);
+
+  const getListPrice = (product: any, variantName: string | null): number => {
+    if (variantName && product?.variants?.length) {
+      const v = product.variants.find((vv: any) => vv.name === variantName);
+      if (v) return Number(v.price ?? product.price ?? 0);
+    }
+    return Number(product?.price ?? 0);
+  };
+
+  // A sale line counts as discounted when the recorded (or fallback list) price
+  // is above the actual sale price. Fallback covers older records saved before
+  // originalUnitPrice existed.
+  const getLineDiscount = (
+    item: { unitPrice: number; quantity: number; originalUnitPrice?: number },
+    fallbackOriginal: number | null,
+  ): { original: number; amount: number } | null => {
+    const stored = Number(item.originalUnitPrice ?? 0);
+    const original = stored > 0 ? stored : (fallbackOriginal ?? 0);
+    if (original > item.unitPrice) {
+      return { original, amount: (original - item.unitPrice) * item.quantity };
+    }
+    return null;
+  };
+
+  const renderPriceCell = (unitPrice: number, disc: { original: number } | null) =>
+    disc ? (
+      <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1.25 }}>
+        <s style={{ color: "#9ca3af", fontSize: "0.75rem" }}>{formatStorePrice(disc.original)}</s>
+        <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatStorePrice(unitPrice)}</span>
+      </span>
+    ) : (
+      formatStorePrice(unitPrice)
+    );
 
   const [productTabs, setProductTabs] = useState<Map<number, string>>(new Map());
   const getProductTab = (id: number) => productTabs.get(id) ?? "sales";
@@ -121,11 +168,14 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
 
   const openSaleModal = (product: any) => {
     const firstVariant = product.variants?.[0]?.name ?? "";
+    const listPrice = product.variants?.length ? (product.variants[0]?.price ?? product.price) : product.price;
+    const discount = activeDiscountByProduct.get(product.id);
     setSaleModal({
       product,
       variant: firstVariant,
       quantity: 1,
-      unitPrice: product.variants?.length ? (product.variants[0]?.price ?? product.price) : product.price,
+      unitPrice: discount ? getDiscountedPrice(listPrice, discount) : listPrice,
+      originalUnitPrice: listPrice,
       note: "",
     });
     setSaleError(null);
@@ -134,7 +184,14 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
   const handleSaleVariantChange = (variantName: string) => {
     if (!saleModal) return;
     const v = saleModal.product.variants?.find((vv: any) => vv.name === variantName);
-    setSaleModal({ ...saleModal, variant: variantName, unitPrice: v?.price ?? saleModal.product.price });
+    const listPrice = v?.price ?? saleModal.product.price;
+    const discount = activeDiscountByProduct.get(saleModal.product.id);
+    setSaleModal({
+      ...saleModal,
+      variant: variantName,
+      unitPrice: discount ? getDiscountedPrice(listPrice, discount) : listPrice,
+      originalUnitPrice: listPrice,
+    });
   };
 
   const getAvailableStock = (product: any, variant: string | null): number => {
@@ -178,6 +235,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
         variant: saleModal.variant || null,
         quantity: saleModal.quantity,
         unitPrice: saleModal.unitPrice,
+        originalUnitPrice: saleModal.originalUnitPrice,
         note: saleModal.note,
         createdByUid: user?.uid ?? "",
       });
@@ -329,6 +387,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                     : (product.totalStock ?? 0);
                   const sold = product.soldCount ?? 0;
                   const remaining = stock - sold;
+                  const discount = activeDiscountByProduct.get(product.id);
                   return (
                     <React.Fragment key={product.id}>
                       <tr
@@ -347,17 +406,38 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                             <div className="admin-table-primary">
                               <strong>{getProductLabel(product.id, product.name || "Product")}</strong>
                               {product.bestSeller && <small>{copy.bestSeller}</small>}
+                              {discount && (
+                                <small style={{ color: "#dc2626", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <Tag size={11} />
+                                  {discount.type === "percent" ? `-${discount.value}%` : `-${formatStorePrice(discount.value)}`}
+                                  {" · "}{discount.endAt} {language === "MN" ? "хүртэл" : "until"}
+                                </small>
+                              )}
                             </div>
                           </div>
                         </td>
                         <td>{collectionNameBySlug.get(product.category) ?? product.category}</td>
-                        <td className="admin-td-right">{formatStorePrice(product.price)}</td>
+                        <td className="admin-td-right">
+                          {discount ? (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                              <span style={{ textDecoration: "line-through", color: "#9ca3af", fontSize: "0.78rem" }}>
+                                {formatStorePrice(product.price)}
+                              </span>
+                              <span style={{ fontWeight: 700, color: "#dc2626" }}>
+                                {formatStorePrice(getDiscountedPrice(product.price, discount))}
+                              </span>
+                            </div>
+                          ) : (
+                            formatStorePrice(product.price)
+                          )}
+                        </td>
                         <td className="admin-td-right">{remaining}/{stock} - {sold}</td>
                         <td>
                           <StatusBadge
                             status={product.status}
                             activeLabel={copy.active}
                             inactiveLabel={copy.inactive}
+                            iconOnly
                           />
                         </td>
                         <td>
@@ -416,6 +496,21 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                           .slice()
                           .sort((a: any, b: any) => (b.readyAt ?? "").localeCompare(a.readyAt ?? ""));
                         const activeTab = getProductTab(product.id);
+                        const orderDiscountTotal = productOrders.reduce(
+                          (s: number, o: any) => s + o.items.filter((it: any) => it.productId === product.id)
+                            .reduce((a: number, it: any) => a + (getLineDiscount(it, null)?.amount ?? 0), 0),
+                          0,
+                        );
+                        const directSaleDiscountTotal = productDirectSales.reduce(
+                          (s: number, r: any) => s + (getLineDiscount(r, getListPrice(product, r.variant))?.amount ?? 0),
+                          0,
+                        );
+                        const transferDiscountTotal = productTransfers.reduce(
+                          (s: number, tx: any) => s + tx.items.filter((it: any) => it.productId === product.id)
+                            .reduce((a: number, it: any) => a + (getLineDiscount(it, getListPrice(product, it.variant))?.amount ?? 0), 0),
+                          0,
+                        );
+                        const allDiscountTotal = orderDiscountTotal + directSaleDiscountTotal + transferDiscountTotal;
                         return (
                           <tr className="admin-product-expand-row">
                             <td colSpan={7}>
@@ -426,6 +521,15 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                       <small>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</small>
                                       <strong>{remaining}/{stock} - {sold}</strong>
                                     </div>
+                                    {allDiscountTotal > 0 && (
+                                      <div className="admin-expand-stat">
+                                        <small style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                          <Tag size={11} />
+                                          {language === "MN" ? "Хямдралаар зарагдсан" : "Discount given"}
+                                        </small>
+                                        <strong style={{ color: "#dc2626" }}>-{formatStorePrice(allDiscountTotal)}</strong>
+                                      </div>
+                                    )}
                                   </div>
                                   {product.variants?.length ? (
                                     <div className="admin-product-expand-variants">
@@ -501,6 +605,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Variant" : "Variant"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Тоо" : "Qty"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Үнэ" : "Price"}</th>
+                                              <th style={{ textAlign: "center" }}>{language === "MN" ? "Хямдрал" : "Discount"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Нийт" : "Total"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Төлөв" : "Status"}</th>
                                             </tr>
@@ -513,6 +618,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                   .filter((it: any) => it.productId === product.id)
                                                   .map((it: any, idx: number) => {
                                                     rowNum++;
+                                                    const disc = getLineDiscount(it, null);
                                                     return (
                                                       <tr key={`${o.id}-${idx}`}>
                                                         <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{rowNum}</td>
@@ -520,7 +626,10 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                         <td style={{ textAlign: "center" }}><small>#{o.orderNumber}</small></td>
                                                         <td style={{ textAlign: "center" }}>{it.variant || "—"}</td>
                                                         <td style={{ textAlign: "center" }}>{it.quantity}</td>
-                                                        <td style={{ textAlign: "center" }}>{formatStorePrice(it.unitPrice)}</td>
+                                                        <td style={{ textAlign: "center" }}>{renderPriceCell(it.unitPrice, disc)}</td>
+                                                        <td style={{ textAlign: "center" }}>
+                                                          {disc ? <span style={{ color: "#dc2626" }}>-{formatStorePrice(disc.amount)}</span> : "—"}
+                                                        </td>
                                                         <td style={{ textAlign: "center" }}><strong>{formatStorePrice(it.lineTotal)}</strong></td>
                                                         <td style={{ textAlign: "center" }}>
                                                           <span className={`admin-expand-order-status admin-expand-order-${o.status}`}>
@@ -539,6 +648,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                               <td colSpan={3} style={{ textAlign: "center" }}><strong>{language === "MN" ? "Нийт" : "Total"}</strong></td>
                                               <td style={{ textAlign: "center" }}><strong>{productOrders.reduce((s: number, o: any) => s + o.items.filter((it: any) => it.productId === product.id).reduce((a: number, it: any) => a + it.quantity, 0), 0)}</strong></td>
                                               <td></td>
+                                              <td style={{ textAlign: "center" }}>
+                                                {orderDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(orderDiscountTotal)}</strong> : ""}
+                                              </td>
                                               <td style={{ textAlign: "center" }}><strong>{formatStorePrice(productOrders.reduce((s: number, o: any) => s + o.items.filter((it: any) => it.productId === product.id).reduce((a: number, it: any) => a + it.lineTotal, 0), 0))}</strong></td>
                                               <td></td>
                                             </tr>
@@ -564,20 +676,26 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Variant" : "Variant"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Тоо" : "Qty"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Үнэ" : "Price"}</th>
+                                              <th style={{ textAlign: "center" }}>{language === "MN" ? "Хямдрал" : "Discount"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Нийт" : "Total"}</th>
                                               <th style={{ textAlign: "center" }}>{language === "MN" ? "Тэмдэглэл" : "Note"}</th>
                                               <th></th>
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {productDirectSales.map((s: any, idx: number) => (
+                                            {productDirectSales.map((s: any, idx: number) => {
+                                              const disc = getLineDiscount(s, getListPrice(product, s.variant));
+                                              return (
                                               <tr key={s.id}>
                                                 <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{idx + 1}</td>
                                                 <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{formatAdminDateTime(s.createdAt, language)}</td>
                                                 <td style={{ textAlign: "center" }}><small>{s.saleNumber}</small></td>
                                                 <td style={{ textAlign: "center" }}>{s.variant || "—"}</td>
                                                 <td style={{ textAlign: "center" }}>{s.quantity}</td>
-                                                <td style={{ textAlign: "center" }}>{formatStorePrice(s.unitPrice)}</td>
+                                                <td style={{ textAlign: "center" }}>{renderPriceCell(s.unitPrice, disc)}</td>
+                                                <td style={{ textAlign: "center" }}>
+                                                  {disc ? <span style={{ color: "#dc2626" }}>-{formatStorePrice(disc.amount)}</span> : "—"}
+                                                </td>
                                                 <td style={{ textAlign: "center" }}><strong>{formatStorePrice(s.lineTotal)}</strong></td>
                                                 <td style={{ textAlign: "center", color: "#888", fontSize: "0.82rem" }}>{s.note || "—"}</td>
                                                 <td>
@@ -601,7 +719,8 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                   </div>
                                                 </td>
                                               </tr>
-                                            ))}
+                                              );
+                                            })}
                                           </tbody>
                                           <tfoot>
                                             <tr>
@@ -611,6 +730,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                 <strong>{productDirectSales.reduce((s: number, r: any) => s + r.quantity, 0)}</strong>
                                               </td>
                                               <td></td>
+                                              <td style={{ textAlign: "center" }}>
+                                                {directSaleDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(directSaleDiscountTotal)}</strong> : ""}
+                                              </td>
                                               <td style={{ textAlign: "center" }}>
                                                 <strong>{formatStorePrice(productDirectSales.reduce((s: number, r: any) => s + r.lineTotal, 0))}</strong>
                                               </td>
@@ -651,6 +773,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарсан" : "Sold"}</th>
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</th>
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Үнэ" : "Price"}</th>
+                                                <th style={{ textAlign: "center" }}>{language === "MN" ? "Хямдрал" : "Discount"}</th>
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Нийт" : "Total"}</th>
                                               </tr>
                                             </thead>
@@ -662,6 +785,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                     .filter((it: any) => it.productId === product.id)
                                                     .map((it: any, idx: number) => {
                                                       rowNum++;
+                                                      const disc = getLineDiscount(it, getListPrice(product, it.variant));
                                                       return (
                                                         <tr key={`${tx.id}-${idx}`}>
                                                           <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{rowNum}</td>
@@ -679,7 +803,10 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                               {it.quantity - it.soldQuantity}
                                                             </strong>
                                                           </td>
-                                                          <td style={{ textAlign: "center" }}>{formatStorePrice(it.unitPrice)}</td>
+                                                          <td style={{ textAlign: "center" }}>{renderPriceCell(it.unitPrice, disc)}</td>
+                                                          <td style={{ textAlign: "center" }}>
+                                                            {disc ? <span style={{ color: "#dc2626" }}>-{formatStorePrice(disc.amount)}</span> : "—"}
+                                                          </td>
                                                           <td style={{ textAlign: "center" }}>
                                                             <strong>{formatStorePrice(it.lineTotal)}</strong>
                                                           </td>
@@ -703,6 +830,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                   </strong>
                                                 </td>
                                                 <td></td>
+                                                <td style={{ textAlign: "center" }}>
+                                                  {transferDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(transferDiscountTotal)}</strong> : ""}
+                                                </td>
                                                 <td style={{ textAlign: "center" }}><strong>{formatStorePrice(totalAmount)}</strong></td>
                                               </tr>
                                             </tfoot>
@@ -818,6 +948,18 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                 <span className="sale-modal-list-price">
                   {language === "MN" ? "Жагсаалтын үнэ" : "List price"}: <strong>{formatStorePrice(saleModal.product.price)}</strong>
                 </span>
+                {(() => {
+                  const d = activeDiscountByProduct.get(saleModal.product.id);
+                  if (!d) return null;
+                  return (
+                    <span style={{ color: "#dc2626", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <Tag size={11} />
+                      {language === "MN" ? "Хямдрал" : "Discount"}: {d.type === "percent" ? `-${d.value}%` : `-${formatStorePrice(d.value)}`}
+                      {" → "}
+                      <strong>{formatStorePrice(getDiscountedPrice(saleModal.originalUnitPrice, d))}</strong>
+                    </span>
+                  );
+                })()}
               </div>
             </div>
 

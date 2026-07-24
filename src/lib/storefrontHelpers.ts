@@ -259,11 +259,25 @@ export function getRenderableSettings(settings: ShopSettings) {
   return isActiveStatus(settings.status) ? settings : createDefaultStorefrontData().settings;
 }
 
+/**
+ * Local "YYYY-MM-DD" date key. Discount start/end dates are entered as local
+ * calendar dates, so comparisons must use the local date too — toISOString()
+ * is UTC and lags Ulaanbaatar (UTC+8) by a day between 00:00 and 08:00.
+ */
+export function localDateKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function isDiscountActive(discount: Discount, today: string = localDateKey()): boolean {
+  return discount.status === "active" && discount.startAt <= today && discount.endAt >= today;
+}
+
 export function getActiveDiscount(discounts: Discount[], productId: number): Discount | undefined {
-  const today = new Date().toISOString().slice(0, 10);
-  return discounts.find(
-    (d) => d.productId === productId && d.status === "active" && d.startAt <= today && d.endAt >= today,
-  );
+  const today = localDateKey();
+  return discounts.find((d) => d.productId === productId && isDiscountActive(d, today));
 }
 
 export function applyDiscount(price: number, discount: Discount): number {

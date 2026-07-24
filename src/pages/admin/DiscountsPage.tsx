@@ -2,7 +2,8 @@ import { Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
 import type { Discount } from "../../data/products";
-import { formatStorePrice } from "../../lib/storefrontHelpers";
+import { getProductLabel } from "./adminHelpers";
+import { formatStorePrice, isDiscountActive, localDateKey } from "../../lib/storefrontHelpers";
 
 export default function DiscountsPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -29,8 +30,8 @@ export default function DiscountsPage({ ctx }: { ctx: AdminCtx }) {
     return Math.max(0, price - discount.value);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const activeDiscounts = discounts.filter((d: Discount) => d.status === "active" && d.startAt <= today && d.endAt >= today);
+  const today = localDateKey();
+  const activeDiscounts = discounts.filter((d: Discount) => isDiscountActive(d, today));
   const inactiveCount = discounts.length - activeDiscounts.length;
 
   return (
@@ -103,8 +104,10 @@ export default function DiscountsPage({ ctx }: { ctx: AdminCtx }) {
                           <Tag size={14} />
                         </div>
                         <div className="admin-table-primary">
-                          <strong>{getProductName(discount.productId)}</strong>
+                          <strong>{getProductLabel(discount.productId, getProductName(discount.productId))}</strong>
                           <small style={{ opacity: 0.55 }}>
+                            ID: {discount.productId}
+                            {" · "}
                             {formatStorePrice(getProductPrice(discount.productId))} → {formatStorePrice(getDiscountedPrice(discount))}
                           </small>
                         </div>

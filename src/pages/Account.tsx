@@ -9,7 +9,6 @@ import {
   Menu,
   MessageSquareQuote,
   Package,
-  Pencil,
   Percent,
   RotateCcw,
   Store,
@@ -57,6 +56,7 @@ import {
   getProductPrimaryImage,
   getRenderableSettings,
   isSystemCollection,
+  localDateKey,
 } from "../lib/storefrontHelpers";
 import { uploadStorefrontImage } from "../lib/storageUpload";
 import { subscribeToPackaging, savePackaging, deletePackaging, type PackagingItem } from "../lib/storefrontRepository";
@@ -164,8 +164,6 @@ type AdminSection =
   | "messages"
   | "orders"
   | "users"
-  | "commonSettings"
-  | "activityLog"
   | "crmOverview"
   | "crmCustomers"
   | "crmCustomerTransactions"
@@ -229,6 +227,8 @@ interface TestimonialModalState {
 interface DiscountModalState {
   mode: ModalMode;
   draft: Discount;
+  /** Create mode: products the discount will be applied to (multi-select). */
+  selectedProductIds?: number[];
 }
 
 interface ConfirmModalState {
@@ -342,7 +342,6 @@ interface AdminMenuGroup {
 
 const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "categories", "products", "discounts", "messages", "orders", "users",
-  "commonSettings", "activityLog",
   "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
   "factoryOverview", "factoryProduction", "rawMaterials", "factoryInventory",
@@ -714,29 +713,10 @@ export default function Account() {
                 requiresPrivilege: true,
               },
               {
-                id: "commonSettings",
-                label: "Системийн тохиргоо",
-                description: "Environment, tenant, integrations, global policy.",
-                icon: <Pencil size={18} />,
-              },
-              {
-                id: "activityLog",
-                label: "Тайлан ба лог",
-                description: "Audit trail, activity feed, cross-module reports.",
-                icon: <CheckCircle2 size={18} />,
-              },
-              {
                 id: "products",
                 label: "Бүтээгдэхүүн",
                 description: "SKU, pricing, copy, assets, status management.",
                 icon: <Package size={18} />,
-                implemented: true,
-              },
-              {
-                id: "directSales",
-                label: "Борлуулалтын түүх",
-                description: "Шууд борлуулалтын бүртгэл, захиалгаас тусдаа.",
-                icon: <WalletCards size={18} />,
                 implemented: true,
               },
               {
@@ -1027,29 +1007,10 @@ export default function Account() {
                 requiresPrivilege: true,
               },
               {
-                id: "commonSettings",
-                label: "System settings",
-                description: "Environment, tenant, integrations, and global policy.",
-                icon: <Pencil size={18} />,
-              },
-              {
-                id: "activityLog",
-                label: "Reports & logs",
-                description: "Audit trail, activity feed, and cross-module reports.",
-                icon: <CheckCircle2 size={18} />,
-              },
-              {
                 id: "products",
                 label: "Products",
                 description: "SKU, pricing, copy, assets, and status management.",
                 icon: <Package size={18} />,
-                implemented: true,
-              },
-              {
-                id: "directSales",
-                label: "Direct sales history",
-                description: "Direct sales recorded separately from web orders.",
-                icon: <WalletCards size={18} />,
                 implemented: true,
               },
               {
@@ -1873,13 +1834,14 @@ export default function Account() {
       setDiscountModal({ mode: "edit", draft: { ...discount } });
       return;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateKey();
     const nextId = Math.max(0, ...discounts.map((d) => d.id)) + 1;
     setDiscountModal({
       mode: "create",
+      selectedProductIds: [],
       draft: {
         id: nextId,
-        productId: products[0]?.id ?? 0,
+        productId: 0,
         type: "percent",
         value: 10,
         startAt: today,

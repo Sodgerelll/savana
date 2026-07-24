@@ -8,6 +8,7 @@ import {
   LineChart,
   PieChart,
   Search,
+  Tag,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -20,6 +21,7 @@ import type { FinanceEntryRecord } from "../../lib/financeEntries";
 import type { FinanceWeeklyKpiRecord } from "../../lib/financeKpis";
 import { ACCOUNT_CODES, seedChartOfAccounts } from "../../lib/accounting/chartOfAccounts";
 import { deriveAutoFinanceEntries } from "../../lib/accounting/autoFinanceEntries";
+import { computeDiscountStats } from "../../lib/discountStats";
 
 const MONTH_NAMES_MN = [
   "1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
@@ -82,6 +84,7 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
     saveWeeklyKpi,
     orders,
     directSales,
+    customerTransactions,
     journalEntries,
     chartOfAccounts,
     language,
@@ -169,6 +172,12 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
     const total = rows.reduce((sum, row) => sum + row.amount, 0);
     return { rows, total };
   }, [yearEntries, mn]);
+
+  // ── Discounts given during the viewed year, by sales channel ──
+  const yearDiscounts = useMemo(
+    () => computeDiscountStats({ orders, directSales, customerTransactions }, yearPrefix.slice(0, 4)),
+    [orders, directSales, customerTransactions, yearPrefix],
+  );
 
   // ── Weekly KPI rows (last 8 ISO weeks) ──
   const weeklyRows = useMemo(() => {
@@ -579,6 +588,78 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
                       <td className="admin-td-right"><strong>{formatStorePrice(expenseBreakdown.total)}</strong></td>
                       <td className="admin-td-right"><strong>100.0%</strong></td>
                       <td />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+
+          {/* 4.5 Discount report by sales channel */}
+          <div className="admin-data-card">
+            <div className="admin-data-card-head">
+              <div>
+                <h2>
+                  <Tag size={18} style={{ verticalAlign: "-3px", marginRight: 6 }} />
+                  {mn ? "Хямдралын тайлан (жилийн дүн)" : "Discount report (yearly)"}
+                </h2>
+                <p>
+                  {mn
+                    ? "Хямдралтай үнээр зарагдсан борлуулалт: онлайн захиалга, шууд борлуулалт, борлуулагч руу шилжүүлсэн сувгаар."
+                    : "Sales made at discounted prices: online orders, direct sales, and seller transfers."}
+                </p>
+              </div>
+            </div>
+            <div className="admin-data-table-wrap">
+              <table className="admin-data-table">
+                <thead>
+                  <tr>
+                    <th>{mn ? "Суваг" : "Channel"}</th>
+                    <th className="admin-th-right">{mn ? "Хямдралтай борлуулалт (ш)" : "Discounted sales"}</th>
+                    <th className="admin-th-right">{mn ? "Хямдралын дүн" : "Discount amount"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yearDiscounts.total.count === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="admin-table-empty">
+                        {mn ? "Энэ онд хямдралтай борлуулалт бүртгэгдээгүй байна." : "No discounted sales recorded this year."}
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      <tr>
+                        <td>{mn ? "Онлайн захиалга" : "Online orders"}</td>
+                        <td className="admin-td-right">{yearDiscounts.orders.count}</td>
+                        <td className="admin-td-right finance-amount-expense">
+                          {yearDiscounts.orders.amount > 0 ? `−${formatStorePrice(yearDiscounts.orders.amount)}` : "—"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>{mn ? "Шууд борлуулалт" : "Direct sales"}</td>
+                        <td className="admin-td-right">{yearDiscounts.directSales.count}</td>
+                        <td className="admin-td-right finance-amount-expense">
+                          {yearDiscounts.directSales.amount > 0 ? `−${formatStorePrice(yearDiscounts.directSales.amount)}` : "—"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>{mn ? "Борлуулагч руу шилжүүлсэн" : "Seller transfers"}</td>
+                        <td className="admin-td-right">{yearDiscounts.transfers.count}</td>
+                        <td className="admin-td-right finance-amount-expense">
+                          {yearDiscounts.transfers.amount > 0 ? `−${formatStorePrice(yearDiscounts.transfers.amount)}` : "—"}
+                        </td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+                {yearDiscounts.total.count > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td><strong>{mn ? "Нийт" : "Total"}</strong></td>
+                      <td className="admin-td-right"><strong>{yearDiscounts.total.count}</strong></td>
+                      <td className="admin-td-right finance-amount-expense">
+                        <strong>−{formatStorePrice(yearDiscounts.total.amount)}</strong>
+                      </td>
                     </tr>
                   </tfoot>
                 )}

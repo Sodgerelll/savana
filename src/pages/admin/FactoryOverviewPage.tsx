@@ -357,6 +357,9 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
       {/* ── Row 2: Raw materials + Packaging & Output ── */}
       <div className="admin-two-col-grid">
 
+        {/* Left: Raw materials + Production output */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", alignSelf: "start" }}>
+
         {/* Raw materials */}
         <div className="admin-data-card">
           <div className="admin-data-card-head">
@@ -428,11 +431,49 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
           )}
         </div>
 
-        {/* Right: Packaging + Output */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        {/* Production output */}
+        <div className="admin-data-card">
+          <div className="admin-data-card-head">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Package size={15} color="#10b981" />
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1rem" }}>{mn ? "Нийт үйлдвэрлэлийн гарц" : "Production output"}</h2>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "#6b7280" }}>
+                  {mn ? "Бүтээгдэхүүнээр нэгтгэсэн, бүх цаг" : "All-time by product"}
+                </p>
+              </div>
+            </div>
+            {navLink("factoryProduction", mn ? "Batch харах" : "View batches")}
+          </div>
+          <div className="admin-data-table-wrap">
+            <table className="admin-data-table" style={{ minWidth: "unset" }}>
+              <thead>
+                <tr>
+                  <th>{mn ? "Бүтээгдэхүүн" : "Product"}</th>
+                  <th style={{ textAlign: "right" }}>{mn ? "Нийт гарц" : "Total output"}</th>
+                  <th style={{ textAlign: "right", width: 72 }}>{mn ? "Batch" : "Batches"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outputRows.length === 0 ? (
+                  <tr><td colSpan={3} className="admin-table-empty">{mn ? "Дууссан batch байхгүй." : "No completed batches yet."}</td></tr>
+                ) : (
+                  outputRows.map((r, i) => (
+                    <tr key={i}>
+                      <td><strong style={{ fontSize: "0.85rem" }}>{r.name}</strong></td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: "#10b981", fontSize: "0.9rem" }}>{r.total.toLocaleString()}</td>
+                      <td style={{ textAlign: "right", color: "#9ca3af", fontSize: "0.78rem" }}>{r.batches}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </div>
 
-          {/* Packaging */}
-          <div className="admin-data-card">
+        {/* Packaging */}
+        <div className="admin-data-card" style={{ alignSelf: "start" }}>
             <div className="admin-data-card-head">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Box size={15} color={lowPkg.length > 0 ? "#dc2626" : "#6b7280"} />
@@ -493,47 +534,6 @@ export default function FactoryOverviewPage({ ctx }: { ctx: AdminCtx }) {
             </div>
           </div>
 
-          {/* Production output */}
-          <div className="admin-data-card">
-            <div className="admin-data-card-head">
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Package size={15} color="#10b981" />
-                <div>
-                  <h2 style={{ margin: 0, fontSize: "1rem" }}>{mn ? "Нийт үйлдвэрлэлийн гарц" : "Production output"}</h2>
-                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#6b7280" }}>
-                    {mn ? "Бүтээгдэхүүнээр нэгтгэсэн, бүх цаг" : "All-time by product"}
-                  </p>
-                </div>
-              </div>
-              {navLink("factoryProduction", mn ? "Batch харах" : "View batches")}
-            </div>
-            <div className="admin-data-table-wrap">
-              <table className="admin-data-table" style={{ minWidth: "unset" }}>
-                <thead>
-                  <tr>
-                    <th>{mn ? "Бүтээгдэхүүн" : "Product"}</th>
-                    <th style={{ textAlign: "right" }}>{mn ? "Нийт гарц" : "Total output"}</th>
-                    <th style={{ textAlign: "right", width: 72 }}>{mn ? "Batch" : "Batches"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outputRows.length === 0 ? (
-                    <tr><td colSpan={3} className="admin-table-empty">{mn ? "Дууссан batch байхгүй." : "No completed batches yet."}</td></tr>
-                  ) : (
-                    outputRows.map((r, i) => (
-                      <tr key={i}>
-                        <td><strong style={{ fontSize: "0.85rem" }}>{r.name}</strong></td>
-                        <td style={{ textAlign: "right", fontWeight: 700, color: "#10b981", fontSize: "0.9rem" }}>{r.total.toLocaleString()}</td>
-                        <td style={{ textAlign: "right", color: "#9ca3af", fontSize: "0.78rem" }}>{r.batches}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
       </div>
     </>
   );

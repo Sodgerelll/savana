@@ -38,6 +38,8 @@ export interface CustomerTransactionItem {
   quantity: number;
   soldQuantity: number;
   unitPrice: number;
+  /** List price at the time of transfer — greater than unitPrice when sold at a discount. */
+  originalUnitPrice?: number;
   lineTotal: number;
 }
 
@@ -178,7 +180,7 @@ function deserializeTransaction(
     },
     items: Array.isArray(data.items)
       ? data.items
-          .map((item) => {
+          .map((item): CustomerTransactionItem | null => {
             if (typeof item !== "object" || item === null) {
               return null;
             }
@@ -192,6 +194,7 @@ function deserializeTransaction(
               quantity: Number(itemData.quantity ?? 0),
               soldQuantity: Number(itemData.soldQuantity ?? 0),
               unitPrice: Number(itemData.unitPrice ?? 0),
+              originalUnitPrice: Number(itemData.originalUnitPrice ?? itemData.unitPrice ?? 0),
               lineTotal: Number(itemData.lineTotal ?? 0),
             } satisfies CustomerTransactionItem;
           })
@@ -256,6 +259,7 @@ function sanitizeItems(items: CustomerTransactionItem[]): CustomerTransactionIte
       ...item,
       image: sanitizeItemImage(item.image),
       unitPrice,
+      originalUnitPrice: roundAmount(item.originalUnitPrice ?? unitPrice) || unitPrice,
       lineTotal: roundAmount(unitPrice * item.quantity),
     };
   });

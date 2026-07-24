@@ -27,6 +27,8 @@ export interface DirectSaleRecord {
   variant: string | null;
   quantity: number;
   unitPrice: number;
+  /** List price at the time of sale — greater than unitPrice when sold at a discount. */
+  originalUnitPrice?: number;
   lineTotal: number;
   note: string;
   createdByUid: string;
@@ -42,6 +44,7 @@ export interface CreateDirectSaleInput {
   variant: string | null;
   quantity: number;
   unitPrice: number;
+  originalUnitPrice?: number;
   note: string;
   createdByUid: string;
 }
@@ -87,6 +90,7 @@ function deserializeDirectSale(snapshot: QueryDocumentSnapshot<DocumentData>): D
     variant: typeof data.variant === "string" ? data.variant : null,
     quantity: Number(data.quantity ?? 0),
     unitPrice: Number(data.unitPrice ?? 0),
+    originalUnitPrice: Number(data.originalUnitPrice ?? data.unitPrice ?? 0),
     lineTotal: Number(data.lineTotal ?? 0),
     note: String(data.note ?? ""),
     createdByUid: String(data.createdByUid ?? ""),
@@ -166,6 +170,7 @@ export async function createDirectSale(input: CreateDirectSaleInput): Promise<st
     variant: input.variant ?? null,
     quantity: input.quantity,
     unitPrice: input.unitPrice,
+    originalUnitPrice: input.originalUnitPrice ?? input.unitPrice,
     lineTotal,
     note: input.note,
     createdByUid: input.createdByUid,

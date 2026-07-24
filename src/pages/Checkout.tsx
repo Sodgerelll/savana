@@ -30,6 +30,7 @@ interface CheckoutTotals {
   subtotal: number;
   shippingFee: number;
   grandTotal: number;
+  discountTotal?: number;
 }
 
 interface CheckoutOrderState {
@@ -228,6 +229,7 @@ export default function Checkout() {
           variant: item.variant ?? null,
           quantity: item.quantity,
           unitPrice: effectivePrice,
+          originalUnitPrice: item.unitPrice,
           lineTotal: effectivePrice * item.quantity,
         };
       }),
@@ -240,7 +242,7 @@ export default function Checkout() {
   const liveTotals = useMemo<CheckoutTotals>(
     () => {
       const subtotal = totalPrice - discountSavings;
-      return { subtotal, shippingFee, grandTotal: subtotal + shippingFee };
+      return { subtotal, shippingFee, grandTotal: subtotal + shippingFee, discountTotal: discountSavings };
     },
     [shippingFee, totalPrice, discountSavings],
   );
@@ -395,21 +397,10 @@ export default function Checkout() {
     setSubmitError("");
     setPaymentFeedback("");
 
-    const nextItems = items.map((item) => ({
-      productId: item.product.id,
-      name: item.product.name,
-      category: item.product.category,
-      image: getProductPrimaryImage(item.product) || null,
-      variant: item.variant ?? null,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      lineTotal: item.unitPrice * item.quantity,
-    }));
-    const nextTotals = {
-      subtotal: totalPrice,
-      shippingFee,
-      grandTotal: totalPrice + shippingFee,
-    };
+    // Use the discounted (effective) prices — the same ones shown in the summary —
+    // so orders are stored and charged with active discounts applied.
+    const nextItems = liveSummaryItems;
+    const nextTotals = liveTotals;
 
     try {
       const result = await createOrder({
