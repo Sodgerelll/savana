@@ -15,6 +15,7 @@ interface EditSaleModal {
 export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
   const {
     directSales,
+    directSalesError,
     language,
     formatAdminDateTime,
     formatStorePrice,
@@ -118,6 +119,14 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
           </p>
         </div>
       </div>
+
+      {directSalesError && (
+        <div className="admin-sync-error">
+          {language === "MN"
+            ? `Борлуулалтын түүх ачаалахад алдаа гарлаа: ${directSalesError}`
+            : `Failed to load sales history: ${directSalesError}`}
+        </div>
+      )}
 
       <div className="admin-summary-grid">
         <div className="admin-summary-card">

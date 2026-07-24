@@ -3,11 +3,13 @@ import {
   GoogleAuthProvider,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   setPersistence,
   signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -44,6 +46,25 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const googleProvider = new GoogleAuthProvider();
 
 googleProvider.setCustomParameters({ prompt: "select_account" });
+
+// Installed PWAs (standalone display mode) cannot reliably complete the popup
+// flow — the popup loses its opener, so the credential never reaches the app.
+function isStandaloneDisplayMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return (
+    window.matchMedia?.("(display-mode: standalone)").matches === true ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+function getAuthErrorCode(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : "";
+}
 
 function createAuthError(code: string, message: string) {
   const error = new Error(message) as Error & { code: string };
@@ -121,6 +142,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    // Completes the redirect-based Google sign-in used by the installed PWA.
+    void getRedirectResult(auth)
+      .then((result) => {
+        if (!result?.user) {
+          return;
+        }
+
+        return syncUserProfile(result.user, {
+          currentMethod: "google",
+          registrationMethod: "google",
+          hasPassword: result.user.providerData.some((provider) => provider.providerId === "password"),
+        }).then((syncedProfile) => {
+          setProfile(syncedProfile);
+        });
+      })
+      .catch(() => {
+        // A failed redirect result leaves the user signed out; the login page
+        // remains available, so there is nothing further to recover here.
+      });
+  }, []);
+
   const enablePersistence = async () => {
     await setPersistence(auth, browserLocalPersistence);
   };
@@ -171,12 +214,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     await enablePersistence();
-    const credential = await signInWithPopup(auth, googleProvider);
-    await syncAndStoreProfile(credential.user, {
-      currentMethod: "google",
-      registrationMethod: "google",
-      hasPassword: credential.user.providerData.some((provider) => provider.providerId === "password"),
-    });
+
+    if (isStandaloneDisplayMode()) {
+      await signInWithRedirect(auth, googleProvider);
+      return;
+    }
+
+    try {
+      const credential = await signInWithPopup(auth, googleProvider);
+      await syncAndStoreProfile(credential.user, {
+        currentMethod: "google",
+        registrationMethod: "google",
+        hasPassword: credential.user.providerData.some((provider) => provider.providerId === "password"),
+      });
+    } catch (error) {
+      const code = getAuthErrorCode(error);
+
+      if (
+        code === "auth/popup-blocked" ||
+        code === "auth/cancelled-popup-request" ||
+        code === "auth/operation-not-supported-in-this-environment"
+      ) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
+      throw error;
+    }
   };
 
   const signInAsGuest = async () => {

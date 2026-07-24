@@ -465,6 +465,7 @@ export default function Account() {
   const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
   const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
   const [directSales, setDirectSales] = useState<DirectSaleRecord[]>([]);
+  const [directSalesError, setDirectSalesError] = useState<string | null>(null);
   const [financeEntries, setFinanceEntries] = useState<FinanceEntryRecord[]>([]);
   const [financeEntriesError, setFinanceEntriesError] = useState<string | null>(null);
   const [financeWeeklyKpis, setFinanceWeeklyKpis] = useState<FinanceWeeklyKpiRecord[]>([]);
@@ -737,7 +738,6 @@ export default function Account() {
                 description: "Шууд борлуулалтын бүртгэл, захиалгаас тусдаа.",
                 icon: <WalletCards size={18} />,
                 implemented: true,
-                badge: directSales.length > 0 ? undefined : undefined,
               },
               {
                 id: "categories",
@@ -1043,6 +1043,13 @@ export default function Account() {
                 label: "Products",
                 description: "SKU, pricing, copy, assets, and status management.",
                 icon: <Package size={18} />,
+                implemented: true,
+              },
+              {
+                id: "directSales",
+                label: "Direct sales history",
+                description: "Direct sales recorded separately from web orders.",
+                icon: <WalletCards size={18} />,
                 implemented: true,
               },
               {
@@ -1365,10 +1372,17 @@ export default function Account() {
   useEffect(() => {
     if (!isPrivilegedUser) {
       setDirectSales([]);
+      setDirectSalesError(null);
       return;
     }
     return subscribeToDirectSales({
-      onData: (next) => setDirectSales(next),
+      onData: (next) => {
+        setDirectSales(next);
+        setDirectSalesError(null);
+      },
+      onError: (subscriptionError) => {
+        setDirectSalesError(subscriptionError.message);
+      },
     });
   }, [isPrivilegedUser]);
 
@@ -2559,6 +2573,7 @@ export default function Account() {
     latestContactMessageAt,
     // direct sales
     directSales,
+    directSalesError,
     createDirectSale,
     updateDirectSale,
     deleteDirectSale,

@@ -268,8 +268,10 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: '/index.html',
-        // Never serve the SPA shell for API or Firebase traffic
-        navigateFallbackDenylist: [/^\/api\//],
+        // Never serve the SPA shell for API or Firebase traffic. The /__/ paths
+        // are the proxied Firebase auth helper — the service worker must let
+        // them hit the network or redirect sign-in breaks in the installed PWA.
+        navigateFallbackDenylist: [/^\/api\//, /^\/__\//],
         runtimeCaching: [
           {
             // Firestore/Firebase realtime traffic must always hit the network
