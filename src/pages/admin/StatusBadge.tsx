@@ -13,14 +13,15 @@ export function StatusBadge({
   iconOnly?: boolean;
 }) {
   const label = status === "active" ? activeLabel : inactiveLabel;
+  const hideLabel = iconOnly || status === "active";
   return (
     <span
       className={`admin-status-badge ${status === "active" ? "active" : "inactive"}`}
-      title={iconOnly ? label : undefined}
-      aria-label={iconOnly ? label : undefined}
+      title={hideLabel ? label : undefined}
+      aria-label={hideLabel ? label : undefined}
     >
       {status === "active" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-      {!iconOnly && label}
+      {!hideLabel && label}
     </span>
   );
 }

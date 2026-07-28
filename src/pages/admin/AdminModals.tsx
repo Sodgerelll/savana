@@ -2739,7 +2739,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         setTransactionError(null);
         try {
           const subtotal = draft.items.reduce((s: any, i: any)=> s + i.lineTotal, 0);
-          const grandTotal = Math.max(0, subtotal - draft.totals.discount);
+          const discountType = draft.totals.discountType === "percent" ? "percent" : "amount";
+          const discountValue = Math.max(0, draft.totals.discountValue ?? draft.totals.discount ?? 0);
+          const discount = Math.min(
+            subtotal,
+            discountType === "percent"
+              ? Math.round((subtotal * Math.min(100, discountValue)) / 100)
+              : discountValue,
+          );
+          const grandTotal = Math.max(0, subtotal - discount);
           const paymentStatus: CustomerTransactionRecord["payment"]["status"] =
             draft.payment.paidAmount <= 0
               ? "unpaid"
@@ -2751,7 +2759,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             customerId: draft.customerId,
             customerSnapshot: draft.customerSnapshot,
             items: draft.items,
-            totals: { subtotal, discount: draft.totals.discount, grandTotal },
+            totals: { subtotal, discount, discountType, discountValue, grandTotal },
             payment: {
               ...draft.payment,
               status: paymentStatus,
@@ -3224,40 +3232,78 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       <div className="admin-form-grid" style={{ marginTop: "1rem" }}>
-        <label className="admin-field">
-          <span>{copy.txDiscount}</span>
-          <input
-            type="number"
-            min={0}
-            value={transactionModal.draft.totals.discount}
-            onChange={(event: any)=>
-              setTransactionModal({
-                ...transactionModal,
-                draft: {
-                  ...transactionModal.draft,
-                  totals: {
-                    ...transactionModal.draft.totals,
-                    discount: Math.max(0, Number(event.target.value) || 0),
-                  },
+        {(() => {
+          const txSubtotal = transactionModal.draft.items.reduce((s: any, i: any)=> s + i.lineTotal, 0);
+          const txDiscountType = transactionModal.draft.totals.discountType === "percent" ? "percent" : "amount";
+          const txDiscountValue = Math.max(0, transactionModal.draft.totals.discountValue ?? transactionModal.draft.totals.discount ?? 0);
+          const toAmount = (type: "amount" | "percent", value: number) =>
+            Math.min(
+              txSubtotal,
+              type === "percent" ? Math.round((txSubtotal * Math.min(100, value)) / 100) : value,
+            );
+          const txDiscountAmount = toAmount(txDiscountType, txDiscountValue);
+          const applyDiscount = (type: "amount" | "percent", value: number) =>
+            setTransactionModal({
+              ...transactionModal,
+              draft: {
+                ...transactionModal.draft,
+                totals: {
+                  ...transactionModal.draft.totals,
+                  discountType: type,
+                  discountValue: value,
+                  discount: toAmount(type, value),
                 },
-              })
-            }
-          />
-        </label>
-        <label className="admin-field">
-          <span>{copy.txGrandTotal}</span>
-          <input
-            type="text"
-            value={formatStorePrice(
-              Math.max(
-                0,
-                transactionModal.draft.items.reduce((s: any, i: any)=> s + i.lineTotal, 0) -
-                  transactionModal.draft.totals.discount,
-              ),
-            )}
-            disabled
-          />
-        </label>
+              },
+            });
+          return (
+            <>
+              <label className="admin-field">
+                <span>{copy.txDiscount}</span>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <select
+                    value={txDiscountType}
+                    style={{ width: "5rem", flexShrink: 0 }}
+                    onChange={(event: any)=> {
+                      const nextType = event.target.value === "percent" ? "percent" : "amount";
+                      applyDiscount(
+                        nextType,
+                        nextType === "percent" ? Math.min(100, txDiscountValue) : txDiscountValue,
+                      );
+                    }}
+                  >
+                    <option value="amount">₮</option>
+                    <option value="percent">%</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={txDiscountType === "percent" ? 100 : undefined}
+                    value={txDiscountValue}
+                    style={{ flex: 1, minWidth: 0 }}
+                    onChange={(event: any)=> {
+                      const raw = Math.max(0, Number(event.target.value) || 0);
+                      applyDiscount(
+                        txDiscountType,
+                        txDiscountType === "percent" ? Math.min(100, raw) : raw,
+                      );
+                    }}
+                  />
+                </div>
+                {txDiscountType === "percent" && txDiscountAmount > 0 && (
+                  <small style={{ color: "#8a8477" }}>= {formatStorePrice(txDiscountAmount)}</small>
+                )}
+              </label>
+              <label className="admin-field">
+                <span>{copy.txGrandTotal}</span>
+                <input
+                  type="text"
+                  value={formatStorePrice(Math.max(0, txSubtotal - txDiscountAmount))}
+                  disabled
+                />
+              </label>
+            </>
+          );
+        })()}
         <label className="admin-field">
           <span>{copy.txPaidAmount}</span>
           <input

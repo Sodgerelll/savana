@@ -81,6 +81,7 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [entryTypeFilter, setEntryTypeFilter] = useState<"all" | "income" | "expense">("all");
   const [entryModal, setEntryModal] = useState<EntryModalState | null>(null);
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -140,13 +141,16 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
   );
 
   const tableEntries = useMemo(() => {
-    const list = selectedDay ? monthEntries.filter((e) => e.date === selectedDay) : monthEntries;
+    let list = selectedDay ? monthEntries.filter((e) => e.date === selectedDay) : monthEntries;
+    if (entryTypeFilter !== "all") {
+      list = list.filter((e) => e.type === entryTypeFilter);
+    }
     return [...list].sort((a, b) =>
       a.date === b.date
         ? String((b as any).createdAt ?? "").localeCompare(String((a as any).createdAt ?? ""))
         : b.date.localeCompare(a.date),
     );
-  }, [monthEntries, selectedDay]);
+  }, [monthEntries, selectedDay, entryTypeFilter]);
 
   // Calendar layout: leading blanks so the 1st lands on its weekday (Monday-first).
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -475,14 +479,43 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
                 : "Detailed income and expense records."}
             </p>
           </div>
-          {selectedDay && (
-            <button type="button" className="admin-filter-clear" onClick={() => setSelectedDay(null)}>
-              <X size={14} />
-              {mn ? "Бүх сарыг харах" : "Show whole month"}
-            </button>
-          )}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            {selectedDay && (
+              <button type="button" className="admin-filter-clear" onClick={() => setSelectedDay(null)}>
+                <X size={14} />
+                {mn ? "Бүх сарыг харах" : "Show whole month"}
+              </button>
+            )}
+            <div style={{ display: "flex", background: "#f3f4f6", borderRadius: "0.6rem", padding: "3px", gap: "2px" }}>
+              {([
+                { key: "all", label: mn ? "Бүгд" : "All", activeColor: "#3a3630" },
+                { key: "income", label: mn ? "Орлого" : "Income", activeColor: "#2f7a4a" },
+                { key: "expense", label: mn ? "Зарлага" : "Expense", activeColor: "#b14141" },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setEntryTypeFilter(tab.key)}
+                  style={{
+                    padding: "0.3rem 0.85rem",
+                    borderRadius: "0.45rem",
+                    fontSize: "0.8rem",
+                    fontWeight: entryTypeFilter === tab.key ? 600 : 500,
+                    border: "none",
+                    cursor: "pointer",
+                    background: entryTypeFilter === tab.key ? "#fff" : "transparent",
+                    color: entryTypeFilter === tab.key ? tab.activeColor : "#6b7280",
+                    boxShadow: entryTypeFilter === tab.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="admin-data-table-wrap">
+        <div className={`admin-data-table-wrap${tableEntries.length > 20 ? " admin-data-table-wrap-scroll" : ""}`}>
           <table className="admin-data-table">
             <thead>
               <tr>
@@ -569,7 +602,11 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
               <tfoot>
                 <tr>
                   <td colSpan={5} style={{ textAlign: "right" }}>
-                    <strong>{mn ? "Баланс" : "Balance"}</strong>
+                    <strong>
+                      {entryTypeFilter === "all"
+                        ? (mn ? "Баланс" : "Balance")
+                        : (mn ? "Нийт" : "Total")}
+                    </strong>
                   </td>
                   <td className="admin-td-right">
                     <strong>

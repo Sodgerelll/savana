@@ -1114,6 +1114,10 @@
   gap: 1rem;
 }
 
+.admin-summary-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .admin-summary-card {
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(183, 185, 167, 0.65);
@@ -1186,6 +1190,18 @@
 
 .admin-data-table-wrap {
   overflow-x: auto;
+}
+
+/* Tall lists: cap at roughly 20 rows and scroll the rest, keeping the header pinned. */
+.admin-data-table-wrap-scroll {
+  max-height: 64rem;
+  overflow-y: auto;
+}
+.admin-data-table-wrap-scroll .admin-data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: rgb(242, 240, 235);
 }
 
 .admin-data-table {
@@ -1863,12 +1879,18 @@
   background: #faf9f7;
 }
 .admin-product-row-expanded {
-  background: #f5f3ee !important;
+  background: #f0ece2 !important;
+}
+.admin-product-row-expanded td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent, rgb(90, 81, 3));
 }
 
 .admin-product-expand-row td {
   padding: 0 !important;
   border-top: none !important;
+}
+.admin-product-expand-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent, rgb(90, 81, 3));
 }
 
 .admin-product-expand {

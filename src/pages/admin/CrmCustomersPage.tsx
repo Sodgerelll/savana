@@ -78,19 +78,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
 
       {customersError && <div className="admin-alert admin-alert-danger">{customersError}</div>}
 
-      <div className="admin-summary-grid admin-summary-grid-sm" style={{ marginBottom: "1.5rem" }}>
-        <div className="admin-summary-card">
-          <span>{copy.totalCustomers}</span>
-          <strong>{customers.length}</strong>
-          <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.35rem", fontSize: "0.78rem", color: "var(--color-text-secondary, #6b7280)" }}>
-            <span>{copy.customerTypeOrg}: <b style={{ color: "var(--color-text, inherit)" }}>{customers.filter((c: any) => c.type === "organization").length}</b></span>
-            <span>{copy.customerTypeInd}: <b style={{ color: "var(--color-text, inherit)" }}>{customers.filter((c: any) => c.type === "individual").length}</b></span>
-          </div>
-        </div>
-        <div className="admin-summary-card">
-          <span>{copy.activeCustomers}</span>
-          <strong>{customers.filter((c: any) => c.status === "active").length}</strong>
-        </div>
+      <div className="admin-summary-grid admin-summary-grid-sm admin-summary-grid-3" style={{ marginBottom: "1.5rem" }}>
         <div className="admin-summary-card">
           <span>{copy.customerTotalSales}</span>
           <strong>
@@ -110,10 +98,6 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
           </strong>
         </div>
         <div className="admin-summary-card">
-          <span>{copy.totalTransfers}</span>
-          <strong>{customerTransactions.length}</strong>
-        </div>
-        <div className="admin-summary-card">
           <span>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</span>
           <strong>
             {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0), 0)} ш
@@ -130,6 +114,18 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
           <strong style={{ color: customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0) > 0 ? "var(--color-danger, #b14141)" : undefined }}>
             {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0)} ш
           </strong>
+        </div>
+        <div className="admin-summary-card">
+          <span>{copy.totalTransfers}</span>
+          <strong>{customerTransactions.length}</strong>
+        </div>
+        <div className="admin-summary-card">
+          <span>{copy.totalCustomers}</span>
+          <strong>{customers.length}</strong>
+          <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.35rem", fontSize: "0.78rem", color: "var(--color-text-secondary, #6b7280)" }}>
+            <span>{copy.customerTypeOrg}: <b style={{ color: "var(--color-text, inherit)" }}>{customers.filter((c: any) => c.type === "organization").length}</b></span>
+            <span>{copy.customerTypeInd}: <b style={{ color: "var(--color-text, inherit)" }}>{customers.filter((c: any) => c.type === "individual").length}</b></span>
+          </div>
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Шинэчлэгдсэн" : "Last updated"}</span>
@@ -330,10 +326,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
               <thead>
                 <tr>
                   <th style={{ width: "2.5rem", textAlign: "center", color: "#aaa", fontWeight: 500 }}>#</th>
-                  <th style={{ textAlign: "center" }}>{copy.customerNameLabel}</th>
-                  <th style={{ textAlign: "center" }}>{copy.txType}</th>
+                  <th style={{ textAlign: "left" }}>{copy.customerNameLabel}</th>
                   <th style={{ textAlign: "center" }}>{copy.customerPhone}</th>
-                  <th style={{ textAlign: "center" }}>{copy.customerAddress}</th>
                   <th style={{ textAlign: "center" }}>{language === "MN" ? "Үлдэгдэл" : "Balance"}</th>
                   <th style={{ textAlign: "center" }}>{copy.active}</th>
                   <th style={{ textAlign: "center" }}>{copy.actions}</th>
@@ -358,7 +352,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                   if (filtered.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={9} className="admin-table-empty">
+                        <td colSpan={7} className="admin-table-empty">
                           {copy.customerEmpty}
                         </td>
                       </tr>
@@ -386,22 +380,12 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           }}
                         >
                           <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{customerIdx + 1}</td>
-                          <td style={{ textAlign: "center" }}>
+                          <td style={{ textAlign: "left" }}>
                             <div className="admin-table-primary">
                               <strong>{customer.name}</strong>
                             </div>
                           </td>
-                          <td style={{ textAlign: "center" }}>
-                            {customer.type === "organization"
-                              ? copy.customerTypeOrg
-                              : copy.customerTypeInd}
-                          </td>
                           <td style={{ textAlign: "center" }}>{customer.phoneNumber || "-"}</td>
-                          <td style={{ textAlign: "center" }}>
-                            <div className="admin-table-cell-wrap">
-                              {addressText || "-"}
-                            </div>
-                          </td>
                           <td style={{ textAlign: "center" }}>
                             <strong
                               style={{
@@ -537,8 +521,33 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           );
                           return (
                             <tr className="admin-product-expand-row">
-                              <td colSpan={9}>
+                              <td colSpan={7}>
                                 <div className="admin-product-expand">
+                                  <div className="admin-product-expand-stats">
+                                    <div className="admin-expand-stat">
+                                      <small>{copy.txType}</small>
+                                      <strong>
+                                        {customer.type === "organization"
+                                          ? copy.customerTypeOrg
+                                          : copy.customerTypeInd}
+                                      </strong>
+                                    </div>
+                                    <div className="admin-expand-stat">
+                                      <small>{copy.customerAddress}</small>
+                                      <strong style={{ fontSize: "var(--fs-sm, 0.78rem)" }}>
+                                        {addressText || "-"}
+                                      </strong>
+                                    </div>
+                                    <div className="admin-expand-stat">
+                                      <small>
+                                        {language === "MN" ? "Шинэчлэгдсэн" : "Last updated"}
+                                      </small>
+                                      <strong style={{ fontSize: "var(--fs-sm, 0.78rem)" }}>
+                                        {formatAdminDateTime(customer.updatedAt, language)}
+                                      </strong>
+                                    </div>
+                                  </div>
+
                                   <div className="admin-product-expand-stats">
                                     <div className="admin-expand-stat">
                                       <small>{copy.customerTotalSales}</small>
@@ -577,14 +586,6 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       <small>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</small>
                                       <strong style={{ color: customerTxs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0) > 0 ? "#b14141" : "#2f7a4a" }}>
                                         {customerTxs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0)} ш
-                                      </strong>
-                                    </div>
-                                    <div className="admin-expand-stat">
-                                      <small>
-                                        {language === "MN" ? "Шинэчлэгдсэн" : "Last updated"}
-                                      </small>
-                                      <strong style={{ fontSize: "var(--fs-sm, 0.78rem)" }}>
-                                        {formatAdminDateTime(customer.updatedAt, language)}
                                       </strong>
                                     </div>
                                   </div>
@@ -757,7 +758,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                         <thead>
                                                           <tr>
                                                             <th style={{ width: "2rem", textAlign: "center" }}>#</th>
-                                                            <th style={{ textAlign: "center" }}>{copy.txProduct}</th>
+                                                            <th style={{ textAlign: "left" }}>{copy.txProduct}</th>
                                                             <th style={{ textAlign: "center" }}>{copy.txVariant}</th>
                                                             <th style={{ textAlign: "center" }}>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</th>
                                                             <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарсан" : "Sold"}</th>
@@ -770,7 +771,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                           {tx.items.map((it: any, idx: number) => (
                                                             <tr key={idx}>
                                                               <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
-                                                              <td style={{ textAlign: "center" }}>{getProductLabel(it.productId, it.productName)}</td>
+                                                              <td style={{ textAlign: "left" }}>{getProductLabel(it.productId, it.productName)}</td>
                                                               <td style={{ textAlign: "center" }}>{it.variant || "—"}</td>
                                                               <td style={{ textAlign: "center" }}>{it.quantity}</td>
                                                               <td style={{ textAlign: "center" }}>{it.soldQuantity}</td>
@@ -809,7 +810,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             <thead>
                                               <tr>
                                                 <th style={{ width: "2rem", textAlign: "center" }}>#</th>
-                                                <th style={{ textAlign: "center" }}>{copy.txProduct}</th>
+                                                <th style={{ textAlign: "left" }}>{copy.txProduct}</th>
                                                 <th style={{ textAlign: "center" }}>{copy.txVariant}</th>
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</th>
                                                 <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарсан" : "Sold"}</th>
@@ -821,7 +822,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                               {productAggList.map((p, idx) => (
                                                 <tr key={`${p.productId}-${p.variant ?? ""}`}>
                                                   <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
-                                                  <td style={{ textAlign: "center" }}>{getProductLabel(p.productId, p.productName)}</td>
+                                                  <td style={{ textAlign: "left" }}>{getProductLabel(p.productId, p.productName)}</td>
                                                   <td style={{ textAlign: "center" }}>{p.variant || "—"}</td>
                                                   <td style={{ textAlign: "center" }}><strong>{p.transferred}</strong></td>
                                                   <td style={{ textAlign: "center" }}>{p.sold}</td>

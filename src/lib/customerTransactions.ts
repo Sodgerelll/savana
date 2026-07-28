@@ -43,9 +43,16 @@ export interface CustomerTransactionItem {
   lineTotal: number;
 }
 
+export type CustomerTransactionDiscountType = "amount" | "percent";
+
 export interface CustomerTransactionTotals {
   subtotal: number;
+  /** Money amount actually subtracted from the subtotal. */
   discount: number;
+  /** How the discount was entered; "amount" for records saved before this field existed. */
+  discountType?: CustomerTransactionDiscountType;
+  /** Raw entered value — ₮ amount when discountType is "amount", 0-100 when "percent". */
+  discountValue?: number;
   grandTotal: number;
 }
 
@@ -118,7 +125,7 @@ export function createEmptyTransactionDraft(): CustomerTransactionRecord {
     customerId: "",
     customerSnapshot: { code: "", name: "", phoneNumber: "" },
     items: [],
-    totals: { subtotal: 0, discount: 0, grandTotal: 0 },
+    totals: { subtotal: 0, discount: 0, discountType: "amount", discountValue: 0, grandTotal: 0 },
     payment: { status: "unpaid", paidAmount: 0, method: null, paidAt: null },
     relatedTransactionId: null,
     transactionDate: new Date().toISOString().slice(0, 10),
@@ -203,6 +210,8 @@ function deserializeTransaction(
     totals: {
       subtotal: Number(totals.subtotal ?? 0),
       discount: Number(totals.discount ?? 0),
+      discountType: totals.discountType === "percent" ? "percent" : "amount",
+      discountValue: Number(totals.discountValue ?? totals.discount ?? 0),
       grandTotal: Number(totals.grandTotal ?? 0),
     },
     payment: {
@@ -266,9 +275,15 @@ function sanitizeItems(items: CustomerTransactionItem[]): CustomerTransactionIte
 }
 
 function sanitizeTotals(totals: CustomerTransactionTotals): CustomerTransactionTotals {
+  const discountType: CustomerTransactionDiscountType =
+    totals.discountType === "percent" ? "percent" : "amount";
+  const rawValue = Number(totals.discountValue ?? totals.discount) || 0;
   return {
     subtotal: roundAmount(totals.subtotal),
     discount: roundAmount(totals.discount),
+    discountType,
+    discountValue:
+      discountType === "percent" ? Math.min(100, Math.max(0, rawValue)) : roundAmount(rawValue),
     grandTotal: roundAmount(totals.grandTotal),
   };
 }
