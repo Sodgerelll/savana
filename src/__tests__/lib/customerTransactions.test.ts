@@ -44,7 +44,10 @@ import {
   createEmptyTransactionDraft,
   createCustomerTransaction,
   deleteCustomerTransaction,
+  deleteCustomerTransactionPaymentEntry,
+  recordCustomerTransactionPayment,
   updateCustomerTransaction,
+  updateCustomerTransactionPaymentEntry,
   type CustomerTransactionRecord,
   type CreateCustomerTransactionInput,
 } from "../../lib/customerTransactions";
@@ -396,6 +399,21 @@ describe("updateCustomerTransaction", () => {
     );
   });
 
+  it("passes a custom journal description through options", async () => {
+    (getDoc as Mock)
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalStock: 50, soldCount: 8, variants: null }), id: "10" })
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalSales: 10000, totalPaid: 10000, outstandingBalance: 0 }), id: "cust-1" });
+
+    await updateCustomerTransaction("tx-1", makeTxRecord(), makeTxInput(), {
+      journalDescription: "Custom description",
+    });
+
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ description: "Custom description" }),
+    );
+  });
+
   it("adjusts customer aggregates when customerId stays the same", async () => {
     (getDoc as Mock)
       .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalStock: 50, soldCount: 8, variants: null }), id: "10" })
@@ -420,5 +438,279 @@ describe("updateCustomerTransaction", () => {
         outstandingBalance: 0,
       }),
     );
+  });
+});
+
+// ─── recordCustomerTransactionPayment ─────────────────────────────────────────
+
+describe("recordCustomerTransactionPayment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBatchCommit.mockResolvedValue(undefined);
+  });
+
+  function makePartiallyPaidRecord() {
+    return makeTxRecord({
+      totals: { subtotal: 10000, discount: 0, grandTotal: 10000 },
+      payment: { status: "partial", paidAmount: 3000, method: "bank", paidAt: null },
+    });
+  }
+
+  function mockProductAndCustomer(customer = { totalSales: 10000, totalPaid: 3000, outstandingBalance: 7000 }) {
+    (getDoc as Mock)
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalStock: 50, soldCount: 8, variants: null }), id: "10" })
+      .mockResolvedValueOnce({ exists: () => true, data: () => customer, id: "cust-1" });
+  }
+
+  it("adds the amount to paidAmount and appends a payment entry", async () => {
+    mockProductAndCustomer();
+
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 4000,
+      note: "Хэсэгчилсэн төлбөр",
+      createdByUid: "uid-admin",
+    });
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({
+          status: "partial",
+          paidAmount: 7000,
+          entries: [
+            expect.objectContaining({ date: "2024-02-01", amount: 4000, note: "Хэсэгчилсэн төлбөр" }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("marks the transaction paid when the full remaining balance is paid", async () => {
+    mockProductAndCustomer();
+
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 7000,
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({ status: "paid", paidAmount: 10000 }),
+      }),
+    );
+  });
+
+  it("deducts the payment from the customer's outstanding balance", async () => {
+    mockProductAndCustomer({ totalSales: 10000, totalPaid: 3000, outstandingBalance: 7000 });
+
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 4000,
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    // reverse(old paid 3000) then forward(new paid 7000): totalPaid 3000→7000, outstanding 7000→3000
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        totalSales: 10000,
+        totalPaid: 7000,
+        outstandingBalance: 3000,
+      }),
+    );
+  });
+
+  it("throws when the amount is zero or negative", async () => {
+    await expect(
+      recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+        date: "2024-02-01",
+        amount: 0,
+        note: "",
+        createdByUid: "uid-admin",
+      }),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it("throws when the amount exceeds the remaining balance", async () => {
+    await expect(
+      recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+        date: "2024-02-01",
+        amount: 8000,
+        note: "",
+        createdByUid: "uid-admin",
+      }),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it("throws for return-type transactions", async () => {
+    await expect(
+      recordCustomerTransactionPayment(makeTxRecord({ type: "return" }), {
+        date: "2024-02-01",
+        amount: 1000,
+        note: "",
+        createdByUid: "uid-admin",
+      }),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+});
+
+// ─── update/delete payment entries ────────────────────────────────────────────
+
+describe("updateCustomerTransactionPaymentEntry / deleteCustomerTransactionPaymentEntry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBatchCommit.mockResolvedValue(undefined);
+  });
+
+  // grandTotal 10000, initial payment 3000 + one recorded entry of 4000 = paid 7000
+  function makeRecordWithEntry() {
+    return makeTxRecord({
+      totals: { subtotal: 10000, discount: 0, grandTotal: 10000 },
+      payment: {
+        status: "partial",
+        paidAmount: 7000,
+        method: "bank",
+        paidAt: "2024-02-01T00:00:00.000Z",
+        entries: [
+          { date: "2024-02-01", amount: 4000, note: "эхний төлбөр", createdAt: null, createdByUid: "uid-admin" },
+        ],
+      },
+    });
+  }
+
+  function mockProductAndCustomer(customer = { totalSales: 10000, totalPaid: 7000, outstandingBalance: 3000 }) {
+    (getDoc as Mock)
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalStock: 50, soldCount: 8, variants: null }), id: "10" })
+      .mockResolvedValueOnce({ exists: () => true, data: () => customer, id: "cust-1" });
+  }
+
+  it("edit replaces the entry amount and recomputes paidAmount", async () => {
+    mockProductAndCustomer();
+
+    await updateCustomerTransactionPaymentEntry(makeRecordWithEntry(), 0, {
+      date: "2024-02-05",
+      amount: 5000,
+      note: "зассан",
+      createdByUid: "uid-admin",
+    });
+
+    // paidAmount: 7000 - 4000 + 5000 = 8000, still partial
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({
+          status: "partial",
+          paidAmount: 8000,
+          entries: [expect.objectContaining({ date: "2024-02-05", amount: 5000, note: "зассан" })],
+        }),
+      }),
+    );
+    // customer: totalPaid 7000 → 8000, outstanding 3000 → 2000
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ totalPaid: 8000, outstandingBalance: 2000 }),
+    );
+  });
+
+  it("edit allows raising the amount up to remaining + own amount", async () => {
+    mockProductAndCustomer();
+
+    // available = remaining(3000) + own(4000) = 7000 → full payoff
+    await updateCustomerTransactionPaymentEntry(makeRecordWithEntry(), 0, {
+      date: "2024-02-05",
+      amount: 7000,
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({ status: "paid", paidAmount: 10000 }),
+      }),
+    );
+  });
+
+  it("edit throws when the new amount exceeds the available balance", async () => {
+    await expect(
+      updateCustomerTransactionPaymentEntry(makeRecordWithEntry(), 0, {
+        date: "2024-02-05",
+        amount: 8000,
+        note: "",
+        createdByUid: "uid-admin",
+      }),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it("edit throws when the entry index does not exist", async () => {
+    await expect(
+      updateCustomerTransactionPaymentEntry(makeRecordWithEntry(), 5, {
+        date: "2024-02-05",
+        amount: 1000,
+        note: "",
+        createdByUid: "uid-admin",
+      }),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it("delete removes the entry and adds the amount back to the outstanding balance", async () => {
+    mockProductAndCustomer();
+
+    await deleteCustomerTransactionPaymentEntry(makeRecordWithEntry(), 0, "uid-admin");
+
+    // paidAmount: 7000 - 4000 = 3000, entries emptied
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({ status: "partial", paidAmount: 3000, entries: [] }),
+      }),
+    );
+    // customer: totalPaid 7000 → 3000, outstanding 3000 → 7000
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ totalPaid: 3000, outstandingBalance: 7000 }),
+    );
+  });
+
+  it("delete of the only payment resets status to unpaid and clears paidAt", async () => {
+    mockProductAndCustomer({ totalSales: 10000, totalPaid: 4000, outstandingBalance: 6000 });
+
+    const record = makeTxRecord({
+      totals: { subtotal: 10000, discount: 0, grandTotal: 10000 },
+      payment: {
+        status: "partial",
+        paidAmount: 4000,
+        method: "bank",
+        paidAt: "2024-02-01T00:00:00.000Z",
+        entries: [
+          { date: "2024-02-01", amount: 4000, note: "", createdAt: null, createdByUid: "uid-admin" },
+        ],
+      },
+    });
+    await deleteCustomerTransactionPaymentEntry(record, 0, "uid-admin");
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payment: expect.objectContaining({ status: "unpaid", paidAmount: 0, paidAt: null }),
+      }),
+    );
+  });
+
+  it("delete throws when the entry index does not exist", async () => {
+    await expect(
+      deleteCustomerTransactionPaymentEntry(makeRecordWithEntry(), 3, "uid-admin"),
+    ).rejects.toThrow();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 });

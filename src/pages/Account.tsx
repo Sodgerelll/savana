@@ -92,8 +92,11 @@ import {
   createCustomerTransaction,
   createEmptyTransactionDraft,
   deleteCustomerTransaction,
+  deleteCustomerTransactionPaymentEntry,
+  recordCustomerTransactionPayment,
   subscribeToCustomerTransactions,
   updateCustomerTransaction,
+  updateCustomerTransactionPaymentEntry,
   type CustomerTransactionRecord,
   type CustomerTransactionType,
 } from "../lib/customerTransactions";
@@ -313,6 +316,15 @@ interface CustomerTransactionModalState {
   previous?: CustomerTransactionRecord;
 }
 
+interface TransactionPaymentModalState {
+  customerId: string;
+  /** Transaction the payment applies to — selectable in the modal when recording. */
+  txId: string | null;
+  draft: { date: string; amount: number; note: string };
+  /** When set, the modal edits the payment entry at this index instead of recording a new one. */
+  editIndex?: number;
+}
+
 interface AdminModuleHighlight {
   label: string;
   value: string;
@@ -402,7 +414,7 @@ export default function Account() {
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
-  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history">("products");
+  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "payments">("history");
   const [expandedTxGrids, setExpandedTxGrids] = useState<Set<string>>(new Set());
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
@@ -476,6 +488,9 @@ export default function Account() {
   const [transactionModal, setTransactionModal] = useState<CustomerTransactionModalState | null>(null);
   const [transactionSavingState, setTransactionSavingState] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
+  const [txPaymentModal, setTxPaymentModal] = useState<TransactionPaymentModalState | null>(null);
+  const [txPaymentSaving, setTxPaymentSaving] = useState(false);
+  const [txPaymentError, setTxPaymentError] = useState<string | null>(null);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"all" | CustomerTransactionType>("all");
   const [transactionCustomerFilter, setTransactionCustomerFilter] = useState<string>("all");
   const [customerViewMode, setCustomerViewMode] = useState<"customers" | "transfers">("customers");
@@ -2761,6 +2776,15 @@ export default function Account() {
     transactionSavingState,
     setTransactionSavingState,
     transactionError,
+    txPaymentModal,
+    setTxPaymentModal,
+    txPaymentSaving,
+    setTxPaymentSaving,
+    txPaymentError,
+    setTxPaymentError,
+    recordCustomerTransactionPayment,
+    updateCustomerTransactionPaymentEntry,
+    deleteCustomerTransactionPaymentEntry,
     orderModal,
     closeOrderModal,
     handleOrderCustomerChange,

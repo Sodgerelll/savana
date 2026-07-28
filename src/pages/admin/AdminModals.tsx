@@ -151,6 +151,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     setTransactionSavingState,
     transactionError,
     setTransactionError,
+    customerTransactions,
+    txPaymentModal,
+    setTxPaymentModal,
+    txPaymentSaving,
+    setTxPaymentSaving,
+    txPaymentError,
+    setTxPaymentError,
+    recordCustomerTransactionPayment,
+    updateCustomerTransactionPaymentEntry,
     orderModal,
     closeOrderModal,
     handleOrderCustomerChange,
@@ -3380,6 +3389,227 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     </form>
   </AdminModal>
 )}
+
+{txPaymentModal && (() => {
+  const isEdit = typeof txPaymentModal.editIndex === "number";
+  const customerTxsForPayment = (customerTransactions ?? []).filter(
+    (t: any) => t.customerId === txPaymentModal.customerId && t.type !== "return",
+  );
+  const selectableTxs = customerTxsForPayment.filter(
+    (t: any) => t.totals.grandTotal - t.payment.paidAmount > 0 || t.id === txPaymentModal.txId,
+  );
+  const liveTx = customerTxsForPayment.find((t: any) => t.id === txPaymentModal.txId) ?? null;
+  const grandTotal = liveTx ? liveTx.totals.grandTotal : 0;
+  const paidAmount = liveTx ? liveTx.payment.paidAmount : 0;
+  const remaining = Math.max(0, grandTotal - paidAmount);
+  const editEntry =
+    isEdit && liveTx ? ((liveTx.payment.entries ?? [])[txPaymentModal.editIndex] ?? null) : null;
+  // When editing, the entry's own amount is freed up before re-applying the new one.
+  const available = remaining + (editEntry ? Math.round(editEntry.amount) : 0);
+  const draftAmount = Math.max(0, Math.round(Number(txPaymentModal.draft.amount) || 0));
+  const afterRemaining = available - draftAmount;
+  const customerName =
+    liveTx?.customerSnapshot?.name ??
+    ((customers ?? []).find((c: any) => c.id === txPaymentModal.customerId)?.name ?? "");
+  return (
+    <AdminModal
+      title={
+        isEdit
+          ? (language === "MN" ? "Төлбөр засах" : "Edit payment")
+          : (language === "MN" ? "Төлбөр бүртгэх" : "Record payment")
+      }
+      description={liveTx ? `${liveTx.txNumber} — ${customerName}` : customerName}
+      onClose={() => setTxPaymentModal(null)}
+      disableClose={txPaymentSaving}
+    >
+      <form
+        className="admin-modal-form"
+        onSubmit={async (event: FormEvent) => {
+          event.preventDefault();
+          if (!liveTx) {
+            setTxPaymentError(language === "MN" ? "Гүйлгээ сонгоно уу" : "Select a transaction");
+            return;
+          }
+          if (isEdit && !editEntry) {
+            setTxPaymentError(language === "MN" ? "Төлбөрийн бичилт олдсонгүй" : "Payment record not found");
+            return;
+          }
+          if (draftAmount <= 0) {
+            setTxPaymentError(language === "MN" ? "Төлсөн дүн 0-ээс их байх ёстой" : "Amount must be greater than 0");
+            return;
+          }
+          if (draftAmount > available) {
+            setTxPaymentError(
+              language === "MN"
+                ? `Төлсөн дүн үлдэгдлээс их байж болохгүй (боломжит дүн: ${formatStorePrice(available)})`
+                : `Amount cannot exceed the remaining balance (${formatStorePrice(available)})`,
+            );
+            return;
+          }
+          setTxPaymentSaving(true);
+          setTxPaymentError(null);
+          try {
+            const input = {
+              date: txPaymentModal.draft.date || new Date().toISOString().slice(0, 10),
+              amount: draftAmount,
+              note: txPaymentModal.draft.note,
+              createdByUid: user?.uid ?? "",
+            };
+            if (isEdit) {
+              await updateCustomerTransactionPaymentEntry(liveTx, txPaymentModal.editIndex, input);
+            } else {
+              await recordCustomerTransactionPayment(liveTx, input);
+            }
+            setTxPaymentModal(null);
+          } catch (err) {
+            setTxPaymentError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setTxPaymentSaving(false);
+          }
+        }}
+      >
+        {txPaymentError && <div className="admin-sync-error">{txPaymentError}</div>}
+
+        {liveTx && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.6rem", marginBottom: "1rem" }}>
+            <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+              <small style={{ color: "#8a8477" }}>{language === "MN" ? "Нийт дүн" : "Grand total"}</small>
+              <strong>{formatStorePrice(grandTotal)}</strong>
+            </div>
+            <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+              <small style={{ color: "#8a8477" }}>{language === "MN" ? "Төлсөн дүн" : "Paid"}</small>
+              <strong style={{ color: "#2f7a4a" }}>{formatStorePrice(paidAmount)}</strong>
+            </div>
+            <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+              <small style={{ color: "#8a8477" }}>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</small>
+              <strong style={{ color: remaining > 0 ? "#b14141" : "#2f7a4a" }}>{formatStorePrice(remaining)}</strong>
+            </div>
+          </div>
+        )}
+
+        <div className="admin-form-grid">
+          <label className="admin-field admin-field-wide">
+            <span>{language === "MN" ? "Гүйлгээ" : "Transaction"}</span>
+            <select
+              value={txPaymentModal.txId ?? ""}
+              disabled={isEdit}
+              onChange={(event: any) => {
+                const nextTx = customerTxsForPayment.find((t: any) => t.id === event.target.value) ?? null;
+                const nextOutstanding = nextTx
+                  ? Math.max(0, nextTx.totals.grandTotal - nextTx.payment.paidAmount)
+                  : 0;
+                setTxPaymentModal({
+                  ...txPaymentModal,
+                  txId: event.target.value || null,
+                  draft: { ...txPaymentModal.draft, amount: nextOutstanding },
+                });
+              }}
+              required
+            >
+              <option value="">{language === "MN" ? "Гүйлгээ сонгох..." : "Select transaction..."}</option>
+              {selectableTxs.map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.txNumber} · {formatAdminDateTime(t.transactionDate ?? t.createdAt, language)} ·{" "}
+                  {language === "MN" ? "Үлдэгдэл" : "Remaining"}{" "}
+                  {formatStorePrice(Math.max(0, t.totals.grandTotal - t.payment.paidAmount))}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Өдөр" : "Date"}</span>
+            <input
+              type="date"
+              value={txPaymentModal.draft.date}
+              onChange={(event: any) =>
+                setTxPaymentModal({
+                  ...txPaymentModal,
+                  draft: { ...txPaymentModal.draft, date: event.target.value },
+                })
+              }
+              required
+            />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Төлсөн дүн" : "Amount paid"}</span>
+            <input
+              type="number"
+              min={1}
+              max={available}
+              value={txPaymentModal.draft.amount || ""}
+              onChange={(event: any) =>
+                setTxPaymentModal({
+                  ...txPaymentModal,
+                  draft: {
+                    ...txPaymentModal.draft,
+                    amount: Math.max(0, Number(event.target.value) || 0),
+                  },
+                })
+              }
+              required
+            />
+          </label>
+          <label className="admin-field admin-field-wide">
+            <span>{language === "MN" ? "Тайлбар" : "Note"}</span>
+            <textarea
+              value={txPaymentModal.draft.note}
+              rows={2}
+              onChange={(event: any) =>
+                setTxPaymentModal({
+                  ...txPaymentModal,
+                  draft: { ...txPaymentModal.draft, note: event.target.value },
+                })
+              }
+            />
+          </label>
+        </div>
+
+        {liveTx && draftAmount > 0 && (
+          <p style={{ fontSize: "0.82rem", color: "#6b7280", margin: "0.5rem 0 0" }}>
+            {language === "MN" ? "Хадгалсны дараах үлдэгдэл: " : "Remaining after saving: "}
+            <strong style={{ color: afterRemaining > 0 ? "#b14141" : "#2f7a4a" }}>
+              {formatStorePrice(Math.max(0, afterRemaining))}
+            </strong>
+            {afterRemaining <= 0 && (
+              <span style={{ color: "#2f7a4a" }}>
+                {" "}
+                — {language === "MN" ? "бүрэн төлөгдөнө" : "fully paid"}
+              </span>
+            )}
+          </p>
+        )}
+
+        <div className="admin-modal-footer">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setTxPaymentModal(null)}
+            disabled={txPaymentSaving}
+          >
+            {copy.cancel}
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={
+              txPaymentSaving ||
+              !liveTx ||
+              (isEdit && !editEntry) ||
+              draftAmount <= 0 ||
+              draftAmount > available
+            }
+          >
+            {txPaymentSaving
+              ? (language === "MN" ? "Хадгалж байна..." : "Saving...")
+              : isEdit
+                ? (language === "MN" ? "Хадгалах" : "Save")
+                : (language === "MN" ? "Төлбөр бүртгэх" : "Record payment")}
+          </button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+})()}
 
 {confirmModal && (
   <AdminModal title={confirmModal.title} onClose={() => { if (!confirmModalLoading) { setConfirmModal(null); setConfirmModalError(null); } }}>

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ArrowLeftRight, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Banknote, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 import React from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
@@ -24,10 +24,14 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
     setExpandedCustomerTab,
     expandedTxGrids,
     setExpandedTxGrids,
+    user,
     formatAdminDateTime,
     formatStorePrice,
     setTransactionError,
     setTransactionModal,
+    setTxPaymentError,
+    setTxPaymentModal,
+    deleteCustomerTransactionPaymentEntry,
     setCustomerError,
     setCustomerModal,
     openConfirmModal,
@@ -278,6 +282,27 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <div className="admin-table-actions" style={{ justifyContent: "center" }}>
+                            {tx.type !== "return" && tx.totals.grandTotal - tx.payment.paidAmount > 0 && (
+                              <button
+                                type="button"
+                                className="admin-icon-btn admin-icon-btn-neutral"
+                                title={language === "MN" ? "Төлбөр бүртгэх" : "Record payment"}
+                                onClick={() => {
+                                  setTxPaymentError(null);
+                                  setTxPaymentModal({
+                                    customerId: tx.customerId,
+                                    txId: tx.id,
+                                    draft: {
+                                      date: new Date().toISOString().slice(0, 10),
+                                      amount: tx.totals.grandTotal - tx.payment.paidAmount,
+                                      note: "",
+                                    },
+                                  });
+                                }}
+                              >
+                                <Banknote size={14} />
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="admin-icon-btn admin-icon-btn-neutral"
@@ -376,7 +401,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           className={`admin-product-row-clickable ${isCustomerExpanded ? "admin-product-row-expanded" : ""}`}
                           onClick={() => {
                             setExpandedCustomerId(isCustomerExpanded ? null : customer.id);
-                            if (!isCustomerExpanded) setExpandedCustomerTab("products");
+                            if (!isCustomerExpanded) setExpandedCustomerTab("history");
                           }}
                         >
                           <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{customerIdx + 1}</td>
@@ -593,8 +618,9 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                   {/* Tab navigation */}
                                   <div style={{ display: "flex", gap: "2px", background: "#f3f4f6", padding: "4px", borderRadius: "10px", width: "fit-content", marginBottom: "1rem" }}>
                                     {([
-                                      { key: "products", label: language === "MN" ? "Бүтээгдэхүүнээр" : "Products" },
                                       { key: "history",  label: language === "MN" ? "Шилжүүлгээр" : "Transaction history" },
+                                      { key: "products", label: language === "MN" ? "Бүтээгдэхүүнээр" : "Products" },
+                                      { key: "payments", label: language === "MN" ? "Төлбөр төлөлт" : "Payments" },
                                     ] as const).map((tab) => (
                                       <button
                                         key={tab.key}
@@ -863,6 +889,180 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       )}
                                     </div>
                                   )}
+
+                                  {/* Tab 3: Төлбөр төлөлт */}
+                                  {expandedCustomerTab === "payments" && (() => {
+                                    const today = new Date().toISOString().slice(0, 10);
+                                    const entryRows = customerTxs.flatMap((tx: any) =>
+                                      (tx.payment.entries ?? []).map((entry: any, entryIdx: number) => ({
+                                        kind: "entry" as const,
+                                        tx,
+                                        entryIdx,
+                                        date: entry.date || "",
+                                        amount: entry.amount,
+                                        note: entry.note,
+                                      })),
+                                    );
+                                    const initialRows = customerTxs
+                                      .map((tx: any) => {
+                                        const entriesSum = (tx.payment.entries ?? []).reduce(
+                                          (s: number, e: any) => s + e.amount,
+                                          0,
+                                        );
+                                        const initialPaid = tx.payment.paidAmount - entriesSum;
+                                        if (initialPaid <= 0) return null;
+                                        return {
+                                          kind: "initial" as const,
+                                          tx,
+                                          entryIdx: -1,
+                                          date: (tx.payment.paidAt ?? tx.transactionDate ?? tx.createdAt ?? "").slice(0, 10),
+                                          amount: initialPaid,
+                                          note: language === "MN" ? "Гүйлгээ бүртгэхэд төлсөн" : "Paid at transaction time",
+                                        };
+                                      })
+                                      .filter(Boolean) as any[];
+                                    const rows = [...entryRows, ...initialRows].sort((a: any, b: any) =>
+                                      b.date > a.date ? 1 : b.date < a.date ? -1 : 0,
+                                    );
+                                    const outstandingTxs = customerTxs.filter(
+                                      (tx: any) => tx.type !== "return" && tx.totals.grandTotal - tx.payment.paidAmount > 0,
+                                    );
+                                    // customerTxs is sorted newest-first — pay off the oldest outstanding transfer first
+                                    const defaultTx = outstandingTxs.length > 0 ? outstandingTxs[outstandingTxs.length - 1] : null;
+                                    return (
+                                      <div className="admin-product-expand-section">
+                                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem", padding: "0.35rem 0.8rem" }}
+                                            disabled={!defaultTx}
+                                            title={!defaultTx ? (language === "MN" ? "Төлбөрийн үлдэгдэлгүй" : "Nothing outstanding") : undefined}
+                                            onClick={() => {
+                                              setTxPaymentError(null);
+                                              setTxPaymentModal({
+                                                customerId: customer.id,
+                                                txId: defaultTx?.id ?? null,
+                                                draft: {
+                                                  date: today,
+                                                  amount: defaultTx
+                                                    ? Math.max(0, defaultTx.totals.grandTotal - defaultTx.payment.paidAmount)
+                                                    : 0,
+                                                  note: "",
+                                                },
+                                              });
+                                            }}
+                                          >
+                                            <Banknote size={14} /> {language === "MN" ? "Төлбөр бүртгэх" : "Record payment"}
+                                          </button>
+                                        </div>
+                                        {rows.length === 0 ? (
+                                          <p className="admin-expand-empty">
+                                            {language === "MN" ? "Төлбөрийн бичилт байхгүй" : "No payments yet"}
+                                          </p>
+                                        ) : (
+                                          <div className="admin-expand-sales-table-wrap">
+                                            <table className="admin-expand-sales-table" style={{ textAlign: "center" }}>
+                                              <thead>
+                                                <tr>
+                                                  <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                                                  <th style={{ textAlign: "center" }}>{language === "MN" ? "Огноо" : "Date"}</th>
+                                                  <th style={{ textAlign: "center" }}>{language === "MN" ? "Гүйлгээ" : "Transaction"}</th>
+                                                  <th style={{ textAlign: "center" }}>{language === "MN" ? "Төлсөн дүн" : "Amount"}</th>
+                                                  <th style={{ textAlign: "left" }}>{language === "MN" ? "Тайлбар" : "Note"}</th>
+                                                  <th style={{ textAlign: "center", width: "5rem" }}>{copy.actions}</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {rows.map((row: any, idx: number) => (
+                                                  <tr key={`${row.tx.id}-${row.kind}-${row.entryIdx}`}>
+                                                    <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                                                    <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{row.date || "—"}</td>
+                                                    <td style={{ textAlign: "center", fontSize: "0.78rem", color: "#6b7280" }}>{row.tx.txNumber}</td>
+                                                    <td style={{ textAlign: "center" }}><strong>{formatStorePrice(row.amount)}</strong></td>
+                                                    <td style={{ textAlign: "left", color: "#6b7280" }}>{row.note || "—"}</td>
+                                                    <td style={{ textAlign: "center" }}>
+                                                      {row.kind === "entry" ? (
+                                                        <div className="admin-table-actions" style={{ justifyContent: "center" }}>
+                                                          <button
+                                                            type="button"
+                                                            className="admin-icon-btn admin-icon-btn-neutral"
+                                                            title={language === "MN" ? "Засах" : "Edit"}
+                                                            onClick={() => {
+                                                              setTxPaymentError(null);
+                                                              setTxPaymentModal({
+                                                                customerId: customer.id,
+                                                                txId: row.tx.id,
+                                                                editIndex: row.entryIdx,
+                                                                draft: {
+                                                                  date: row.date || today,
+                                                                  amount: row.amount,
+                                                                  note: row.note,
+                                                                },
+                                                              });
+                                                            }}
+                                                          >
+                                                            <Pencil size={13} />
+                                                          </button>
+                                                          <button
+                                                            type="button"
+                                                            className="admin-icon-btn"
+                                                            title={language === "MN" ? "Устгах" : "Delete"}
+                                                            onClick={() =>
+                                                              openConfirmModal({
+                                                                title: copy.confirmDeleteTitle,
+                                                                description:
+                                                                  language === "MN"
+                                                                    ? "Энэ төлбөрийн бичилтийг устгаснаар дүн нь гүйлгээний үлдэгдэлд буцаж нэмэгдэнэ."
+                                                                    : "Deleting this payment adds its amount back to the transaction's outstanding balance.",
+                                                                confirmLabel: copy.delete,
+                                                                destructive: true,
+                                                                onConfirm: async () => {
+                                                                  await deleteCustomerTransactionPaymentEntry(
+                                                                    row.tx,
+                                                                    row.entryIdx,
+                                                                    user?.uid ?? "",
+                                                                  );
+                                                                },
+                                                              })
+                                                            }
+                                                          >
+                                                            <Trash2 size={13} />
+                                                          </button>
+                                                        </div>
+                                                      ) : (
+                                                        <span style={{ color: "#c4beb2" }}>—</span>
+                                                      )}
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                              <tfoot>
+                                                <tr style={{ borderTop: "2px solid #e8e4dc", background: "#f5f3ee" }}>
+                                                  <td colSpan={3} style={{ padding: "8px 12px", fontSize: "0.8rem", fontWeight: 600, color: "#8a8477", textTransform: "uppercase", textAlign: "center" }}>
+                                                    {language === "MN" ? "Нийт төлсөн" : "Total paid"}
+                                                  </td>
+                                                  <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                                                    <strong style={{ color: "#2f7a4a" }}>
+                                                      {formatStorePrice(rows.reduce((s: number, r: any) => s + r.amount, 0))}
+                                                    </strong>
+                                                  </td>
+                                                  <td style={{ padding: "8px 12px", fontSize: "0.8rem", fontWeight: 600, color: "#8a8477", textTransform: "uppercase", textAlign: "left" }}>
+                                                    {language === "MN" ? "Үлдэгдэл" : "Outstanding"}
+                                                  </td>
+                                                  <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                                                    <strong style={{ color: customer.outstandingBalance > 0 ? "#b14141" : "#2f7a4a" }}>
+                                                      {formatStorePrice(customer.outstandingBalance)}
+                                                    </strong>
+                                                  </td>
+                                                </tr>
+                                              </tfoot>
+                                            </table>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </td>
                             </tr>

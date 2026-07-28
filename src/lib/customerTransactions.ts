@@ -56,11 +56,23 @@ export interface CustomerTransactionTotals {
   grandTotal: number;
 }
 
+/** One recorded payment against a transaction's outstanding balance. */
+export interface CustomerTransactionPaymentEntry {
+  /** YYYY-MM-DD payment date. */
+  date: string;
+  amount: number;
+  note: string;
+  createdAt: string | null;
+  createdByUid: string;
+}
+
 export interface CustomerTransactionPayment {
   status: CustomerTransactionPaymentStatus;
   paidAmount: number;
   method: CustomerTransactionPaymentMethod | null;
   paidAt: string | null;
+  /** Individual payment records; paidAmount = initial payment + sum of entries. */
+  entries?: CustomerTransactionPaymentEntry[];
 }
 
 export interface CustomerTransactionCustomerSnapshot {
@@ -219,6 +231,23 @@ function deserializeTransaction(
       paidAmount: Number(payment.paidAmount ?? 0),
       method: normalizePaymentMethod(payment.method),
       paidAt: parseTimestamp(payment.paidAt),
+      entries: Array.isArray(payment.entries)
+        ? payment.entries
+            .map((entry): CustomerTransactionPaymentEntry | null => {
+              if (typeof entry !== "object" || entry === null) {
+                return null;
+              }
+              const entryData = entry as Record<string, unknown>;
+              return {
+                date: String(entryData.date ?? ""),
+                amount: Number(entryData.amount ?? 0),
+                note: String(entryData.note ?? ""),
+                createdAt: parseTimestamp(entryData.createdAt),
+                createdByUid: String(entryData.createdByUid ?? ""),
+              };
+            })
+            .filter((entry): entry is CustomerTransactionPaymentEntry => entry !== null)
+        : [],
     },
     relatedTransactionId:
       typeof data.relatedTransactionId === "string" ? data.relatedTransactionId : null,
@@ -292,6 +321,11 @@ function sanitizePayment(payment: CustomerTransactionPayment): CustomerTransacti
   return {
     ...payment,
     paidAmount: roundAmount(payment.paidAmount),
+    entries: (payment.entries ?? []).map((entry) => ({
+      ...entry,
+      amount: roundAmount(entry.amount),
+      note: entry.note ?? "",
+    })),
   };
 }
 
@@ -499,6 +533,7 @@ export async function updateCustomerTransaction(
   id: string,
   previous: CustomerTransactionRecord,
   rawNext: CreateCustomerTransactionInput,
+  options?: { journalDescription?: string },
 ): Promise<void> {
   const next = sanitizeTransactionInput(rawNext);
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, id);
@@ -546,7 +581,7 @@ export async function updateCustomerTransaction(
     sourceType: "customerTransaction",
     sourceId: id,
     sourceNumber: previous.txNumber,
-    description: `Гүйлгээ засварласан: ${previous.txNumber}`,
+    description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
     createdBy: next.createdByUid,
   });
 
@@ -611,6 +646,183 @@ export async function updateCustomerTransaction(
   }
 
   await batch.commit();
+}
+
+export interface RecordTransactionPaymentInput {
+  /** YYYY-MM-DD payment date. */
+  date: string;
+  amount: number;
+  note?: string;
+  createdByUid: string;
+}
+
+function paymentStatusForAmount(
+  paidAmount: number,
+  grandTotal: number,
+): CustomerTransactionPaymentStatus {
+  if (paidAmount <= 0) return "unpaid";
+  return paidAmount >= grandTotal ? "paid" : "partial";
+}
+
+function paymentDateToIso(date: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [y, m, d] = date.split("-").map(Number);
+    const now = new Date();
+    return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+  }
+  return new Date().toISOString();
+}
+
+/**
+ * Applies a changed payment object to a transaction via the edit path so
+ * journal entries, customer aggregates and stock stay consistent.
+ */
+async function applyPaymentChange(
+  previous: CustomerTransactionRecord,
+  payment: CustomerTransactionPayment,
+  createdByUid: string,
+  journalDescription: string,
+): Promise<void> {
+  await updateCustomerTransaction(
+    previous.id,
+    previous,
+    {
+      type: previous.type,
+      customerId: previous.customerId,
+      customerSnapshot: { ...previous.customerSnapshot },
+      items: previous.items.map((item) => ({ ...item })),
+      totals: { ...previous.totals },
+      payment,
+      relatedTransactionId: previous.relatedTransactionId,
+      transactionDate: previous.transactionDate,
+      note: previous.note,
+      createdByUid,
+    },
+    { journalDescription },
+  );
+}
+
+/**
+ * Records a payment against a transaction's outstanding balance. The paid
+ * amount grows by the entry amount and the customer's outstanding balance
+ * shrinks by the same amount (deduction principle).
+ */
+export async function recordCustomerTransactionPayment(
+  previous: CustomerTransactionRecord,
+  input: RecordTransactionPaymentInput,
+): Promise<void> {
+  if (previous.type === "return") {
+    throw new Error("Буцаалтын гүйлгээнд төлбөр бүртгэх боломжгүй");
+  }
+  const amount = roundAmount(input.amount);
+  const outstanding = roundAmount(previous.totals.grandTotal) - roundAmount(previous.payment.paidAmount);
+  if (amount <= 0) {
+    throw new Error("Төлсөн дүн 0-ээс их байх ёстой");
+  }
+  if (amount > outstanding) {
+    throw new Error("Төлсөн дүн үлдэгдлээс их байж болохгүй");
+  }
+
+  const newPaidAmount = roundAmount(previous.payment.paidAmount) + amount;
+  const entry: CustomerTransactionPaymentEntry = {
+    date: input.date,
+    amount,
+    note: (input.note ?? "").trim(),
+    createdAt: new Date().toISOString(),
+    createdByUid: input.createdByUid,
+  };
+
+  await applyPaymentChange(
+    previous,
+    {
+      status: paymentStatusForAmount(newPaidAmount, previous.totals.grandTotal),
+      paidAmount: newPaidAmount,
+      method: previous.payment.method,
+      paidAt: paymentDateToIso(input.date),
+      entries: [...(previous.payment.entries ?? []), entry],
+    },
+    input.createdByUid,
+    `Төлбөр бүртгэсэн: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+  );
+}
+
+/**
+ * Edits a previously recorded payment entry. paidAmount is recomputed by
+ * replacing the old entry amount with the new one.
+ */
+export async function updateCustomerTransactionPaymentEntry(
+  previous: CustomerTransactionRecord,
+  entryIndex: number,
+  input: RecordTransactionPaymentInput,
+): Promise<void> {
+  const entries = previous.payment.entries ?? [];
+  const oldEntry = entries[entryIndex];
+  if (!oldEntry) {
+    throw new Error("Төлбөрийн бичилт олдсонгүй");
+  }
+  const amount = roundAmount(input.amount);
+  if (amount <= 0) {
+    throw new Error("Төлсөн дүн 0-ээс их байх ёстой");
+  }
+  const paidWithoutEntry = roundAmount(previous.payment.paidAmount) - roundAmount(oldEntry.amount);
+  const available = roundAmount(previous.totals.grandTotal) - paidWithoutEntry;
+  if (amount > available) {
+    throw new Error("Төлсөн дүн үлдэгдлээс их байж болохгүй");
+  }
+
+  const newPaidAmount = paidWithoutEntry + amount;
+  const nextEntries = entries.map((entry, idx) =>
+    idx === entryIndex
+      ? { ...entry, date: input.date, amount, note: (input.note ?? "").trim() }
+      : entry,
+  );
+
+  await applyPaymentChange(
+    previous,
+    {
+      status: paymentStatusForAmount(newPaidAmount, previous.totals.grandTotal),
+      paidAmount: newPaidAmount,
+      method: previous.payment.method,
+      paidAt: previous.payment.paidAt,
+      entries: nextEntries,
+    },
+    input.createdByUid,
+    `Төлбөрийн бичилт засварласан: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+  );
+}
+
+/**
+ * Deletes a previously recorded payment entry. The entry amount is added back
+ * to the transaction's outstanding balance.
+ */
+export async function deleteCustomerTransactionPaymentEntry(
+  previous: CustomerTransactionRecord,
+  entryIndex: number,
+  createdByUid: string,
+): Promise<void> {
+  const entries = previous.payment.entries ?? [];
+  const oldEntry = entries[entryIndex];
+  if (!oldEntry) {
+    throw new Error("Төлбөрийн бичилт олдсонгүй");
+  }
+
+  const newPaidAmount = Math.max(
+    0,
+    roundAmount(previous.payment.paidAmount) - roundAmount(oldEntry.amount),
+  );
+
+  await applyPaymentChange(
+    previous,
+    {
+      status: paymentStatusForAmount(newPaidAmount, previous.totals.grandTotal),
+      paidAmount: newPaidAmount,
+      method: previous.payment.method,
+      paidAt: newPaidAmount <= 0 ? null : previous.payment.paidAt,
+      entries: entries.filter((_, idx) => idx !== entryIndex),
+    },
+    createdByUid,
+    `Төлбөрийн бичилт устгасан: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+  );
 }
 
 export async function deleteCustomerTransaction(
