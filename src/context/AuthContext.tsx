@@ -158,9 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(syncedProfile);
         });
       })
-      .catch(() => {
+      .catch((error) => {
         // A failed redirect result leaves the user signed out; the login page
         // remains available, so there is nothing further to recover here.
+        console.error("Google redirect sign-in failed:", error);
       });
   }, []);
 
