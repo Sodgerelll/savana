@@ -13,11 +13,23 @@ const SectionLabel = ({ color, children }: { color: string; children: React.Reac
 );
 
 const BalanceBar = ({ value, max }: { value: number; max: number }) => {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const pct =
+    max > 0
+      ? value > 0
+        ? Math.min(100, Math.max(1, Math.round((value / max) * 100)))
+        : 0
+      : value > 0
+        ? 100
+        : 0;
   const color = pct > 66 ? "#dc2626" : pct > 33 ? "#d97706" : "#10b981";
   return (
-    <div style={{ height: 4, background: "#e5e7eb", borderRadius: 99, overflow: "hidden", minWidth: 48 }}>
-      <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: color, transition: "width .3s" }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ flex: 1, height: 4, background: "#e5e7eb", borderRadius: 99, overflow: "hidden", minWidth: 48 }}>
+        <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: color, transition: "width .3s" }} />
+      </div>
+      <span style={{ fontSize: "0.7rem", fontWeight: 700, color, minWidth: 34, textAlign: "right" }}>
+        {pct}%
+      </span>
     </div>
   );
 };
@@ -54,12 +66,18 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
   const customersWithDebt  = (customers as any[])
     .filter((c) => (c.outstandingBalance ?? 0) > 0)
     .sort((a, b) => b.outstandingBalance - a.outstandingBalance);
-  const maxDebt = customersWithDebt[0]?.outstandingBalance ?? 1;
 
   const topCustomers = (customers as any[])
     .filter((c) => (c.totalSales ?? 0) > 0)
     .sort((a, b) => b.totalSales - a.totalSales)
     .slice(0, 8);
+
+  /* ── seller money flow: transferred = received + outstanding ── */
+  const totalTransferredAmount = (customers as any[]).reduce((s: number, c: any) => s + (c.totalSales ?? 0), 0);
+  const totalReceivedAmount    = (customers as any[]).reduce((s: number, c: any) => s + (c.totalPaid ?? 0), 0);
+  const collectionRate = totalTransferredAmount > 0
+    ? Math.round((totalReceivedAmount / totalTransferredAmount) * 100)
+    : 0;
 
   /* ── transaction metrics ── */
   const salesTx = (customerTransactions as any[]).filter((tx) => tx.type !== "return");
@@ -91,6 +109,10 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
   const deliveringOrders = (orders as any[]).filter((o) => o.status === "delivering");
   const deliveredToday   = (orders as any[]).filter(
     (o) => o.status === "delivered" && (o.updatedAt ?? o.createdAt ?? "").startsWith(todayStr),
+  );
+  const onlineOrdersTotal = (orders as any[]).reduce(
+    (s: number, o: any) => s + (o.totals?.grandTotal ?? 0),
+    0,
   );
 
   /* ── segments ── */
@@ -172,25 +194,50 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
         </div>
       </div>
 
-      {/* ── KPI row 1: customers ── */}
-      <div className="admin-kpi-grid" style={{ marginBottom: "0.75rem" }}>
-        {kpi(<Users size={16} />, copy.totalCustomers, customers.length,
-          undefined, `${activeCustomers.length} ${mn ? "идэвхтэй" : "active"}`)}
+      {/* ── KPI row 1: seller money flow (transferred = received + outstanding) ── */}
+      <SectionLabel color="#8b5cf6">
+        {mn ? "Борлуулагчийн мөнгөн урсгал" : "Seller money flow"}
+      </SectionLabel>
+      <div className="admin-kpi-grid" style={{ marginBottom: "1rem" }}>
+        {kpi(<ArrowLeftRight size={16} />, mn ? "Борлуулагч руу шилжүүлсэн дүн" : "Transferred to sellers",
+          formatStorePrice(totalTransferredAmount),
+          totalTransferredAmount > 0 ? "#8b5cf6" : undefined,
+          `${salesTx.length} ${mn ? "шилжүүлэг" : "transfers"} · ${transferredUnits} ш`)}
+        {kpi(<Wallet size={16} />, mn ? "Нийт авсан мөнгө" : "Total received",
+          formatStorePrice(totalReceivedAmount),
+          totalReceivedAmount > 0 ? "#10b981" : undefined,
+          mn ? `Шилжүүлсэн дүнгийн ${collectionRate}% цугласан` : `${collectionRate}% of transferred collected`)}
         {kpi(<AlertTriangle size={16} />, copy.totalOutstanding, formatStorePrice(totalOutstanding),
           totalOutstanding > 0 ? "#dc2626" : undefined,
-          customersWithDebt.length > 0 ? `${customersWithDebt.length} ${mn ? "харилцагч" : "customers"}` : mn ? "Авлага байхгүй" : "No debt")}
-        {kpi(<Package size={16} />, mn ? "Борлуулагч дахь үлдэгдэл" : "Remaining at sellers", `${remainingUnits} ш`,
-          remainingUnits > 0 ? "#d97706" : undefined,
-          `${mn ? "Нийт шилжүүлсэн" : "Total transferred"}: ${transferredUnits} ш`)}
+          customersWithDebt.length > 0
+            ? `${customersWithDebt.length} ${mn ? "харилцагч" : "customers"} · ${mn ? "Шилжүүлсэн − Авсан" : "Transferred − Received"}`
+            : mn ? "Авлага байхгүй" : "No debt")}
       </div>
 
-      {/* ── KPI row 2: sales ── */}
-      <div className="admin-kpi-grid" style={{ marginBottom: "1.5rem" }}>
+      {/* ── KPI row 2: sales activity ── */}
+      <SectionLabel color="#10b981">
+        {mn ? "Борлуулалтын идэвх" : "Sales activity"}
+      </SectionLabel>
+      <div className="admin-kpi-grid" style={{ marginBottom: "1rem" }}>
         {kpi(<TrendingUp size={16} />, copy.txTodaySales, formatStorePrice(todaySales),
           todaySales > 0 ? "#10b981" : undefined)}
         {kpi(<TrendingUp size={16} />, copy.txMonthSales, formatStorePrice(monthSales),
           monthSales > 0 ? "#10b981" : undefined,
           `${(customerTransactions as any[]).filter((tx) => (tx.transactionDate ?? tx.createdAt ?? "").startsWith(thisMonth)).length} ${mn ? "гүйлгээ" : "transactions"}`)}
+        {kpi(<Package size={16} />, mn ? "Борлуулагч дахь үлдэгдэл" : "Remaining at sellers", `${remainingUnits} ш`,
+          remainingUnits > 0 ? "#d97706" : undefined,
+          `${mn ? "Нийт шилжүүлсэн" : "Total transferred"}: ${transferredUnits} ш`)}
+      </div>
+
+      {/* ── KPI row 3: online channel ── */}
+      <SectionLabel color="#2563eb">
+        {mn ? "Онлайн суваг" : "Online channel"}
+      </SectionLabel>
+      <div className="admin-kpi-grid" style={{ marginBottom: "1.5rem" }}>
+        {kpi(<ShoppingBag size={16} />, mn ? "Онлайн захиалгын нийт дүн" : "Online orders total",
+          formatStorePrice(onlineOrdersTotal),
+          onlineOrdersTotal > 0 ? "#2563eb" : undefined,
+          `${orders.length} ${mn ? "захиалга" : "orders"}`)}
         {kpi(<ShoppingBag size={16} />, mn ? "Онлайн захиалга хүлээгдэж буй" : "Online orders pending",
           paidOrders.length + deliveringOrders.length,
           paidOrders.length + deliveringOrders.length > 0 ? "#2563eb" : undefined,
@@ -229,7 +276,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
                     <th>{mn ? "Харилцагч" : "Customer"}</th>
                     <th style={{ textAlign: "right" }}>{mn ? "Авлага" : "Outstanding"}</th>
                     <th style={{ textAlign: "right" }}>{mn ? "Нийт борлуулалт" : "Total sales"}</th>
-                    <th style={{ width: 72 }}></th>
+                    <th style={{ width: 118, textAlign: "right" }}>{mn ? "Авлага %" : "Unpaid %"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -250,7 +297,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
                         {formatStorePrice(c.totalSales)}
                       </td>
                       <td style={{ paddingLeft: 8 }}>
-                        <BalanceBar value={c.outstandingBalance} max={maxDebt} />
+                        <BalanceBar value={c.outstandingBalance} max={c.totalSales ?? 0} />
                       </td>
                     </tr>
                   ))}
