@@ -1087,9 +1087,7 @@
    6. PARTNERSHIPS
 ======================== */
 .home-partnership-section {
-  background:
-    radial-gradient(circle at top left, rgba(212, 201, 176, 0.42), transparent 28%),
-    linear-gradient(135deg, #f5f1e8 0%, #efe7da 48%, #e6dbc7 100%);
+  background: var(--color-bg);
 }
 
 .home-partnership-shell {

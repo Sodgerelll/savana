@@ -3236,6 +3236,50 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 })
               )}
             </tbody>
+            {transactionModal.draft.items.length > 0 && (() => {
+              const ftItems = transactionModal.draft.items;
+              const ftQty = ftItems.reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+              const ftSold = ftItems.reduce((s: number, i: any) => s + (i.soldQuantity || 0), 0);
+              const ftRemaining = ftQty - ftSold;
+              const ftQtyValue = ftItems.reduce((s: number, i: any) => s + (i.unitPrice || 0) * (i.quantity || 0), 0);
+              const ftSoldValue = ftItems.reduce((s: number, i: any) => s + (i.unitPrice || 0) * (i.soldQuantity || 0), 0);
+              const ftRemainingValue = ftQtyValue - ftSoldValue;
+              const ftUnitPriceSum = ftItems.reduce((s: number, i: any) => s + (i.unitPrice || 0), 0);
+              const ftLineTotal = ftItems.reduce((s: number, i: any) => s + (i.lineTotal || 0), 0);
+              const ftSub = (value: number) => (
+                <div style={{ fontSize: "0.7rem", fontWeight: 400, color: "#8a8477", whiteSpace: "nowrap" }}>
+                  {formatStorePrice(value)}
+                </div>
+              );
+              return (
+                <tfoot>
+                  <tr>
+                    <td colSpan={3} style={{ color: "#8a8477", fontWeight: 600 }}>
+                      {language === "MN" ? "Нийт" : "Total"} · {ftItems.length} {language === "MN" ? "бараа" : "items"}
+                    </td>
+                    <td>
+                      <strong>{ftQty} ш</strong>
+                      {ftSub(ftQtyValue)}
+                    </td>
+                    <td>
+                      <strong>{ftSold} ш</strong>
+                      {ftSub(ftSoldValue)}
+                    </td>
+                    <td>
+                      <strong style={{ color: ftRemaining > 0 ? "#b14141" : "#2f7a4a" }}>{ftRemaining} ш</strong>
+                      {ftSub(ftRemainingValue)}
+                    </td>
+                    <td>
+                      <strong>{formatStorePrice(ftUnitPriceSum)}</strong>
+                    </td>
+                    <td>
+                      <strong>{formatStorePrice(ftLineTotal)}</strong>
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              );
+            })()}
           </table>
         </div>
       </div>

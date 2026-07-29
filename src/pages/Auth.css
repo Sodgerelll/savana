@@ -1,8 +1,6 @@
 .auth-page {
   min-height: calc(100vh - 146px);
-  background:
-    radial-gradient(circle at top left, rgba(212, 201, 176, 0.7), transparent 32%),
-    linear-gradient(180deg, #f5f1e8 0%, #faf9f6 45%, #f2f0eb 100%);
+  background: var(--color-bg);
 }
 
 .auth-shell {
@@ -481,8 +479,7 @@
 
 .admin-page {
   min-height: calc(100vh - 146px);
-  background:
-    linear-gradient(180deg, #f3efe6 0%, #faf9f6 44%, #f2f0eb 100%);
+  background: var(--color-bg);
 }
 
 .admin-shell {
@@ -525,7 +522,7 @@
 }
 
 .admin-sidebar-toggle:hover {
-  background: rgba(242, 240, 235, 1);
+  background: rgba(248, 244, 238, 1);
   border-color: rgba(183, 185, 167, 0.8);
 }
 
@@ -1005,7 +1002,7 @@
 }
 
 .admin-architecture-card {
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   padding: 1rem;
   display: grid;
@@ -1053,7 +1050,7 @@
 .admin-architecture-list small {
   display: block;
   padding: 0.55rem 0.7rem;
-  background: rgba(242, 240, 235, 0.88);
+  background: rgba(248, 244, 238, 0.88);
   border: 1px solid rgba(183, 185, 167, 0.42);
   color: var(--color-heading);
 }
@@ -1069,7 +1066,7 @@
   align-items: flex-start;
   gap: 0.75rem;
   padding: 1rem;
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
 }
 
@@ -1094,7 +1091,7 @@
 .admin-structure-list code {
   display: block;
   padding: 0.9rem 1rem;
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   color: var(--color-heading);
   font-size: var(--fs-sm);
@@ -1230,7 +1227,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(62, 55, 33, 0.72);
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border-bottom: 1px solid rgba(183, 185, 167, 0.45);
 }
 
@@ -1246,7 +1243,16 @@
 }
 
 .admin-data-table tbody tr:hover td {
-  background: rgba(249, 248, 244, 0.9);
+  background: rgba(254, 250, 246, 0.9);
+}
+
+.admin-data-table tfoot td {
+  padding: 0.85rem 1.4rem;
+  vertical-align: top;
+  color: var(--color-heading);
+  background: rgba(248, 244, 238, 0.9);
+  border-top: 2px solid rgba(183, 185, 167, 0.55);
+  white-space: nowrap;
 }
 
 /* ── Inline form controls inside data table cells ── */
@@ -1415,11 +1421,11 @@
 
 .admin-data-table thead .admin-table-sticky-action {
   z-index: 4;
-  background: rgba(242, 240, 235, 0.98);
+  background: rgba(248, 244, 238, 0.98);
 }
 
 .admin-data-table tbody tr:hover .admin-table-sticky-action {
-  background: rgba(249, 248, 244, 0.98);
+  background: rgba(254, 250, 246, 0.98);
 }
 
 .admin-table-description {
@@ -1452,7 +1458,7 @@
   width: 56px;
   height: 56px;
   border: 1px solid rgba(183, 185, 167, 0.45);
-  background: rgba(242, 240, 235, 0.96);
+  background: rgba(248, 244, 238, 0.96);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1475,7 +1481,7 @@
 .admin-table-code {
   display: inline-flex;
   padding: 0.35rem 0.55rem;
-  background: rgba(242, 240, 235, 0.96);
+  background: rgba(248, 244, 238, 0.96);
   border: 1px solid rgba(183, 185, 167, 0.45);
   color: var(--color-heading);
   font-size: var(--fs-sm);
@@ -1564,7 +1570,7 @@
   width: 40px;
   height: 40px;
   border: 1px solid rgba(183, 185, 167, 0.7);
-  background: rgba(242, 240, 235, 0.95);
+  background: rgba(248, 244, 238, 0.95);
   color: var(--color-heading);
   display: inline-flex;
   align-items: center;
@@ -1583,7 +1589,7 @@
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 1.35rem;
-  background: #faf9f6;
+  background: #fefaf6;
 }
 
 .admin-modal-form {
@@ -2285,7 +2291,7 @@
 }
 
 .admin-inline-card {
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   padding: 1rem;
   display: grid;
@@ -2310,7 +2316,7 @@
 }
 
 .admin-repeater-card {
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   padding: 1rem;
   display: grid;
@@ -2341,7 +2347,7 @@
 
 .admin-repeater-empty {
   padding: 1rem;
-  background: rgba(242, 240, 235, 0.78);
+  background: rgba(248, 244, 238, 0.78);
   border: 1px dashed rgba(183, 185, 167, 0.8);
   color: var(--color-text);
 }
@@ -2359,7 +2365,7 @@
 }
 
 .admin-order-meta-card {
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   border: 1px solid rgba(183, 185, 167, 0.5);
   padding: 1rem;
   display: grid;
@@ -2424,7 +2430,7 @@
   gap: 0.25rem;
   padding: 0.95rem 1rem;
   border: 1px solid rgba(183, 185, 167, 0.5);
-  background: rgba(242, 240, 235, 0.88);
+  background: rgba(248, 244, 238, 0.88);
 }
 
 .admin-order-items {
@@ -2466,7 +2472,7 @@
   gap: 1rem;
   padding: 1rem 1.1rem;
   border: 1px solid rgba(183, 185, 167, 0.5);
-  background: rgba(242, 240, 235, 0.92);
+  background: rgba(248, 244, 238, 0.92);
 }
 
 .admin-order-items-summary span {
@@ -2502,7 +2508,7 @@
   width: 78px;
   height: 78px;
   border: 1px solid rgba(183, 185, 167, 0.45);
-  background: rgba(242, 240, 235, 0.96);
+  background: rgba(248, 244, 238, 0.96);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2544,7 +2550,7 @@
   align-items: center;
   padding: 0.38rem 0.65rem;
   border: 1px solid rgba(183, 185, 167, 0.45);
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   font-size: var(--fs-sm);
   color: var(--color-heading);
 }
@@ -2559,7 +2565,7 @@
   min-height: 100%;
   padding: 0.85rem 0.9rem;
   border: 1px solid rgba(183, 185, 167, 0.45);
-  background: rgba(242, 240, 235, 0.88);
+  background: rgba(248, 244, 238, 0.88);
   display: grid;
   gap: 0.35rem;
 }
@@ -2580,7 +2586,7 @@
   width: min(100%, 240px);
   aspect-ratio: 1 / 1;
   border: 1px solid rgba(183, 185, 167, 0.6);
-  background: rgba(242, 240, 235, 0.96);
+  background: rgba(248, 244, 238, 0.96);
   overflow: hidden;
 }
 
@@ -2727,7 +2733,7 @@
 
 .admin-product-row {
   border: 1px solid rgba(183, 185, 167, 0.6);
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   padding: 0.95rem;
   text-align: left;
   display: grid;
@@ -2755,7 +2761,7 @@
 
 .admin-product-editor {
   border: 1px solid rgba(183, 185, 167, 0.5);
-  background: rgba(242, 240, 235, 0.9);
+  background: rgba(248, 244, 238, 0.9);
   padding: 1rem;
   min-height: 420px;
 }
@@ -2792,7 +2798,7 @@
 .admin-icon-btn-neutral {
   color: var(--color-heading);
   border-color: rgba(183, 185, 167, 0.55);
-  background: rgba(242, 240, 235, 0.95);
+  background: rgba(248, 244, 238, 0.95);
 }
 
 .admin-icon-btn-success {
@@ -3188,7 +3194,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.8rem 1rem;
-  background: rgba(242, 240, 235, 0.6);
+  background: rgba(248, 244, 238, 0.6);
   border-bottom: 1px solid rgba(183, 185, 167, 0.2);
 }
 
@@ -3224,7 +3230,7 @@
   height: 40px;
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(242, 240, 235, 0.8);
+  background: rgba(248, 244, 238, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3271,7 +3277,7 @@
 .customer-order-footer {
   padding: 0.6rem 1rem 0.8rem;
   border-top: 1px solid rgba(183, 185, 167, 0.2);
-  background: rgba(242, 240, 235, 0.3);
+  background: rgba(248, 244, 238, 0.3);
 }
 
 .customer-order-totals-row {
@@ -3856,7 +3862,8 @@ select.admin-search-input {
 
   /* Denser table cells so more fits before horizontal scroll */
   .admin-data-table thead th,
-  .admin-data-table tbody td {
+  .admin-data-table tbody td,
+  .admin-data-table tfoot td {
     padding: 0.7rem 0.85rem;
   }
 

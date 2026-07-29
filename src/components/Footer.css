@@ -1,7 +1,7 @@
 /* Main footer */
 .footer-main {
   padding: 4rem 0;
-  background-color: var(--color-bg);
+  background-color: #FEFAF6;
   border-top: 1px solid var(--color-border-light);
 }
 
@@ -113,7 +113,7 @@
 .footer-bottom {
   border-top: 1px solid var(--color-border-light);
   padding: 1.25rem 0;
-  background-color: var(--color-bg);
+  background-color: #FEFAF6;
 }
 
 .footer-bottom .container {

@@ -90,7 +90,7 @@
 .journal-count {
   flex-shrink: 0;
   padding: 0.55rem 0.85rem;
-  background: rgba(242, 240, 235, 0.95);
+  background: rgba(248, 244, 238, 0.95);
   border: 1px solid rgba(183, 185, 167, 0.6);
   font-size: var(--fs-xs);
   letter-spacing: 0.12em;
@@ -269,7 +269,7 @@
 .journal-empty {
   padding: 3rem 1.5rem;
   border: 1px dashed rgba(183, 185, 167, 0.8);
-  background: rgba(242, 240, 235, 0.78);
+  background: rgba(248, 244, 238, 0.78);
   text-align: center;
 }
 

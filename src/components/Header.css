@@ -7,7 +7,7 @@
   left: 0;
   right: 0;
   z-index: 1000;
-  background: #faf9f6;
+  background: #fefaf6;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -21,7 +21,7 @@
 }
 
 .site-header-wrap.home-transparent:hover {
-  background: #faf9f6;
+  background: #fefaf6;
   box-shadow: 0 2px 18px rgba(0,0,0,0.09);
 }
 
@@ -29,7 +29,7 @@
    HEADER INNER  —  solid background always
    ============================================================ */
 .header-inner {
-  background: #faf9f6;   /* explicit solid, no inheritance risk */
+  background: #fefaf6;   /* explicit solid, no inheritance risk */
   border-top: 1px solid #d8d9cd;
   border-bottom: 1px solid #d8d9cd;
   transition: background-color 0.3s ease, border-color 0.3s ease;
@@ -42,7 +42,7 @@
 }
 
 .site-header-wrap.home-transparent:hover .header-inner {
-  background: #faf9f6;
+  background: #fefaf6;
   border-top-color: #d8d9cd;
   border-bottom-color: #d8d9cd;
 }
@@ -306,7 +306,7 @@
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: #faf9f6;          /* solid white-cream */
+  background: #fefaf6;          /* solid white-cream */
   border: 1px solid #d8d9cd;
   border-top: 2px solid var(--color-accent);
   min-width: 215px;
@@ -342,7 +342,7 @@
   white-space: nowrap;
 }
 .nav-dropdown-item:hover {
-  background: #f2f0eb;
+  background: #f8f4ee;
   color: var(--color-accent);
 }
 
@@ -372,7 +372,7 @@
 }
 
 .search-inner {
-  background: #faf9f6;
+  background: #fefaf6;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -599,7 +599,7 @@
   position: fixed;
   top: 0; left: 0; bottom: 0;
   width: 300px;
-  background: #faf9f6;
+  background: #fefaf6;
   z-index: 8100;
   transform: translateX(-100%);
   transition: transform 0.32s cubic-bezier(0.4,0,0.2,1);

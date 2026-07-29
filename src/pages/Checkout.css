@@ -1,9 +1,7 @@
 .checkout-page {
   min-height: 100vh;
   padding: 3rem 0 4rem;
-  background:
-    radial-gradient(circle at top left, rgba(212, 201, 176, 0.42), transparent 28%),
-    linear-gradient(180deg, #f6f2ea 0%, #faf9f6 48%, #f2efe7 100%);
+  background: var(--color-bg);
 }
 
 .checkout-shell {
@@ -315,7 +313,7 @@
   padding: 1rem;
   border: 1px dashed rgba(90, 81, 3, 0.35);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(242, 240, 235, 0.96));
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 244, 238, 0.96));
 }
 
 .checkout-payment-qr,
@@ -423,7 +421,7 @@
   height: 48px;
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(242, 240, 235, 0.8);
+  background: rgba(248, 244, 238, 0.8);
   flex-shrink: 0;
   display: flex;
   align-items: center;
