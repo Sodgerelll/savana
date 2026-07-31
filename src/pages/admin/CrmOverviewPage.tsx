@@ -23,11 +23,11 @@ const BalanceBar = ({ value, max }: { value: number; max: number }) => {
         : 0;
   const color = pct > 66 ? "#dc2626" : pct > 33 ? "#d97706" : "#10b981";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ flex: 1, height: 4, background: "#e5e7eb", borderRadius: 99, overflow: "hidden", minWidth: 48 }}>
+    <div className="crm-ov-bar">
+      <div className="crm-ov-bar-track">
         <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: color, transition: "width .3s" }} />
       </div>
-      <span style={{ fontSize: "0.7rem", fontWeight: 700, color, minWidth: 34, textAlign: "right" }}>
+      <span className="crm-ov-bar-pct" style={{ color }}>
         {pct}%
       </span>
     </div>
@@ -142,23 +142,15 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
   );
 
   const kpi = (icon: React.ReactNode, label: string, value: React.ReactNode, accent?: string, sub?: string) => (
-    <div style={{
-      background: "#ffffffcc",
-      border: `1.5px solid ${accent ? `${accent}33` : "rgba(183,185,167,.65)"}`,
-      borderRadius: 14, padding: "1rem 1.1rem",
-      display: "flex", flexDirection: "column", gap: 6,
-      boxShadow: "0 2px 12px rgba(58,52,18,0.06)",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#6b7280", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-          {label}
-        </span>
-        <span style={{ color: accent ?? "#9ca3af", opacity: 0.85 }}>{icon}</span>
+    <div className="crm-ov-kpi" style={{ border: `1.5px solid ${accent ? `${accent}33` : "rgba(183,185,167,.65)"}` }}>
+      <div className="crm-ov-kpi-head">
+        <span className="crm-ov-kpi-label">{label}</span>
+        <span style={{ color: accent ?? "#9ca3af", opacity: 0.85, flexShrink: 0 }}>{icon}</span>
       </div>
-      <strong style={{ fontSize: "1.75rem", lineHeight: 1, color: accent ?? "var(--color-heading)", fontFamily: "var(--font-heading)" }}>
+      <strong className="crm-ov-kpi-value" style={{ color: accent ?? "var(--color-heading)" }}>
         {value}
       </strong>
-      {sub && <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>{sub}</span>}
+      {sub && <span className="crm-ov-kpi-sub">{sub}</span>}
     </div>
   );
 
@@ -169,7 +161,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       : type === "return" ? (mn ? "Буцаалт" : "Return")
       : type;
     return (
-      <span style={{ display: "inline-block", padding: "0.15rem 0.5rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, background: c.bg, color: c.color }}>
+      <span style={{ display: "inline-block", flexShrink: 0, padding: "0.15rem 0.5rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, whiteSpace: "nowrap", background: c.bg, color: c.color }}>
         {label}
       </span>
     );
@@ -181,7 +173,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
       delivering: { bg: "#dbeafe", color: "#2563eb", label: mn ? "Хүргэлтэнд" : "Delivering" },
     };
     const s = map[status] ?? { bg: "#f3f4f6", color: "#6b7280", label: status };
-    return <span style={{ display: "inline-block", padding: "0.15rem 0.5rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, background: s.bg, color: s.color }}>{s.label}</span>;
+    return <span className="crm-ov-order-badge" style={{ display: "inline-block", padding: "0.15rem 0.5rem", borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, whiteSpace: "nowrap", background: s.bg, color: s.color }}>{s.label}</span>;
   };
 
   return (
@@ -270,13 +262,13 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
             </p>
           ) : (
             <div className="admin-data-table-wrap">
-              <table className="admin-data-table" style={{ minWidth: "unset" }}>
+              <table className="admin-data-table crm-ov-table" style={{ minWidth: "unset" }}>
                 <thead>
                   <tr>
                     <th>{mn ? "Харилцагч" : "Customer"}</th>
                     <th style={{ textAlign: "right" }}>{mn ? "Авлага" : "Outstanding"}</th>
                     <th style={{ textAlign: "right" }}>{mn ? "Нийт борлуулалт" : "Total sales"}</th>
-                    <th style={{ width: 118, textAlign: "right" }}>{mn ? "Авлага %" : "Unpaid %"}</th>
+                    <th className="crm-ov-col-pct">{mn ? "Авлага %" : "Unpaid %"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -327,22 +319,19 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
               {mn ? "Гүйлгээ байхгүй байна." : "No transactions yet."}
             </p>
           ) : (
-            <div style={{ padding: "0 1.4rem 1.4rem", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="crm-ov-card-body" style={{ gap: 6 }}>
               {recentTx.map((tx: any) => {
                 const transferred = tx.items.reduce((s: number, i: any) => s + (i.quantity ?? 0), 0);
                 const sold        = tx.items.reduce((s: number, i: any) => s + (i.soldQuantity ?? 0), 0);
                 const remaining   = transferred - sold;
                 const c = TX_COLOR[tx.type] ?? { bg: "#f3f4f6", color: "#6b7280" };
                 return (
-                  <div key={tx.id} style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "0.55rem 0.75rem",
+                  <div key={tx.id} className="crm-ov-tx-row" style={{
                     background: c.bg,
                     border: `1px solid ${c.color}33`,
-                    borderRadius: 8,
                   }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <div className="crm-ov-tx-main">
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, minWidth: 0 }}>
                         {txTypeBadge(tx.type)}
                         <strong style={{ fontSize: "0.82rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {tx.customerSnapshot?.name || "—"}
@@ -353,7 +342,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
                         {remaining > 0 && <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 600 }}>· {remaining} ш {mn ? "үлдэгдэл" : "remaining"}</span>}
                       </span>
                     </div>
-                    <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <div className="crm-ov-tx-side">
                       <div style={{ fontWeight: 700, fontSize: "0.85rem", color: tx.type === "return" ? "#dc2626" : "#111827" }}>
                         {formatStorePrice(tx.totals?.grandTotal)}
                       </div>
@@ -393,10 +382,10 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
             </p>
           ) : (
             <div className="admin-data-table-wrap">
-              <table className="admin-data-table" style={{ minWidth: "unset" }}>
+              <table className="admin-data-table crm-ov-table" style={{ minWidth: "unset" }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 28 }}>#</th>
+                    <th className="crm-ov-col-rank">#</th>
                     <th>{mn ? "Харилцагч" : "Customer"}</th>
                     <th style={{ textAlign: "right" }}>{copy.customerTotalSales}</th>
                     <th style={{ textAlign: "right" }}>{mn ? "Авлага" : "Balance"}</th>
@@ -447,7 +436,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
               </div>
               {navLink("crmCustomers", mn ? "Харилцагч" : "Customers")}
             </div>
-            <div style={{ padding: "0 1.4rem 1.4rem", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="crm-ov-card-body" style={{ gap: 10 }}>
               {segments.map((seg) => {
                 const pct = customers.length > 0 ? Math.round((seg.count / customers.length) * 100) : 0;
                 return (
@@ -490,7 +479,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
               </div>
               {navLink("orders", mn ? "Захиалга руу" : "Go to orders")}
             </div>
-            <div style={{ padding: "0 1.4rem 1.4rem", display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+            <div className="crm-ov-card-body" style={{ gap: "0.85rem" }}>
               {paidOrders.length > 0 && (
                 <div>
                   <SectionLabel color="#d97706">
@@ -498,12 +487,12 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
                   </SectionLabel>
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     {paidOrders.slice(0, 3).map((o: any) => (
-                      <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "0.45rem 0.65rem", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7 }}>
-                        <strong style={{ fontSize: "0.75rem", fontFamily: "monospace", minWidth: 110 }}>#{o.orderNumber}</strong>
-                        <span style={{ fontSize: "0.78rem", color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div key={o.id} className="crm-ov-order-row" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+                        <strong className="crm-ov-order-id">#{o.orderNumber}</strong>
+                        <span className="crm-ov-order-name">
                           {o.customer?.fullName || o.customer?.phoneNumber || "—"}
                         </span>
-                        <span style={{ fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}>{formatStorePrice(o.totals?.grandTotal)}</span>
+                        <span className="crm-ov-order-amount">{formatStorePrice(o.totals?.grandTotal)}</span>
                         {orderStatusBadge(o.status)}
                       </div>
                     ))}
@@ -518,12 +507,12 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
                   </SectionLabel>
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     {deliveringOrders.slice(0, 3).map((o: any) => (
-                      <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "0.45rem 0.65rem", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7 }}>
-                        <strong style={{ fontSize: "0.75rem", fontFamily: "monospace", minWidth: 110 }}>#{o.orderNumber}</strong>
-                        <span style={{ fontSize: "0.78rem", color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div key={o.id} className="crm-ov-order-row" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                        <strong className="crm-ov-order-id">#{o.orderNumber}</strong>
+                        <span className="crm-ov-order-name">
                           {o.customer?.fullName || o.customer?.phoneNumber || "—"}
                         </span>
-                        <span style={{ fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}>{formatStorePrice(o.totals?.grandTotal)}</span>
+                        <span className="crm-ov-order-amount">{formatStorePrice(o.totals?.grandTotal)}</span>
                         {orderStatusBadge(o.status)}
                       </div>
                     ))}

@@ -865,8 +865,12 @@
 .admin-content {
   padding: 2rem;
   display: grid;
+  /* minmax(0, …) so a wide child (table, nowrap row) scrolls inside its own
+     card instead of stretching the page and creating horizontal overflow. */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 1.25rem;
+  min-width: 0;
 }
 
 .admin-topbar {
@@ -1594,7 +1598,11 @@
 
 .admin-modal-form {
   display: grid;
+  /* The modal body clips horizontally, so anything that overflows is unreachable —
+     pin the track to the body width and let wide children scroll internally. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.1rem;
+  min-width: 0;
 }
 
 .admin-modal-footer {
@@ -1650,7 +1658,9 @@
 
 .admin-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .admin-field-wide {
@@ -1669,6 +1679,9 @@
 .admin-field textarea,
 .admin-field select {
   width: 100%;
+  /* A <select> is intrinsically as wide as its widest <option>; without this a long
+     option label stretches the field past the modal's right edge. */
+  min-width: 0;
   border: 1.5px solid rgba(183, 185, 167, 0.75);
   background: #fdfcf9;
   color: var(--color-heading);
@@ -1932,6 +1945,7 @@
 
 .admin-product-expand-stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.25rem;
 }
 
@@ -1955,6 +1969,20 @@
 .admin-expand-stat strong {
   font-size: var(--fs-md);
   color: #3a3630;
+  overflow-wrap: anywhere;
+}
+
+/* Four stats side by side overflow a phone-width modal, so pair them up instead. */
+@media (max-width: 768px) {
+  .admin-product-expand-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .admin-expand-stat {
+    min-width: 0;
+  }
 }
 
 .admin-product-expand-variants {
@@ -2951,7 +2979,7 @@
 @media (max-width: 900px) {
   .admin-shell,
   .admin-shell-collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* Off-canvas drawer sidebar */
@@ -3014,7 +3042,7 @@
   .admin-form-grid,
   .admin-preview-grid,
   .admin-architecture-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .admin-order-meta-grid {
@@ -3543,6 +3571,10 @@ select.admin-search-input {
   padding-right: 1.8rem;
 }
 
+.admin-filter-group select:last-child {
+  border-right: none;
+}
+
 .admin-filter-group input[type="number"] {
   width: 90px;
 }
@@ -3595,28 +3627,47 @@ select.admin-search-input {
   white-space: nowrap;
 }
 
-@media (max-width: 768px) {
+/* Matches the breakpoint where the admin shell switches to its mobile drawer, so
+   the filter bar stops being a cramped single row at the same moment. Search box,
+   every dropdown and the result count each get their own full-width row. */
+@media (max-width: 900px) {
   .admin-filter-bar {
     flex-direction: column;
     align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.65rem 0.75rem;
   }
 
-  .admin-filter-search {
-    flex: 1 1 100%;
+  .admin-filter-bar > * {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-filter-search input,
+  .admin-filter-bar > select.admin-search-input {
+    width: 100%;
+    min-width: 0;
   }
 
   .admin-filter-group {
     flex-wrap: wrap;
   }
 
+  /* Basis leaves room for the leading icon only, so the dropdown fills row one and
+     anything after it (e.g. a price range) is pushed onto row two. */
   .admin-filter-group select {
-    flex: 1 1 100%;
+    flex: 1 1 calc(100% - 2.4rem);
+    min-width: 0;
     border-right: none;
-    border-bottom: 1px solid rgba(183, 185, 167, 0.5);
   }
 
+  /* Basis has to stay large enough to break onto row two — at basis 0 the range
+     inputs would squeeze onto row one and collapse to a couple of pixels. */
   .admin-filter-group input[type="number"] {
-    flex: 1;
+    flex: 1 1 40%;
+    width: auto;
+    min-width: 0;
   }
 
   .admin-filter-meta {
@@ -3811,28 +3862,8 @@ select.admin-search-input {
     align-items: stretch;
   }
 
-  .admin-filter-bar {
-    padding: 0.6rem 0.75rem;
-  }
-
-  .admin-filter-search {
-    flex: 1 1 100%;
-  }
-
-  .admin-filter-group {
-    flex: 1 1 auto;
-  }
-
-  .admin-filter-group select {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .admin-filter-meta {
-    margin-left: 0;
-    width: 100%;
-    justify-content: space-between;
-  }
+  /* Filter-bar mobile rules live in one place — see the max-width: 900px block
+     in the filter-bar section above. */
 
   .admin-topbar-actions {
     width: 100%;
@@ -3873,6 +3904,227 @@ select.admin-search-input {
 
   .admin-two-col-grid {
     gap: 1rem;
+  }
+}
+
+/* ── CRM overview ────────────────────────────────────────────────── */
+
+.crm-ov-card-body {
+  padding: 0 1.4rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.crm-ov-kpi {
+  background: #ffffffcc;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  box-shadow: 0 2px 12px rgba(58, 52, 18, 0.06);
+}
+
+.crm-ov-kpi-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.crm-ov-kpi-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.crm-ov-kpi-value {
+  font-size: 1.75rem;
+  line-height: 1.1;
+  font-family: var(--font-heading);
+  overflow-wrap: anywhere;
+}
+
+.crm-ov-kpi-sub {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  overflow-wrap: anywhere;
+}
+
+.crm-ov-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.crm-ov-bar-track {
+  flex: 1;
+  height: 4px;
+  min-width: 40px;
+  background: #e5e7eb;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.crm-ov-bar-pct {
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 34px;
+  text-align: right;
+}
+
+/* Needs to out-specify `.admin-data-table thead th`, which forces text-align: left. */
+.crm-ov-table thead th.crm-ov-col-rank {
+  width: 28px;
+}
+
+.crm-ov-table thead th.crm-ov-col-pct {
+  width: 118px;
+  text-align: right;
+}
+
+.crm-ov-tx-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+}
+
+.crm-ov-tx-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.crm-ov-tx-side {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.crm-ov-order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 7px;
+}
+
+.crm-ov-order-id {
+  font-family: monospace;
+  font-size: 0.75rem;
+  flex: 0 1 auto;
+  min-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-ov-order-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: #374151;
+}
+
+.crm-ov-order-amount {
+  font-weight: 700;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Single-column layout: let the order number ellipsize rather than push the row
+   past the card's right edge. */
+@media (max-width: 900px) {
+  .crm-ov-order-id {
+    min-width: 0;
+  }
+}
+
+/* Below ~520px one line can no longer hold all four fields, so split cleanly:
+   line 1 = order no. + status, line 2 = customer + amount. */
+@media (max-width: 520px) {
+  .crm-ov-order-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .crm-ov-order-id {
+    order: 1;
+    flex: 1 1 auto;
+  }
+
+  .crm-ov-order-badge {
+    order: 2;
+  }
+
+  .crm-ov-order-name {
+    order: 3;
+    flex: 1 1 60%;
+  }
+
+  .crm-ov-order-amount {
+    order: 4;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .crm-ov-card-body {
+    padding: 0 0.85rem 1rem;
+  }
+
+  .crm-ov-kpi {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .crm-ov-kpi-value {
+    font-size: 1.45rem;
+  }
+
+  .crm-ov-tx-row {
+    padding: 0.5rem 0.6rem;
+    gap: 8px;
+  }
+
+  /* Denser cells so the overview tables fit without a nested sideways scroll. */
+  .crm-ov-table thead th,
+  .crm-ov-table tbody td {
+    padding: 0.6rem 0.55rem;
+  }
+
+  .crm-ov-table thead th {
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+  }
+
+  .crm-ov-table thead th.crm-ov-col-rank {
+    width: 20px;
+  }
+
+  .crm-ov-table thead th.crm-ov-col-pct {
+    width: 72px;
+  }
+
+  .crm-ov-bar-track {
+    min-width: 24px;
+  }
+
+  .crm-ov-bar-pct {
+    font-size: 0.65rem;
+    min-width: 26px;
   }
 }
 
