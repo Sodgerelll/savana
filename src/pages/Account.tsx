@@ -41,7 +41,19 @@ import {
   type UserRole,
 } from "../lib/userProfiles";
 import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
-import { subscribeToOrders, subscribeToUserOrders, updateOrderByAdmin, type OrderRecord, type OrderStatus } from "../lib/orders";
+import {
+  createManualOrder,
+  subscribeToOrders,
+  subscribeToUserOrders,
+  updateOrderByAdmin,
+  SHIPPING_FEE,
+  type OrderItemPayload,
+  type OrderPaymentMethod,
+  type OrderRecord,
+  type OrderSource,
+  type OrderStatus,
+} from "../lib/orders";
+import { DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
 import {
   DEFAULT_COLLECTION_GRADIENT,
   getActiveHeroBanners,
@@ -146,6 +158,8 @@ import {
   getAuthMethodLabel,
   getOrderStatusLabel,
   getOrderStatusClassName,
+  getOrderSourceLabel,
+  getOrderSourceOptions,
   getOrderTotalQuantity,
   getOrderPaymentStatusLabel,
   formatAdminDateTime,
@@ -244,6 +258,21 @@ interface ConfirmModalState {
 
 interface OrderModalState {
   draft: OrderRecord;
+}
+
+/** Draft behind the "register an order by hand" modal on the Orders page. */
+interface ManualOrderDraft {
+  source: OrderSource;
+  status: OrderStatus;
+  paymentMethod: OrderPaymentMethod;
+  customer: OrderRecord["customer"];
+  address: OrderRecord["address"];
+  items: OrderItemPayload[];
+  shippingFee: number;
+}
+
+interface ManualOrderModalState {
+  draft: ManualOrderDraft;
 }
 
 interface UserProfileModalState {
@@ -425,6 +454,7 @@ export default function Account() {
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
   const [discountModal, setDiscountModal] = useState<DiscountModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
+  const [manualOrderModal, setManualOrderModal] = useState<ManualOrderModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [confirmModalLoading, setConfirmModalLoading] = useState(false);
   const [confirmModalError, setConfirmModalError] = useState<string | null>(null);
@@ -458,6 +488,8 @@ export default function Account() {
   const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [savingOrderModal, setSavingOrderModal] = useState(false);
   const [orderModalError, setOrderModalError] = useState<string | null>(null);
+  const [savingManualOrder, setSavingManualOrder] = useState(false);
+  const [manualOrderError, setManualOrderError] = useState<string | null>(null);
   const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [contactMessages, setContactMessages] = useState<ContactMessageRecord[]>([]);
@@ -659,6 +691,8 @@ export default function Account() {
     ],
     [language]
   );
+  const orderSourceOptions = useMemo(() => getOrderSourceOptions(language), [language]);
+  const manualOrdersCount = useMemo(() => orders.filter((order) => order.isManual).length, [orders]);
   const implementedSections = new Set<AdminSection>([
     "dashboard",
     "website",
@@ -2150,6 +2184,172 @@ export default function Account() {
     setOrderModalError(null);
   };
 
+  /**
+   * Moves soldCount (and the matching variant's soldCount) by an order's quantities.
+   * sign = +1 when the order enters "delivered" (deduct stock), -1 when it leaves.
+   * Items are aggregated per product so a product appearing in several order lines
+   * (e.g. different variants) is written once.
+   */
+  const applyOrderSoldCountDelta = (items: OrderItemPayload[], sign: 1 | -1) => {
+    const itemsByProduct = new Map<number, OrderItemPayload[]>();
+    for (const item of items) {
+      const list = itemsByProduct.get(item.productId) ?? [];
+      list.push(item);
+      itemsByProduct.set(item.productId, list);
+    }
+
+    itemsByProduct.forEach((productItems, productId) => {
+      const currentProduct = products.find((p) => p.id === productId);
+      if (!currentProduct) return;
+
+      let nextSoldCount = currentProduct.soldCount ?? 0;
+      const nextVariants = currentProduct.variants?.map((v) => ({ ...v }));
+
+      for (const item of productItems) {
+        nextSoldCount = Math.max(0, nextSoldCount + sign * item.quantity);
+        if (nextVariants && item.variant) {
+          const idx = nextVariants.findIndex((v) => v.name === item.variant);
+          if (idx >= 0) {
+            nextVariants[idx] = {
+              ...nextVariants[idx],
+              soldCount: Math.max(0, (nextVariants[idx].soldCount ?? 0) + sign * item.quantity),
+            };
+          }
+        }
+      }
+
+      updateProduct(productId, {
+        soldCount: nextSoldCount,
+        ...(nextVariants ? { variants: nextVariants } : {}),
+      });
+    });
+  };
+
+  const openManualOrderModal = () => {
+    setManualOrderModal({
+      draft: {
+        source: "messenger",
+        status: "new",
+        paymentMethod: "cash",
+        customer: { fullName: "", phoneNumber: "", email: null, note: "" },
+        address: {
+          region: DEFAULT_ADDRESS_REGION,
+          districtOrSoum: "",
+          khorooOrBag: "",
+          streetAddress: "",
+          additionalAddress: "",
+        },
+        items: [],
+        shippingFee: SHIPPING_FEE,
+      },
+    });
+    setManualOrderError(null);
+  };
+
+  const closeManualOrderModal = () => {
+    if (savingManualOrder) {
+      return;
+    }
+
+    setManualOrderModal(null);
+    setManualOrderError(null);
+  };
+
+  const handleManualOrderSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!manualOrderModal) {
+      return;
+    }
+
+    const draft = manualOrderModal.draft;
+    const customer = {
+      fullName: draft.customer.fullName.trim(),
+      phoneNumber: draft.customer.phoneNumber.trim(),
+      email: draft.customer.email?.trim() ? draft.customer.email.trim() : null,
+      note: draft.customer.note.trim(),
+    };
+    const address = {
+      region: draft.address.region.trim(),
+      districtOrSoum: draft.address.districtOrSoum.trim(),
+      khorooOrBag: draft.address.khorooOrBag.trim(),
+      streetAddress: draft.address.streetAddress.trim(),
+      additionalAddress: draft.address.additionalAddress.trim(),
+    };
+
+    if (
+      !customer.phoneNumber ||
+      !address.region ||
+      !address.districtOrSoum ||
+      !address.khorooOrBag ||
+      !address.streetAddress
+    ) {
+      setManualOrderError(
+        language === "MN"
+          ? "Утасны дугаар болон хүргэлтийн хаягийг бүрэн бөглөнө үү."
+          : "Fill in the phone number and the full delivery address.",
+      );
+      return;
+    }
+
+    const items = draft.items.filter((item) => item.productId > 0 && item.quantity > 0);
+
+    if (items.length === 0) {
+      setManualOrderError(
+        language === "MN" ? "Дор хаяж нэг бараа нэмнэ үү." : "Add at least one item.",
+      );
+      return;
+    }
+
+    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    const discountTotal = items.reduce(
+      (sum, item) => sum + Math.max(0, (item.originalUnitPrice ?? item.unitPrice) - item.unitPrice) * item.quantity,
+      0,
+    );
+    const shippingFee = Math.max(0, Math.round(draft.shippingFee));
+
+    setSavingManualOrder(true);
+    setManualOrderError(null);
+
+    try {
+      await createManualOrder({
+        source: draft.source,
+        status: draft.status,
+        paymentMethod: draft.paymentMethod,
+        customer,
+        address,
+        items,
+        totals: {
+          subtotal,
+          shippingFee,
+          grandTotal: subtotal + shippingFee,
+          discountTotal,
+        },
+        createdByUid: user?.uid ?? "",
+        createdByName: profile?.displayName ?? user?.email ?? "",
+      });
+
+      // Stock is deducted at the "delivered" boundary — same rule the order edit
+      // modal applies when an existing order crosses into/out of delivered.
+      if (draft.status === "delivered") {
+        applyOrderSoldCountDelta(items, 1);
+      }
+
+      setManualOrderModal(null);
+      setManualOrderError(null);
+    } catch (error) {
+      setManualOrderError(
+        error instanceof Error
+          ? error.message
+          : language === "MN"
+            ? "Захиалга бүртгэж чадсангүй."
+            : "Unable to register the order.",
+      );
+    } finally {
+      setSavingManualOrder(false);
+    }
+  };
+
   const handleOrderCustomerChange =
     (field: keyof OrderRecord["customer"]) =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -2199,6 +2399,21 @@ export default function Account() {
             draft: {
               ...current.draft,
               status: nextStatus,
+            },
+          }
+        : current
+    );
+  };
+
+  const handleOrderSourceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextSource = event.target.value as OrderSource;
+    setOrderModal((current) =>
+      current
+        ? {
+            ...current,
+            draft: {
+              ...current.draft,
+              source: nextSource,
             },
           }
         : current
@@ -2275,50 +2490,15 @@ export default function Account() {
 
       await updateOrderByAdmin(orderModal.draft.id, {
         status: orderModal.draft.status,
+        source: orderModal.draft.source,
         customer: nextCustomer,
         address: nextAddress,
         payment: orderModal.draft.payment,
       });
 
       // Adjust soldCount only when crossing the "delivered" boundary.
-      // sign = +1 when entering delivered (deduct stock), -1 when leaving (restore).
       if (originalOrder && wasDelivered !== willBeDelivered) {
-        const sign = willBeDelivered ? 1 : -1;
-
-        // Aggregate items per product so a single product appearing in multiple
-        // order lines (e.g. different variants) is updated in one write.
-        const itemsByProduct = new Map<number, typeof originalOrder.items>();
-        for (const item of originalOrder.items) {
-          const list = itemsByProduct.get(item.productId) ?? [];
-          list.push(item);
-          itemsByProduct.set(item.productId, list);
-        }
-
-        itemsByProduct.forEach((items, productId) => {
-          const currentProduct = products.find((p) => p.id === productId);
-          if (!currentProduct) return;
-
-          let nextSoldCount = currentProduct.soldCount ?? 0;
-          const nextVariants = currentProduct.variants?.map((v) => ({ ...v }));
-
-          for (const item of items) {
-            nextSoldCount = Math.max(0, nextSoldCount + sign * item.quantity);
-            if (nextVariants && item.variant) {
-              const idx = nextVariants.findIndex((v) => v.name === item.variant);
-              if (idx >= 0) {
-                nextVariants[idx] = {
-                  ...nextVariants[idx],
-                  soldCount: Math.max(0, (nextVariants[idx].soldCount ?? 0) + sign * item.quantity),
-                };
-              }
-            }
-          }
-
-          updateProduct(productId, {
-            soldCount: nextSoldCount,
-            ...(nextVariants ? { variants: nextVariants } : {}),
-          });
-        });
+        applyOrderSoldCountDelta(originalOrder.items, willBeDelivered ? 1 : -1);
       }
 
       setOrderModal(null);
@@ -2543,6 +2723,8 @@ export default function Account() {
     deliveredOrdersCount,
     guestOrdersCount,
     orderStatusOptions,
+    orderSourceOptions,
+    manualOrdersCount,
     // messages
     contactMessages,
     contactMessagesError,
@@ -2629,6 +2811,7 @@ export default function Account() {
     openTestimonialModal,
     openUserProfileModal,
     openOrderModal,
+    openManualOrderModal,
     setCustomerModal,
     setTransactionModal,
     setPackagingModal,
@@ -2649,6 +2832,7 @@ export default function Account() {
     formatStorePrice,
     getOrderStatusLabel,
     getOrderStatusClassName,
+    getOrderSourceLabel,
     getOrderPaymentStatusLabel,
     getOrderTotalQuantity,
     getAuthMethodLabel,
@@ -2790,10 +2974,18 @@ export default function Account() {
     handleOrderCustomerChange,
     handleOrderAddressChange,
     handleOrderStatusChange,
+    handleOrderSourceChange,
     handleOrderPaymentMethodChange,
     handleOrderModalSubmit,
     orderModalError,
     savingOrderModal,
+    manualOrderModal,
+    setManualOrderModal,
+    closeManualOrderModal,
+    handleManualOrderSubmit,
+    manualOrderError,
+    setManualOrderError,
+    savingManualOrder,
     userProfileModal,
     setUserProfileModal,
     closeUserProfileModal,

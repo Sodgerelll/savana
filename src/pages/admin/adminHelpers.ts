@@ -1,6 +1,6 @@
 import type { Product } from "../../data/products";
 import type { JournalEntry, SiteNavigationItem } from "../../data/storefront";
-import type { OrderRecord, OrderStatus } from "../../lib/orders";
+import { ORDER_SOURCE_VALUES, type OrderRecord, type OrderSource, type OrderStatus } from "../../lib/orders";
 import type { UserAuthMethod, UserProfile, UserRole } from "../../lib/userProfiles";
 
 export function getProductCode(productId: number): string {
@@ -102,6 +102,34 @@ export function getOrderStatusClassName(status: OrderStatus) {
     default:
       return "admin-order-status-badge new";
   }
+}
+
+export function getOrderSourceLabel(source: OrderSource, language: "MN" | "EN") {
+  switch (source) {
+    case "messenger":
+      return language === "MN" ? "Мессенжер" : "Messenger";
+    case "facebook":
+      return language === "MN" ? "ФБ" : "Facebook";
+    case "instagram":
+      return language === "MN" ? "Инстаграм" : "Instagram";
+    case "phone":
+      return language === "MN" ? "Утас" : "Phone";
+    case "email":
+      return language === "MN" ? "Имэйл" : "Email";
+    case "walk_in":
+      return language === "MN" ? "Дэлгүүр" : "Walk-in";
+    case "other":
+      return language === "MN" ? "Бусад" : "Other";
+    default:
+      return language === "MN" ? "Веб" : "Web";
+  }
+}
+
+export function getOrderSourceOptions(language: "MN" | "EN") {
+  return ORDER_SOURCE_VALUES.map((source) => ({
+    value: source,
+    label: getOrderSourceLabel(source, language),
+  }));
 }
 
 export function getOrderTotalQuantity(order: OrderRecord) {

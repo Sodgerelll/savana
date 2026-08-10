@@ -8,6 +8,7 @@ import type { EntityStatus } from "../../data/products";
 import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
+import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
 import type { CustomerType } from "../../lib/customers";
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
@@ -165,10 +166,18 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     handleOrderCustomerChange,
     handleOrderAddressChange,
     handleOrderStatusChange,
+    handleOrderSourceChange,
     handleOrderPaymentMethodChange,
     handleOrderModalSubmit,
     orderModalError,
     savingOrderModal,
+    orderSourceOptions,
+    manualOrderModal,
+    setManualOrderModal,
+    closeManualOrderModal,
+    handleManualOrderSubmit,
+    manualOrderError,
+    savingManualOrder,
     userProfileModal,
     setUserProfileModal,
     closeUserProfileModal,
@@ -3924,6 +3933,22 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         </label>
 
         <label className="admin-field">
+          <span>{language === "MN" ? "Захиалгын төрөл" : "Order type"}</span>
+          <select value={orderModal.draft.source} onChange={handleOrderSourceChange}>
+            {orderSourceOptions.map((sourceOption: any) => (
+              <option key={sourceOption.value} value={sourceOption.value}>
+                {sourceOption.label}
+              </option>
+            ))}
+          </select>
+          <small>
+            {language === "MN"
+              ? "Захиалга ямар сувгаар ирснийг тэмдэглэнэ."
+              : "Records the channel the order came through."}
+          </small>
+        </label>
+
+        <label className="admin-field">
           <span>{language === "MN" ? "Төлбөрийн хэлбэр" : "Payment method"}</span>
           <select value={orderModal.draft.payment.method} onChange={handleOrderPaymentMethodChange}>
             <option value="bonum">Bonum</option>
@@ -4114,6 +4139,493 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     </form>
   </AdminModal>
 )}
+
+{manualOrderModal && (() => {
+  const draft = manualOrderModal.draft;
+  const patchDraft = (patch: any) =>
+    setManualOrderModal({ ...manualOrderModal, draft: { ...draft, ...patch } });
+  const patchItem = (index: number, patch: any) => {
+    const nextItems = draft.items.map((item: any, i: number) => (i === index ? { ...item, ...patch } : item));
+    patchDraft({ items: nextItems });
+  };
+
+  const subtotal = draft.items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+  const discountTotal = draft.items.reduce(
+    (sum: number, item: any) =>
+      sum + Math.max(0, (item.originalUnitPrice ?? item.unitPrice) - item.unitPrice) * item.quantity,
+    0,
+  );
+  const shippingFee = Math.max(0, Math.round(draft.shippingFee || 0));
+  const grandTotal = subtotal + shippingFee;
+  const totalQuantity = draft.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+
+  const districtOptions = getDistrictOrSoumOptions(draft.address.region);
+  const khorooOptions = getKhorooOrBagOptions(draft.address.region, draft.address.districtOrSoum);
+
+  /** Remaining stock for a product/variant, used as a hint next to the quantity input. */
+  const remainingStock = (productId: number, variant: string | null) => {
+    const product = (products as any[]).find((p: any) => p.id === productId);
+    if (!product) return null;
+    if (variant && product.variants?.length) {
+      const match = product.variants.find((v: any) => v.name === variant);
+      return match ? (match.quantity || 0) - (match.soldCount ?? 0) : 0;
+    }
+    return (product.totalStock ?? 0) - (product.soldCount ?? 0);
+  };
+
+  return (
+    <AdminModal
+      title={language === "MN" ? "Гараар захиалга бүртгэх" : "Register order manually"}
+      description={
+        language === "MN"
+          ? "Мессенжер, утас, имэйлээр ирсэн захиалгыг энд бүртгэнэ."
+          : "Register orders that arrived through Messenger, phone or email."
+      }
+      onClose={closeManualOrderModal}
+      xl
+      disableClose={savingManualOrder}
+    >
+      <form className="admin-modal-form" onSubmit={handleManualOrderSubmit}>
+        {manualOrderError && <div className="admin-sync-error">{manualOrderError}</div>}
+
+        <div className="admin-form-grid">
+          <label className="admin-field">
+            <span>{language === "MN" ? "Захиалгын төрөл" : "Order type"}</span>
+            <select
+              value={draft.source}
+              onChange={(event: any) => patchDraft({ source: event.target.value })}
+              required
+            >
+              {orderSourceOptions.map((sourceOption: any) => (
+                <option key={sourceOption.value} value={sourceOption.value}>
+                  {sourceOption.label}
+                </option>
+              ))}
+            </select>
+            <small>
+              {language === "MN"
+                ? "Захиалга ямар сувгаар ирснийг тэмдэглэнэ."
+                : "Records the channel the order came through."}
+            </small>
+          </label>
+
+          <label className="admin-field">
+            <span>{copy.status}</span>
+            <select value={draft.status} onChange={(event: any) => patchDraft({ status: event.target.value })}>
+              {orderStatusOptions.map((statusOption: any) => (
+                <option key={statusOption.value} value={statusOption.value}>
+                  {statusOption.label}
+                </option>
+              ))}
+            </select>
+            <small>
+              {draft.status === "new"
+                ? language === "MN"
+                  ? "Төлбөр хүлээгдэж буй захиалга болно."
+                  : "The order is saved with a pending payment."
+                : language === "MN"
+                  ? "Төлбөр төлөгдсөн гэж бүртгэгдэж, санхүүгийн бичилт хийгдэнэ."
+                  : "Saved as paid — the revenue journal entry is posted."}
+            </small>
+          </label>
+
+          <label className="admin-field">
+            <span>{language === "MN" ? "Төлбөрийн хэлбэр" : "Payment method"}</span>
+            <select
+              value={draft.paymentMethod}
+              onChange={(event: any) => patchDraft({ paymentMethod: event.target.value })}
+            >
+              <option value="cash">{language === "MN" ? "Бэлэн мөнгө" : "Cash"}</option>
+              <option value="bank_transfer">{language === "MN" ? "Банкны шилжүүлэг" : "Bank transfer"}</option>
+              <option value="bonum">Bonum</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="admin-inline-card">
+          <div className="admin-inline-card-head">
+            <strong>{copy.customerInfo}</strong>
+          </div>
+          <div className="admin-form-grid">
+            <label className="admin-field">
+              <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
+              <input
+                type="text"
+                value={draft.customer.fullName}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, fullName: event.target.value } })
+                }
+              />
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Утасны дугаар" : "Phone number"}</span>
+              <input
+                type="tel"
+                value={draft.customer.phoneNumber}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, phoneNumber: event.target.value } })
+                }
+                required
+              />
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "И-мэйл" : "Email"}</span>
+              <input
+                type="email"
+                value={draft.customer.email ?? ""}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, email: event.target.value } })
+                }
+              />
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{copy.note}</span>
+              <textarea
+                rows={2}
+                value={draft.customer.note}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, note: event.target.value } })
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="admin-inline-card">
+          <div className="admin-inline-card-head">
+            <strong>{copy.addressInfo}</strong>
+          </div>
+          <div className="admin-form-grid">
+            <label className="admin-field">
+              <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
+              <select
+                value={draft.address.region}
+                onChange={(event: any) =>
+                  patchDraft({
+                    // Districts and khoroos are region-specific — reset both when the region changes.
+                    address: {
+                      ...draft.address,
+                      region: event.target.value,
+                      districtOrSoum: "",
+                      khorooOrBag: "",
+                    },
+                  })
+                }
+                required
+              >
+                {getRegionOptions().map((region: string) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Дүүрэг / Сум" : "District / Soum"}</span>
+              <select
+                value={draft.address.districtOrSoum}
+                onChange={(event: any) =>
+                  patchDraft({
+                    address: { ...draft.address, districtOrSoum: event.target.value, khorooOrBag: "" },
+                  })
+                }
+                required
+              >
+                <option value="">—</option>
+                {districtOptions.map((district: string) => (
+                  <option key={district} value={district}>
+                    {district}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Хороо / Баг" : "Khoroo / Bag"}</span>
+              <select
+                value={draft.address.khorooOrBag}
+                onChange={(event: any) =>
+                  patchDraft({ address: { ...draft.address, khorooOrBag: event.target.value } })
+                }
+                required
+                disabled={khorooOptions.length === 0}
+              >
+                <option value="">—</option>
+                {khorooOptions.map((khoroo: string) => (
+                  <option key={khoroo} value={khoroo}>
+                    {khoroo}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{language === "MN" ? "Байр, орц, давхар, тоот" : "Street address"}</span>
+              <input
+                type="text"
+                value={draft.address.streetAddress}
+                onChange={(event: any) =>
+                  patchDraft({ address: { ...draft.address, streetAddress: event.target.value } })
+                }
+                required
+              />
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{language === "MN" ? "Нэмэлт хаяг" : "Additional address"}</span>
+              <input
+                type="text"
+                value={draft.address.additionalAddress}
+                onChange={(event: any) =>
+                  patchDraft({ address: { ...draft.address, additionalAddress: event.target.value } })
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="admin-data-card" style={{ marginTop: "1rem" }}>
+          <div className="admin-data-card-head">
+            <div>
+              <h3>{copy.orderItemsLabel}</h3>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() =>
+                patchDraft({
+                  items: [
+                    ...draft.items,
+                    {
+                      productId: 0,
+                      name: "",
+                      category: "",
+                      image: null,
+                      variant: null,
+                      quantity: 1,
+                      unitPrice: 0,
+                      originalUnitPrice: 0,
+                      lineTotal: 0,
+                    },
+                  ],
+                })
+              }
+            >
+              <Plus size={14} /> {copy.txAddItem}
+            </button>
+          </div>
+          <div className="admin-data-table-wrap">
+            <table className="admin-data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                  <th>{copy.txProduct}</th>
+                  <th>{copy.txVariant}</th>
+                  <th>{language === "MN" ? "Тоо" : "Qty"}</th>
+                  <th>{copy.txUnitPrice}</th>
+                  <th>{copy.txLineTotal}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {draft.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="admin-table-empty">
+                      {copy.addAtLeastOneItem}
+                    </td>
+                  </tr>
+                ) : (
+                  draft.items.map((item: any, idx: number) => {
+                    const selectedProduct = (products as any[]).find((p: any) => p.id === item.productId);
+                    const remaining = remainingStock(item.productId, item.variant);
+                    return (
+                      <tr key={idx}>
+                        <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                        <td>
+                          <select
+                            value={item.productId || ""}
+                            onChange={(event: any) => {
+                              const productId = Number(event.target.value);
+                              const product = (products as any[]).find((p: any) => p.id === productId);
+                              const listPrice = Math.round(product?.price ?? 0);
+                              const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
+                              const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                              const primaryImage = product ? getProductPrimaryImage(product) : "";
+                              patchItem(idx, {
+                                productId,
+                                name: product?.name ?? "",
+                                category: product?.category ?? "",
+                                // data-URL images are huge and overflow Firestore's 1 MiB doc limit
+                                image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
+                                variant: null,
+                                unitPrice,
+                                originalUnitPrice: listPrice,
+                                lineTotal: unitPrice * item.quantity,
+                              });
+                            }}
+                            required
+                          >
+                            <option value="">—</option>
+                            {(products as any[])
+                              .filter((p: any) => p.status === "active")
+                              .map((p: any) => {
+                                const pStock = p.variants?.length
+                                  ? p.variants.reduce((s: number, v: any) => s + (v.quantity || 0), 0)
+                                  : (p.totalStock ?? 0);
+                                const pSold = p.soldCount ?? 0;
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    {getProductLabel(p.id, p.name)} ({pStock - pSold}/{pStock})
+                                  </option>
+                                );
+                              })}
+                          </select>
+                        </td>
+                        <td>
+                          {selectedProduct?.variants && selectedProduct.variants.length > 0 ? (
+                            <select
+                              value={item.variant ?? ""}
+                              onChange={(event: any) => {
+                                const variantName = event.target.value || null;
+                                const variant = selectedProduct.variants?.find((v: any) => v.name === variantName);
+                                const listPrice = Math.round(variant?.price ?? selectedProduct.price);
+                                const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
+                                const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                                patchItem(idx, {
+                                  variant: variantName,
+                                  unitPrice,
+                                  originalUnitPrice: listPrice,
+                                  lineTotal: unitPrice * item.quantity,
+                                });
+                              }}
+                            >
+                              <option value="">—</option>
+                              {selectedProduct.variants.map((v: any) => (
+                                <option key={v.name} value={v.name}>
+                                  {v.name} ({(v.quantity || 0) - (v.soldCount ?? 0)}/{v.quantity || 0})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={(event: any) => {
+                                const quantity = Math.max(1, Number(event.target.value) || 1);
+                                patchItem(idx, { quantity, lineTotal: item.unitPrice * quantity });
+                              }}
+                              style={{ width: "80px", textAlign: "center" }}
+                            />
+                            {remaining != null && (
+                              <small
+                                style={{
+                                  fontSize: "0.7rem",
+                                  color: item.quantity > remaining ? "#b14141" : "#8a8477",
+                                }}
+                              >
+                                {language === "MN" ? "Үлдэгдэл" : "Remaining"}: {remaining}
+                              </small>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.unitPrice}
+                            onChange={(event: any) => {
+                              const unitPrice = Math.max(0, Number(event.target.value) || 0);
+                              patchItem(idx, { unitPrice, lineTotal: unitPrice * item.quantity });
+                            }}
+                            style={{ width: "110px" }}
+                          />
+                          {(item.originalUnitPrice ?? 0) > item.unitPrice && (
+                            <div style={{ fontSize: "0.7rem", color: "#dc2626", whiteSpace: "nowrap" }}>
+                              <s style={{ color: "#9ca3af" }}>{formatStorePrice(item.originalUnitPrice)}</s>{" "}
+                              −{formatStorePrice((item.originalUnitPrice ?? 0) - item.unitPrice)}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <strong>{formatStorePrice(item.lineTotal)}</strong>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="admin-icon-btn"
+                            onClick={() =>
+                              patchDraft({ items: draft.items.filter((_: any, i: number) => i !== idx) })
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="admin-form-grid" style={{ marginTop: "1rem" }}>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.shippingFee}
+              onChange={(event: any) => patchDraft({ shippingFee: Math.max(0, Number(event.target.value) || 0) })}
+            />
+          </label>
+        </div>
+
+        <div className="admin-order-totals">
+          <div className="admin-order-totals-row">
+            <span>
+              {language === "MN"
+                ? `Барааны дүн · ${totalQuantity} ширхэг`
+                : `Subtotal · ${totalQuantity} pcs`}
+            </span>
+            <span>{formatStorePrice(subtotal)}</span>
+          </div>
+          {discountTotal > 0 && (
+            <div className="admin-order-totals-row">
+              <span>{language === "MN" ? "Хямдрал" : "Discount"}</span>
+              <span style={{ color: "#dc2626" }}>−{formatStorePrice(discountTotal)}</span>
+            </div>
+          )}
+          <div className="admin-order-totals-row">
+            <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
+            <span>{formatStorePrice(shippingFee)}</span>
+          </div>
+          <div className="admin-order-totals-row admin-order-totals-grand">
+            <span>{language === "MN" ? "Нийт дүн" : "Grand total"}</span>
+            <strong>{formatStorePrice(grandTotal)}</strong>
+          </div>
+        </div>
+
+        <div className="admin-modal-footer">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={closeManualOrderModal}
+            disabled={savingManualOrder}
+          >
+            {copy.cancel}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={savingManualOrder}>
+            {savingManualOrder ? "..." : copy.save}
+          </button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+})()}
 
 {ctx.discountModal && (() => {
   const dm = ctx.discountModal;

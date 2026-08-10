@@ -109,7 +109,7 @@ export default function Checkout() {
           orderNotesHeading: "Захиалгын нөхцөл",
           orderNotes: [
             "Та захиалсан барааны төлбөрөө 100% урьдчилан шилжүүлснээр захиалга баталгаажна. Төлбөр дутуу хийгдсэн тохиолдолд хүргэлт хийгдэх боломжгүй болохыг анхаарна уу.",
-            "Төлбөр баталгаажсанаас хойш 24-48 цагийн дотор хүргэнэ. Үнийн дүн 40,000₮-өөс дээш худалдан авалтад хүргэлт гарна. Хүргэлтийн төлбөр 5,000₮. Бүх нийтийн амралтын өдрүүдэд хүргэлт хийгдэхгүй болохыг анхаарна уу. 80,000₮-өөс дээш хүргэлт үнэгүй.",
+            "Төлбөр баталгаажсанаас хойш 24-48 цагийн дотор хүргэнэ. Үнийн дүн 40,000₮-өөс дээш худалдан авалтад хүргэлт гарна. Хүргэлтийн төлбөр 5,000₮. Бүх нийтийн амралтын өдрүүдэд хүргэлт хийгдэхгүй болохыг анхаарна уу.",
             "Хүргэлттэй холбоотой лавлах утас: 77770081.",
           ],
           stepsLabel: "Checkout алхмууд",
@@ -179,7 +179,7 @@ export default function Checkout() {
           orderNotesHeading: "Order notes",
           orderNotes: [
             "Your order is confirmed only after the full 100% prepayment is received. Please note that delivery cannot be completed if the payment is incomplete.",
-            "Delivery is completed within 24-48 hours after payment confirmation. Delivery is available for purchases above 40,000₮. The delivery fee is 5,000₮. Please note that deliveries are not made on public holidays. Delivery is free for orders above 80,000₮.",
+            "Delivery is completed within 24-48 hours after payment confirmation. Delivery is available for purchases above 40,000₮. The delivery fee is 5,000₮. Please note that deliveries are not made on public holidays.",
             "Delivery hotline: 77770081.",
           ],
           stepsLabel: "Checkout steps",

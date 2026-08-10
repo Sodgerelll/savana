@@ -102,6 +102,27 @@ export function buildDirectSaleEntry(params: { lineTotal: number; cogsAmount: nu
   return assertBalanced(lines);
 }
 
+// ─── Manual order (admin-registered web/messenger/phone order) ────────────────
+
+/**
+ * Counterpart of api/_lib/postOrderPaidEntry.ts for orders an admin registers by hand:
+ * the money lands in whichever account the selected payment method settles into instead
+ * of always going through the Bonum clearing account.
+ */
+export function buildManualOrderEntry(params: {
+  grandTotal: number;
+  cogsAmount: number;
+  paymentMethod: string;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const lines = [
+    line(moneyAccount, params.grandTotal, 0),
+    line(ACCOUNT_CODES.REVENUE_ONLINE, 0, params.grandTotal),
+    ...cogsLines(params.cogsAmount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
 // ─── Customer transaction (sale/delivery/return) ──────────────────────────────
 
 export function buildCustomerTransactionSaleEntry(params: {

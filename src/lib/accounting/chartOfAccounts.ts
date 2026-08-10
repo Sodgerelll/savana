@@ -74,18 +74,20 @@ export async function isChartOfAccountsSeeded(): Promise<boolean> {
   return !snap.empty;
 }
 
-/** Maps a CRM/customer-transaction payment method string to the cash/bank/clearing account it settles into. */
+/** Maps a CRM/customer-transaction or order payment method string to the cash/bank/clearing account it settles into. */
 export function mapPaymentMethodToAccount(method: string | null | undefined): AccountCode {
   switch (method) {
     case "CASH":
     case "cash":
       return ACCOUNT_CODES.CASH;
     case "BANK_TRANSFER":
+    case "bank_transfer":
     case "bank":
       return ACCOUNT_CODES.BANK;
     case "QPAY":
     case "SOCIALPAY":
     case "qpay":
+    case "bonum":
       return ACCOUNT_CODES.CLEARING;
     default:
       // CREDIT, "other", or unrecognized — default to cash rather than blocking the post.
