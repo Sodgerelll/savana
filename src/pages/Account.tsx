@@ -2295,25 +2295,6 @@ export default function Account() {
       additionalAddress: draft.address.additionalAddress.trim(),
     };
 
-    // The Firestore rule for manual orders rejects the write outright (surfaced to the
-    // admin as an opaque "Missing or insufficient permissions") when phone number or
-    // address fields are blank, since those fields live in a collapsed section that's
-    // easy to skip. Catch it here with a message that says what's actually missing.
-    if (
-      !customer.phoneNumber ||
-      !address.region ||
-      !address.districtOrSoum ||
-      !address.khorooOrBag ||
-      !address.streetAddress
-    ) {
-      setManualOrderError(
-        language === "MN"
-          ? "Хүлээн авагчийн утасны дугаар болон хаягийг (аймаг/хот, дүүрэг/сум, хороо/баг, дэлгэрэнгүй хаяг) бүрэн бөглөнө үү."
-          : "Fill in the recipient's phone number and full address (province/city, district/soum, khoroo/bag, street address).",
-      );
-      return;
-    }
-
     const items = draft.items.filter((item) => item.productId > 0 && item.quantity > 0);
 
     if (items.length === 0) {

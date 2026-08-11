@@ -213,15 +213,10 @@ service cloud.firestore {
         && isOrderSource(request.resource.data.source)
         && request.resource.data.customer.fullName is string
         && request.resource.data.customer.phoneNumber is string
-        && request.resource.data.customer.phoneNumber.size() > 0
         && request.resource.data.address.region is string
-        && request.resource.data.address.region.size() > 0
         && request.resource.data.address.districtOrSoum is string
-        && request.resource.data.address.districtOrSoum.size() > 0
         && request.resource.data.address.khorooOrBag is string
-        && request.resource.data.address.khorooOrBag.size() > 0
         && request.resource.data.address.streetAddress is string
-        && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
         && request.resource.data.payment.method is string
