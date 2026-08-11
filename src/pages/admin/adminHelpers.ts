@@ -118,6 +118,10 @@ export function getOrderSourceLabel(source: OrderSource, language: "MN" | "EN") 
       return language === "MN" ? "Имэйл" : "Email";
     case "walk_in":
       return language === "MN" ? "Дэлгүүр" : "Walk-in";
+    case "gift":
+      return language === "MN" ? "Бэлэг" : "Gift";
+    case "usage":
+      return language === "MN" ? "Хэрэглээ" : "Usage";
     case "other":
       return language === "MN" ? "Бусад" : "Other";
     default:

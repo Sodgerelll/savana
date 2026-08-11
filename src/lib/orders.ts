@@ -37,6 +37,8 @@ export type OrderSource =
   | "phone"
   | "email"
   | "walk_in"
+  | "gift"
+  | "usage"
   | "other";
 export const ORDER_SOURCE_VALUES = [
   "web",
@@ -46,6 +48,8 @@ export const ORDER_SOURCE_VALUES = [
   "phone",
   "email",
   "walk_in",
+  "gift",
+  "usage",
   "other",
 ] as const;
 
