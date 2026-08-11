@@ -166,6 +166,113 @@ async function fetchDevGaSummary(env: Record<string, string>): Promise<GaSummary
   }
 }
 
+interface GaChartData {
+  trend: Array<{ date: string; sessions: number }>;
+  devices: Array<{ device: string; sessions: number }>;
+  channels: Array<{ channel: string; sessions: number }>;
+  topPages: Array<{ path: string; pageviews: number }>;
+  updatedAt: string;
+}
+
+let _devGaChartsCache: { value: GaChartData; expiresAt: number } | null = null
+
+function devRows(report: unknown): Array<{ dimensionValues?: Array<{ value?: string }>; metricValues?: Array<{ value?: string }> }> {
+  return ((report as { rows?: unknown[] })?.rows ?? []) as Array<{ dimensionValues?: Array<{ value?: string }>; metricValues?: Array<{ value?: string }> }>
+}
+
+function devNum(value: string | undefined): number {
+  const parsed = value ? Number(value) : 0
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatDevGaDate(value: string | undefined): string {
+  if (!value || value.length !== 8) return value ?? ''
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
+}
+
+async function fetchDevGaChartData(env: Record<string, string>): Promise<GaChartData> {
+  const propertyId = env['GA4_PROPERTY_ID']
+  const serviceAccountJson = env['GA4_SERVICE_ACCOUNT_JSON'] || env['FIREBASE_SERVICE_ACCOUNT_JSON']
+  if (!propertyId || !serviceAccountJson) {
+    throw new Error('GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_JSON not set in .env.local')
+  }
+
+  if (!_devGaClient) {
+    const { JWT } = await import('google-auth-library')
+    const key = JSON.parse(serviceAccountJson) as { client_email: string; private_key: string }
+    _devGaClient = new JWT({ email: key.client_email, key: key.private_key, scopes: ['https://www.googleapis.com/auth/analytics.readonly'] })
+  }
+
+  const { token } = await _devGaClient.getAccessToken()
+  if (!token) throw new Error('Failed to obtain a GA4 access token')
+
+  const dateRange = { startDate: '29daysAgo', endDate: 'today' }
+
+  const r = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:batchRunReports`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: [
+        {
+          dateRanges: [dateRange],
+          dimensions: [{ name: 'date' }],
+          metrics: [{ name: 'sessions' }],
+          orderBys: [{ dimension: { dimensionName: 'date' } }],
+        },
+        {
+          dateRanges: [dateRange],
+          dimensions: [{ name: 'deviceCategory' }],
+          metrics: [{ name: 'sessions' }],
+          orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        },
+        {
+          dateRanges: [dateRange],
+          dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+          metrics: [{ name: 'sessions' }],
+          orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+          limit: '8',
+        },
+        {
+          dateRanges: [dateRange],
+          dimensions: [{ name: 'pagePath' }],
+          metrics: [{ name: 'screenPageViews' }],
+          orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+          limit: '10',
+        },
+      ],
+    }),
+  })
+
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({})) as Record<string, unknown>
+    const message = (err['error'] as Record<string, unknown> | undefined)?.['message']
+    throw new Error(String(message ?? `GA4 batchRunReports failed: ${r.status}`))
+  }
+
+  const data = await r.json() as { reports?: unknown[] }
+  const [trendReport, devicesReport, channelsReport, pagesReport] = data.reports ?? []
+
+  return {
+    trend: devRows(trendReport).map((row) => ({
+      date: formatDevGaDate(row.dimensionValues?.[0]?.value),
+      sessions: devNum(row.metricValues?.[0]?.value),
+    })),
+    devices: devRows(devicesReport).map((row) => ({
+      device: row.dimensionValues?.[0]?.value ?? 'unknown',
+      sessions: devNum(row.metricValues?.[0]?.value),
+    })),
+    channels: devRows(channelsReport).map((row) => ({
+      channel: row.dimensionValues?.[0]?.value ?? 'Unassigned',
+      sessions: devNum(row.metricValues?.[0]?.value),
+    })),
+    topPages: devRows(pagesReport).map((row) => ({
+      path: row.dimensionValues?.[0]?.value ?? '/',
+      pageviews: devNum(row.metricValues?.[0]?.value),
+    })),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 function analyticsDevPlugin(): Plugin {
   const env = loadLocalEnv()
 
@@ -192,6 +299,27 @@ function analyticsDevPlugin(): Plugin {
             json(res, 200, value)
           } catch (e) {
             json(res, 500, { error: e instanceof Error ? e.message : 'Analytics summary failed' })
+          }
+          return
+        }
+
+        if (url.startsWith('/api/analytics/charts') && req.method === 'GET') {
+          const propertyId = env['GA4_PROPERTY_ID']
+          const serviceAccountJson = env['GA4_SERVICE_ACCOUNT_JSON'] || env['FIREBASE_SERVICE_ACCOUNT_JSON']
+          if (!propertyId || !serviceAccountJson) {
+            json(res, 503, { error: 'Google Analytics is not configured (GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_JSON).' })
+            return
+          }
+          try {
+            if (_devGaChartsCache && Date.now() < _devGaChartsCache.expiresAt) {
+              json(res, 200, _devGaChartsCache.value)
+              return
+            }
+            const value = await fetchDevGaChartData(env)
+            _devGaChartsCache = { value, expiresAt: Date.now() + 20 * 60 * 1000 }
+            json(res, 200, value)
+          } catch (e) {
+            json(res, 500, { error: e instanceof Error ? e.message : 'Analytics charts failed' })
           }
           return
         }

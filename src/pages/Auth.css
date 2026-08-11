@@ -1109,6 +1109,43 @@
   color: #8f3321;
 }
 
+.visitor-chart-stack-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.visitor-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.visitor-chart-legend-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+}
+
+.visitor-chart-legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  align-self: center;
+}
+
+.visitor-chart-legend-item strong {
+  color: var(--color-heading);
+}
+
+.visitor-chart-legend-item small {
+  color: var(--color-text);
+  opacity: 0.65;
+}
+
 .admin-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
