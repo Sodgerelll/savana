@@ -25,7 +25,6 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     activeProducts,
     inactiveProductsCount,
     bestSellerCount,
-    totalStockSum,
     totalSoldSum,
     totalRemainingSum,
     filteredProducts,
@@ -287,8 +286,8 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
           <strong>{bestSellerCount}</strong>
         </div>
         <div className="admin-summary-card">
-          <span>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</span>
-          <strong>{totalRemainingSum}/{totalStockSum} - {totalSoldSum}</strong>
+          <span>{copy.stockRemaining} - {copy.soldCount}</span>
+          <strong>{Math.max(0, totalRemainingSum)} - {totalSoldSum}</strong>
         </div>
       </div>
 
@@ -363,7 +362,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                 <th>{copy.name}</th>
                 <th>{copy.category}</th>
                 <th className="admin-th-right">{copy.price}</th>
-                <th className="admin-th-right">{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</th>
+                <th className="admin-th-right">{copy.stockRemaining} - {copy.soldCount}</th>
                 <th>{copy.status}</th>
                 <th className="admin-th-right">{copy.actions}</th>
                 <th className="admin-th-center"></th>
@@ -386,7 +385,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                     ? variantStock
                     : (product.totalStock ?? 0);
                   const sold = product.soldCount ?? 0;
-                  const remaining = stock - sold;
+                  const remaining = Math.max(0, stock - sold);
                   const discount = activeDiscountByProduct.get(product.id);
                   return (
                     <React.Fragment key={product.id}>
@@ -431,7 +430,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                             formatStorePrice(product.price)
                           )}
                         </td>
-                        <td className="admin-td-right">{remaining}/{stock} - {sold}</td>
+                        <td className="admin-td-right">{remaining} - {sold}</td>
                         <td>
                           <StatusBadge
                             status={product.status}
@@ -518,8 +517,8 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                 <div className="admin-product-expand-top">
                                   <div className="admin-product-expand-stats">
                                     <div className="admin-expand-stat">
-                                      <small>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</small>
-                                      <strong>{remaining}/{stock} - {sold}</strong>
+                                      <small>{copy.stockRemaining} - {copy.soldCount}</small>
+                                      <strong>{remaining} - {sold}</strong>
                                     </div>
                                     {allDiscountTotal > 0 && (
                                       <div className="admin-expand-stat">
@@ -534,12 +533,12 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                   {product.variants?.length ? (
                                     <div className="admin-product-expand-variants">
                                       {product.variants.map((v: any, i: number) => {
-                                        const vRemaining = (v.quantity || 0) - (v.soldCount ?? 0);
+                                        const vRemaining = Math.max(0, (v.quantity || 0) - (v.soldCount ?? 0));
                                         return (
                                           <div key={i} className="admin-product-expand-variant">
                                             <span className="admin-expand-variant-name">{v.name}</span>
                                             <span>{formatStorePrice(v.price)}</span>
-                                            <span className="admin-expand-variant-stock">{vRemaining}/{v.quantity || 0} - {v.soldCount ?? 0}</span>
+                                            <span className="admin-expand-variant-stock">{vRemaining} - {v.soldCount ?? 0}</span>
                                           </div>
                                         );
                                       })}

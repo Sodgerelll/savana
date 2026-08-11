@@ -1819,7 +1819,7 @@
 
 .admin-variant-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 80px 80px 60px 32px;
+  grid-template-columns: minmax(0, 1fr) 80px 80px 80px 32px;
   gap: 0.5rem;
   align-items: center;
 }
@@ -1851,19 +1851,9 @@
   border-bottom: 1px solid #e8e4dc;
 }
 
-.admin-variant-sold {
-  font-size: var(--fs-xs);
-  color: #8a8477;
-  white-space: nowrap;
-  background: #f0ede7;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
 .admin-stock-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
   margin-top: 0.5rem;
   align-items: end;
@@ -2684,6 +2674,20 @@
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
+}
+
+.admin-collapsible-card > summary.admin-inline-card-head {
+  cursor: pointer;
+  list-style: revert;
+  user-select: none;
+}
+
+.admin-collapsible-card > summary.admin-inline-card-head::-webkit-details-marker {
+  margin-right: 0.5rem;
+}
+
+.admin-collapsible-card:not([open]) {
+  gap: 0;
 }
 
 .admin-entity-head {

@@ -1483,8 +1483,8 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               <div className="admin-variant-row admin-variant-header">
                 <span>{copy.variantName}</span>
                 <span>{copy.variantPrice}</span>
-                <span>{copy.variantQuantity}</span>
-                <span>{copy.soldCount}/{copy.stockRemaining}</span>
+                <span>{copy.stockRemaining}</span>
+                <span>{copy.soldCount}</span>
                 <span></span>
               </div>
             )}
@@ -1511,17 +1511,26 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 />
                 <input
                   type="number"
-                  placeholder={copy.variantQuantity}
-                  value={variant.quantity || ""}
+                  placeholder={copy.stockRemaining}
+                  value={Math.max(0, (variant.quantity || 0) - (variant.soldCount ?? 0))}
                   onChange={(event: any)=> {
                     const next = [...(productModal.draft.variants ?? [])];
-                    next[vIndex] = { ...next[vIndex], quantity: Number(event.target.value) || 0 };
+                    const nextRemaining = Number(event.target.value) || 0;
+                    const currentSold = next[vIndex].soldCount ?? 0;
+                    next[vIndex] = { ...next[vIndex], quantity: nextRemaining + currentSold };
                     setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
                   }}
                 />
-                <span className="admin-variant-sold">
-                  {(variant.quantity || 0) - (variant.soldCount ?? 0)}/{variant.quantity || 0} - {variant.soldCount ?? 0}
-                </span>
+                <input
+                  type="number"
+                  placeholder={copy.soldCount}
+                  value={variant.soldCount ?? 0}
+                  onChange={(event: any)=> {
+                    const next = [...(productModal.draft.variants ?? [])];
+                    next[vIndex] = { ...next[vIndex], soldCount: Number(event.target.value) || 0 };
+                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
+                  }}
+                />
                 <button
                   type="button"
                   className="admin-icon-btn"
@@ -1548,32 +1557,38 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         </div>
         {(() => {
           const hasVariants = (productModal.draft.variants ?? []).length > 0;
-          const variantTotal = hasVariants
-            ? (productModal.draft.variants ?? []).reduce((sum: any, v: any)=> sum + (v.quantity || 0), 0)
+          const variantRemainingTotal = hasVariants
+            ? (productModal.draft.variants ?? []).reduce(
+                (sum: any, v: any)=> sum + Math.max(0, (v.quantity || 0) - (v.soldCount ?? 0)),
+                0,
+              )
             : 0;
-          const currentStock = hasVariants ? variantTotal : (productModal.draft.totalStock ?? 0);
           const sold = productModal.draft.soldCount ?? 0;
+          const remaining = hasVariants
+            ? variantRemainingTotal
+            : Math.max(0, (productModal.draft.totalStock ?? 0) - sold);
           return (
             <div className="admin-field admin-field-wide">
-              <span>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</span>
+              <span>{copy.stockRemaining} - {copy.soldCount}</span>
               <div className="admin-stock-row">
                 {hasVariants ? (
                   <div className="admin-stock-remaining">
-                    <small>{copy.totalStock}</small>
-                    <strong>{variantTotal}</strong>
+                    <small>{copy.stockRemaining}</small>
+                    <strong>{remaining}</strong>
                   </div>
                 ) : (
                   <label className="admin-field">
-                    <small>{copy.totalStock}</small>
+                    <small>{copy.stockRemaining}</small>
                     <input
                       type="number"
-                      value={productModal.draft.totalStock ?? 0}
-                      onChange={(event: any)=>
+                      value={remaining}
+                      onChange={(event: any)=> {
+                        const nextRemaining = Number(event.target.value) || 0;
                         setProductModal({
                           ...productModal,
-                          draft: { ...productModal.draft, totalStock: Number(event.target.value) || 0 },
-                        })
-                      }
+                          draft: { ...productModal.draft, totalStock: nextRemaining + sold },
+                        });
+                      }}
                     />
                   </label>
                 )}
@@ -1590,10 +1605,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     }
                   />
                 </label>
-                <div className="admin-stock-remaining">
-                  <small>{copy.stockRemaining}/{copy.totalStock} - {copy.soldCount}</small>
-                  <strong>{currentStock - sold}/{currentStock} - {sold}</strong>
-                </div>
               </div>
             </div>
           );
@@ -4242,10 +4253,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           </label>
         </div>
 
-        <div className="admin-inline-card">
-          <div className="admin-inline-card-head">
+        <details className="admin-inline-card admin-collapsible-card">
+          <summary className="admin-inline-card-head">
             <strong>{copy.customerInfo}</strong>
-          </div>
+          </summary>
           <div className="admin-form-grid">
             <label className="admin-field">
               <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
@@ -4265,7 +4276,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 onChange={(event: any) =>
                   patchDraft({ customer: { ...draft.customer, phoneNumber: event.target.value } })
                 }
-                required
               />
             </label>
             <label className="admin-field">
@@ -4289,12 +4299,12 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               />
             </label>
           </div>
-        </div>
+        </details>
 
-        <div className="admin-inline-card">
-          <div className="admin-inline-card-head">
+        <details className="admin-inline-card admin-collapsible-card">
+          <summary className="admin-inline-card-head">
             <strong>{copy.addressInfo}</strong>
-          </div>
+          </summary>
           <div className="admin-form-grid">
             <label className="admin-field">
               <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
@@ -4311,7 +4321,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     },
                   })
                 }
-                required
               >
                 {getRegionOptions().map((region: string) => (
                   <option key={region} value={region}>
@@ -4329,7 +4338,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     address: { ...draft.address, districtOrSoum: event.target.value, khorooOrBag: "" },
                   })
                 }
-                required
               >
                 <option value="">—</option>
                 {districtOptions.map((district: string) => (
@@ -4346,7 +4354,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 onChange={(event: any) =>
                   patchDraft({ address: { ...draft.address, khorooOrBag: event.target.value } })
                 }
-                required
                 disabled={khorooOptions.length === 0}
               >
                 <option value="">—</option>
@@ -4365,7 +4372,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 onChange={(event: any) =>
                   patchDraft({ address: { ...draft.address, streetAddress: event.target.value } })
                 }
-                required
               />
             </label>
             <label className="admin-field admin-field-wide">
@@ -4379,7 +4385,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               />
             </label>
           </div>
-        </div>
+        </details>
 
         <div className="admin-data-card" style={{ marginTop: "1rem" }}>
           <div className="admin-data-card-head">

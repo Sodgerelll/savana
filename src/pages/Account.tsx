@@ -2277,21 +2277,6 @@ export default function Account() {
       additionalAddress: draft.address.additionalAddress.trim(),
     };
 
-    if (
-      !customer.phoneNumber ||
-      !address.region ||
-      !address.districtOrSoum ||
-      !address.khorooOrBag ||
-      !address.streetAddress
-    ) {
-      setManualOrderError(
-        language === "MN"
-          ? "Утасны дугаар болон хүргэлтийн хаягийг бүрэн бөглөнө үү."
-          : "Fill in the phone number and the full delivery address.",
-      );
-      return;
-    }
-
     const items = draft.items.filter((item) => item.productId > 0 && item.quantity > 0);
 
     if (items.length === 0) {
