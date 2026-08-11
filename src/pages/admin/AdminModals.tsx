@@ -4276,6 +4276,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 onChange={(event: any) =>
                   patchDraft({ customer: { ...draft.customer, phoneNumber: event.target.value } })
                 }
+                required
               />
             </label>
             <label className="admin-field">
@@ -4338,6 +4339,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     address: { ...draft.address, districtOrSoum: event.target.value, khorooOrBag: "" },
                   })
                 }
+                required
               >
                 <option value="">—</option>
                 {districtOptions.map((district: string) => (
@@ -4355,6 +4357,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                   patchDraft({ address: { ...draft.address, khorooOrBag: event.target.value } })
                 }
                 disabled={khorooOptions.length === 0}
+                required
               >
                 <option value="">—</option>
                 {khorooOptions.map((khoroo: string) => (
@@ -4372,6 +4375,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 onChange={(event: any) =>
                   patchDraft({ address: { ...draft.address, streetAddress: event.target.value } })
                 }
+                required
               />
             </label>
             <label className="admin-field admin-field-wide">
