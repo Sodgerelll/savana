@@ -53,6 +53,8 @@ service cloud.firestore {
         || source == "phone"
         || source == "email"
         || source == "walk_in"
+        || source == "gift"
+        || source == "usage"
         || source == "other";
     }
 
