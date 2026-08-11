@@ -385,7 +385,7 @@ interface AdminMenuGroup {
 }
 
 const VALID_SECTIONS = new Set<string>([
-  "dashboard", "website", "categories", "products", "discounts", "messages", "orders", "users",
+  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "users",
   "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
   "factoryOverview", "factoryProduction", "rawMaterials", "factoryInventory",
