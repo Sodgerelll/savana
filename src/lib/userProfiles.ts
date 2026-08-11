@@ -245,16 +245,21 @@ export async function syncUserProfile(
     (provider) => provider !== "anonymous",
   );
   const currentMethod = options.currentMethod ?? deriveAuthMethod(user);
+  const email = options.email !== undefined ? options.email : user.email ?? existingProfile?.email ?? null;
+  const phoneNumber =
+    options.phoneNumber !== undefined
+      ? normalizePhoneNumber(options.phoneNumber)
+      : normalizePhoneNumber(user.phoneNumber) ?? existingProfile?.phoneNumber ?? null;
 
   const nextProfile: UserProfile = {
     uid: user.uid,
-    email: options.email !== undefined ? options.email : user.email ?? existingProfile?.email ?? null,
-    phoneNumber:
-      options.phoneNumber !== undefined
-        ? normalizePhoneNumber(options.phoneNumber)
-        : normalizePhoneNumber(user.phoneNumber) ?? existingProfile?.phoneNumber ?? null,
+    email,
+    phoneNumber,
     displayName: user.displayName ?? existingProfile?.displayName ?? null,
-    role: existingProfile?.role ?? "customer",
+    // Re-resolves against the VITE_ADMIN_UIDS/EMAILS/PHONES (etc.) allow-lists on every sync
+    // so the persisted role stays in sync with what the admin UI already grants — Firestore
+    // security rules only ever see this stored field, never the client-side env allow-lists.
+    role: resolveUserRole({ uid: user.uid, email, phoneNumber, role: existingProfile?.role ?? null }),
     registrationMethod: existingProfile?.registrationMethod ?? options.registrationMethod ?? currentMethod,
     lastAuthMethod: currentMethod,
     providers,

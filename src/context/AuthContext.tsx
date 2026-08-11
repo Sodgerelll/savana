@@ -111,6 +111,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (active) {
             if (existingProfile) {
               setProfile(existingProfile);
+
+              // The stored role can drift from the admin allow-lists (VITE_ADMIN_UIDS/EMAILS/PHONES)
+              // whenever they change after the account was first synced — reconcile it here so an
+              // already-signed-in session picks up the correct Firestore-persisted role (which is
+              // what security rules check) without requiring the user to log out and back in.
+              const resolvedRole = resolveUserRole({
+                uid: nextUser.uid,
+                email: existingProfile.email ?? nextUser.email,
+                phoneNumber: existingProfile.phoneNumber ?? nextUser.phoneNumber,
+                role: existingProfile.role,
+              });
+              if (resolvedRole !== existingProfile.role) {
+                void syncUserProfile(nextUser)
+                  .then((syncedProfile) => {
+                    if (active && syncedProfile) {
+                      setProfile(syncedProfile);
+                    }
+                  })
+                  .catch(() => {});
+              }
               return;
             }
 

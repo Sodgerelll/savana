@@ -3,6 +3,7 @@ import { Instagram, Facebook, Mail, Phone, MapPin } from "lucide-react";
 import { useStorefront } from "../context/StorefrontContext";
 import { useLanguage } from "../context/LanguageContext";
 import { getActiveCollections, getRenderableSettings } from "../lib/storefrontHelpers";
+import VisitorStats from "./VisitorStats";
 import womenOwnedLogo from "../assets/women-owned.png";
 import "./Footer.css";
 
@@ -104,6 +105,7 @@ export default function Footer() {
       <div className="footer-bottom">
         <div className="container">
           <p>&copy; 2019 - {new Date().getFullYear()} {t.footerCopyright}</p>
+          <VisitorStats />
           <div className="footer-bottom-links">
             <Link to="/privacy">{t.footerPolicies}</Link>
             <Link to="/terms">Terms</Link>

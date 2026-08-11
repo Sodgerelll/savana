@@ -83,6 +83,126 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body))
 }
 
+// ─── Analytics dev API plugin ──────────────────────────────────────────────
+// Mirrors api/analytics/summary.ts so `/api/analytics/summary` works under
+// plain `vite` dev without needing `vercel dev`. Uses an in-memory-only cache
+// (no Firestore round-trip) since this only runs locally.
+
+interface GaSummary {
+  today: number;
+  last7Days: number;
+  thisMonth: number;
+  thisYear: number;
+  updatedAt: string;
+}
+
+let _devGaClient: import('google-auth-library').JWT | null = null
+let _devGaSummaryCache: { value: GaSummary; expiresAt: number } | null = null
+
+function isoDateInUlaanbaatar(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ulaanbaatar',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function parseDevSessionCount(report: unknown, rangeName: string): number {
+  const rows = ((report as { rows?: unknown[] })?.rows ?? []) as Array<{ dimensionValues?: Array<{ value?: string }>; metricValues?: Array<{ value?: string }> }>
+  const row = rows.find((r) => r.dimensionValues?.[0]?.value === rangeName)
+  const raw = row?.metricValues?.[0]?.value
+  const parsed = raw ? Number(raw) : 0
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+async function fetchDevGaSummary(env: Record<string, string>): Promise<GaSummary> {
+  const propertyId = env['GA4_PROPERTY_ID']
+  const serviceAccountJson = env['GA4_SERVICE_ACCOUNT_JSON'] || env['FIREBASE_SERVICE_ACCOUNT_JSON']
+  if (!propertyId || !serviceAccountJson) {
+    throw new Error('GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_JSON not set in .env.local')
+  }
+
+  if (!_devGaClient) {
+    const { JWT } = await import('google-auth-library')
+    const key = JSON.parse(serviceAccountJson) as { client_email: string; private_key: string }
+    _devGaClient = new JWT({ email: key.client_email, key: key.private_key, scopes: ['https://www.googleapis.com/auth/analytics.readonly'] })
+  }
+
+  const { token } = await _devGaClient.getAccessToken()
+  if (!token) throw new Error('Failed to obtain a GA4 access token')
+
+  const now = new Date()
+  const monthStart = isoDateInUlaanbaatar(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)))
+  const yearStart = isoDateInUlaanbaatar(new Date(Date.UTC(now.getUTCFullYear(), 0, 1)))
+
+  const r = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dateRanges: [
+        { startDate: 'today', endDate: 'today', name: 'today' },
+        { startDate: '6daysAgo', endDate: 'today', name: 'last7Days' },
+        { startDate: monthStart, endDate: 'today', name: 'thisMonth' },
+        { startDate: yearStart, endDate: 'today', name: 'thisYear' },
+      ],
+      metrics: [{ name: 'sessions' }],
+    }),
+  })
+
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({})) as Record<string, unknown>
+    const message = (err['error'] as Record<string, unknown> | undefined)?.['message']
+    throw new Error(String(message ?? `GA4 runReport failed: ${r.status}`))
+  }
+
+  const report = await r.json()
+  return {
+    today: parseDevSessionCount(report, 'today'),
+    last7Days: parseDevSessionCount(report, 'last7Days'),
+    thisMonth: parseDevSessionCount(report, 'thisMonth'),
+    thisYear: parseDevSessionCount(report, 'thisYear'),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function analyticsDevPlugin(): Plugin {
+  const env = loadLocalEnv()
+
+  return {
+    name: 'analytics-dev-api',
+    configureServer(server) {
+      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const url = req.url ?? ''
+
+        if (url.startsWith('/api/analytics/summary') && req.method === 'GET') {
+          const propertyId = env['GA4_PROPERTY_ID']
+          const serviceAccountJson = env['GA4_SERVICE_ACCOUNT_JSON'] || env['FIREBASE_SERVICE_ACCOUNT_JSON']
+          if (!propertyId || !serviceAccountJson) {
+            json(res, 503, { error: 'Google Analytics is not configured (GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_JSON).' })
+            return
+          }
+          try {
+            if (_devGaSummaryCache && Date.now() < _devGaSummaryCache.expiresAt) {
+              json(res, 200, _devGaSummaryCache.value)
+              return
+            }
+            const value = await fetchDevGaSummary(env)
+            _devGaSummaryCache = { value, expiresAt: Date.now() + 10 * 60 * 1000 }
+            json(res, 200, value)
+          } catch (e) {
+            json(res, 500, { error: e instanceof Error ? e.message : 'Analytics summary failed' })
+          }
+          return
+        }
+
+        next()
+      })
+    },
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function bonumDevPlugin(): Plugin {
   const env = loadLocalEnv()
 
@@ -230,6 +350,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     bonumDevPlugin(),
+    analyticsDevPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png', 'vite.svg'],

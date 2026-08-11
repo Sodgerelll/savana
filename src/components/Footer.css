@@ -129,6 +129,32 @@
   color: var(--color-text);
 }
 
+.visitor-stats {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.visitor-stats-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: var(--fs-xs);
+  color: var(--color-text);
+  opacity: 0.75;
+}
+
+.visitor-stats-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.visitor-stats-value {
+  font-weight: 600;
+  opacity: 1;
+}
+
 .footer-bottom-links {
   display: flex;
   align-items: center;

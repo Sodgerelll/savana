@@ -1,4 +1,5 @@
 import {
+  Activity,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -120,6 +121,7 @@ import { createFinanceRecurring, updateFinanceRecurring, deleteFinanceRecurring,
 import { subscribeToCrmPayments, type CrmPaymentRecord } from "../lib/crmPayments";
 import logoBlack from "../assets/logoBlack.png";
 import DashboardPage from "./admin/DashboardPage";
+import AnalyticsPage from "./admin/AnalyticsPage";
 import WebsitePage from "./admin/WebsitePage";
 import CategoriesPage from "./admin/CategoriesPage";
 import OrdersPage from "./admin/OrdersPage";
@@ -174,6 +176,7 @@ import "./Auth.css";
 type AdminSection =
   | "dashboard"
   | "website"
+  | "analytics"
   | "categories"
   | "products"
   | "discounts"
@@ -696,6 +699,7 @@ export default function Account() {
   const implementedSections = new Set<AdminSection>([
     "dashboard",
     "website",
+    "analytics",
     "categories",
     "products",
     "discounts",
@@ -817,6 +821,13 @@ export default function Account() {
                 label: "Контент төв",
                 description: "Website settings, banners, markets, testimonials.",
                 icon: <Globe size={18} />,
+                implemented: true,
+              },
+              {
+                id: "analytics",
+                label: copy.analyticsMenu,
+                description: "Google Analytics-аас хандалтын статистик харна.",
+                icon: <Activity size={18} />,
                 implemented: true,
               },
               {
@@ -1111,6 +1122,13 @@ export default function Account() {
                 label: "Content hub",
                 description: "Website settings, banners, markets, and testimonials.",
                 icon: <Globe size={18} />,
+                implemented: true,
+              },
+              {
+                id: "analytics",
+                label: copy.analyticsMenu,
+                description: "Visitor stats pulled live from Google Analytics.",
+                icon: <Activity size={18} />,
                 implemented: true,
               },
               {
@@ -3197,6 +3215,8 @@ export default function Account() {
             </>
           ) : activeSection === "website" ? (
             <WebsitePage ctx={adminCtx} />
+          ) : activeSection === "analytics" ? (
+            <AnalyticsPage ctx={adminCtx} />
           ) : activeSection === "messages" ? (
             <MessagesPage ctx={adminCtx} />
           ) : activeSection === "orders" ? (
