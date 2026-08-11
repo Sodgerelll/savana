@@ -44,6 +44,7 @@ import {
 import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
 import {
   createManualOrder,
+  deleteOrder,
   subscribeToOrders,
   subscribeToUserOrders,
   updateOrderByAdmin,
@@ -2982,6 +2983,7 @@ export default function Account() {
     handleOrderModalSubmit,
     orderModalError,
     savingOrderModal,
+    deleteOrder,
     manualOrderModal,
     setManualOrderModal,
     closeManualOrderModal,

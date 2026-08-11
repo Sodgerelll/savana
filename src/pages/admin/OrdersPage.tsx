@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pencil, Plus, SlidersHorizontal, X } from "lucide-react";
+import { Pencil, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
@@ -18,6 +18,8 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
     orderSourceOptions,
     openOrderModal,
     openManualOrderModal,
+    openConfirmModal,
+    deleteOrder,
     formatAdminDateTime,
     formatStorePrice,
     getOrderStatusLabel,
@@ -261,6 +263,29 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                         >
                           <Pencil size={15} />
                         </button>
+                        {order.source !== "web" && (
+                          <button
+                            type="button"
+                            className="admin-icon-btn"
+                            onClick={() =>
+                              openConfirmModal({
+                                title: copy.confirmDeleteTitle,
+                                description:
+                                  language === "MN"
+                                    ? `${order.orderNumber} захиалгыг устгах уу? Энэ үйлдлийг буцаах боломжгүй.`
+                                    : `Delete order ${order.orderNumber}? This cannot be undone.`,
+                                confirmLabel: copy.delete,
+                                destructive: true,
+                                onConfirm: async () => {
+                                  await deleteOrder(order.id);
+                                },
+                              })
+                            }
+                            aria-label={`${copy.delete} ${order.orderNumber}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

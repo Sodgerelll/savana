@@ -277,7 +277,9 @@ service cloud.firestore {
             && request.resource.data.payment.paidAt is string
             && request.resource.data.payment.paidAt.size() > 0)
         );
-      allow delete: if false;
+      // Web (storefront) orders are never deletable; orders from every other channel
+      // (manual, messenger, phone, …) can be removed by a privileged admin.
+      allow delete: if hasPrivilegedProfileRole() && resource.data.source != "web";
     }
 
     match /customers/{customerId} {

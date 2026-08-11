@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -598,6 +599,11 @@ async function markOrderAsPaidClientFallback(orderId: string) {
   });
 
   return nextPayment;
+}
+
+/** Web orders (placed through the storefront) are never deletable — only orders from other channels are. */
+export async function deleteOrder(orderId: string) {
+  await deleteDoc(doc(db, ORDERS_COLLECTION, orderId));
 }
 
 export async function updateOrderByAdmin(orderId: string, input: UpdateOrderAdminInput) {
