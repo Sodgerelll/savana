@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "import:savana": "node scripts/import-savana-storefront.mjs"
+    "import:savana": "node scripts/import-savana-storefront.mjs",
+    "migrate:sales": "node scripts/migrate-manual-orders-to-sales.mjs"
   },
   "dependencies": {
     "firebase": "^12.10.0",

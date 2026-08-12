@@ -297,6 +297,13 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    // Offline sales (store, messenger, phone, …). Admin-only end to end — unlike
+    // /orders these are never created or read by a shopper's browser.
+    match /sales/{saleId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     match /financeEntries/{entryId} {
       allow read, list: if hasPrivilegedProfileRole();
       allow create, update, delete: if hasPrivilegedProfileRole();

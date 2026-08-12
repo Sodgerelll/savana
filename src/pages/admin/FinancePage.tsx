@@ -63,6 +63,7 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
     financeRecurring,
     journalEntries,
     orders,
+    sales,
     directSales,
     customerTransactions,
     language,
@@ -134,10 +135,10 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
   );
   const monthBalance = monthIncome - monthExpense;
 
-  // Discounts given this month across online orders, direct sales & seller transfers.
+  // Discounts given this month across online orders, offline sales, direct sales & seller transfers.
   const monthDiscounts = useMemo(
-    () => computeDiscountStats({ orders, directSales, customerTransactions }, monthPrefix),
-    [orders, directSales, customerTransactions, monthPrefix],
+    () => computeDiscountStats({ orders, sales, directSales, customerTransactions }, monthPrefix),
+    [orders, sales, directSales, customerTransactions, monthPrefix],
   );
 
   const tableEntries = useMemo(() => {

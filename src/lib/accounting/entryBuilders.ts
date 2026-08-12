@@ -102,14 +102,14 @@ export function buildDirectSaleEntry(params: { lineTotal: number; cogsAmount: nu
   return assertBalanced(lines);
 }
 
-// ─── Manual order (admin-registered web/messenger/phone order) ────────────────
+// ─── Offline sale (store, messenger, phone, … — the Sales module) ─────────────
 
 /**
- * Counterpart of api/_lib/postOrderPaidEntry.ts for orders an admin registers by hand:
- * the money lands in whichever account the selected payment method settles into instead
- * of always going through the Bonum clearing account.
+ * Counterpart of api/_lib/postOrderPaidEntry.ts for sales taken outside the storefront:
+ * revenue is booked as direct (non-online) sales and the money lands in whichever account
+ * the selected payment method settles into instead of the Bonum clearing account.
  */
-export function buildManualOrderEntry(params: {
+export function buildSaleEntry(params: {
   grandTotal: number;
   cogsAmount: number;
   paymentMethod: string;
@@ -117,7 +117,7 @@ export function buildManualOrderEntry(params: {
   const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
   const lines = [
     line(moneyAccount, params.grandTotal, 0),
-    line(ACCOUNT_CODES.REVENUE_ONLINE, 0, params.grandTotal),
+    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, params.grandTotal),
     ...cogsLines(params.cogsAmount),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);

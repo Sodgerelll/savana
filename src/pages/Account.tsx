@@ -12,6 +12,7 @@ import {
   Package,
   Percent,
   RotateCcw,
+  ShoppingBag,
   Store,
   Trash2,
   UserCircle2,
@@ -43,18 +44,25 @@ import {
 } from "../lib/userProfiles";
 import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
 import {
-  createManualOrder,
   deleteOrder,
   subscribeToOrders,
   subscribeToUserOrders,
   updateOrderByAdmin,
-  SHIPPING_FEE,
   type OrderItemPayload,
-  type OrderPaymentMethod,
   type OrderRecord,
-  type OrderSource,
   type OrderStatus,
 } from "../lib/orders";
+import {
+  createSale,
+  deleteSale,
+  subscribeToSales,
+  updateSale,
+  type SaleChannel,
+  type SaleCustomerPayload,
+  type SalePaymentMethod,
+  type SaleRecord,
+  type SaleStatus,
+} from "../lib/sales";
 import { DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
 import {
   DEFAULT_COLLECTION_GRADIENT,
@@ -126,6 +134,7 @@ import AnalyticsPage from "./admin/AnalyticsPage";
 import WebsitePage from "./admin/WebsitePage";
 import CategoriesPage from "./admin/CategoriesPage";
 import OrdersPage from "./admin/OrdersPage";
+import SalesPage from "./admin/SalesPage";
 import UsersPage from "./admin/UsersPage";
 import CrmCustomersPage from "./admin/CrmCustomersPage";
 import CrmCustomerTransactionsPage from "./admin/CrmCustomerTransactionsPage";
@@ -161,8 +170,12 @@ import {
   getAuthMethodLabel,
   getOrderStatusLabel,
   getOrderStatusClassName,
-  getOrderSourceLabel,
-  getOrderSourceOptions,
+  getSaleChannelLabel,
+  getSaleChannelOptions,
+  getSaleCustomerTypeLabel,
+  getSaleCustomerTypeOptions,
+  getSaleCustomerName,
+  cloneSaleRecord,
   getOrderTotalQuantity,
   getOrderPaymentStatusLabel,
   formatAdminDateTime,
@@ -184,6 +197,7 @@ type AdminSection =
   | "directSales"
   | "messages"
   | "orders"
+  | "sales"
   | "users"
   | "crmOverview"
   | "crmCustomers"
@@ -264,19 +278,25 @@ interface OrderModalState {
   draft: OrderRecord;
 }
 
-/** Draft behind the "register an order by hand" modal on the Orders page. */
-interface ManualOrderDraft {
-  source: OrderSource;
-  status: OrderStatus;
-  paymentMethod: OrderPaymentMethod;
-  customer: OrderRecord["customer"];
-  address: OrderRecord["address"];
+/** Draft behind the create/edit modal on the Sales page. */
+interface SaleDraft {
+  /** Edit mode only — absent while registering a new sale. */
+  id: string;
+  saleNumber: string;
+  status: SaleStatus;
+  channel: SaleChannel;
+  paymentMethod: SalePaymentMethod;
+  customer: SaleCustomerPayload;
+  address: SaleRecord["address"];
   items: OrderItemPayload[];
   shippingFee: number;
 }
 
-interface ManualOrderModalState {
-  draft: ManualOrderDraft;
+interface SaleModalState {
+  mode: "create" | "edit";
+  draft: SaleDraft;
+  /** The record as stored, so an edit knows what to reverse in the ledger and in stock. */
+  previous?: SaleRecord;
 }
 
 interface UserProfileModalState {
@@ -386,7 +406,7 @@ interface AdminMenuGroup {
 }
 
 const VALID_SECTIONS = new Set<string>([
-  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "users",
+  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
   "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
   "factoryOverview", "factoryProduction", "rawMaterials", "factoryInventory",
@@ -458,7 +478,7 @@ export default function Account() {
   const [testimonialModal, setTestimonialModal] = useState<TestimonialModalState | null>(null);
   const [discountModal, setDiscountModal] = useState<DiscountModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
-  const [manualOrderModal, setManualOrderModal] = useState<ManualOrderModalState | null>(null);
+  const [saleModal, setSaleModal] = useState<SaleModalState | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [confirmModalLoading, setConfirmModalLoading] = useState(false);
   const [confirmModalError, setConfirmModalError] = useState<string | null>(null);
@@ -492,14 +512,16 @@ export default function Account() {
   const [userProfileError, setUserProfileError] = useState<string | null>(null);
   const [savingOrderModal, setSavingOrderModal] = useState(false);
   const [orderModalError, setOrderModalError] = useState<string | null>(null);
-  const [savingManualOrder, setSavingManualOrder] = useState(false);
-  const [manualOrderError, setManualOrderError] = useState<string | null>(null);
+  const [savingSale, setSavingSale] = useState(false);
+  const [saleModalError, setSaleModalError] = useState<string | null>(null);
   const [directoryUsers, setDirectoryUsers] = useState<UserProfile[]>([]);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [contactMessages, setContactMessages] = useState<ContactMessageRecord[]>([]);
   const [contactMessagesError, setContactMessagesError] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [sales, setSales] = useState<SaleRecord[]>([]);
+  const [salesError, setSalesError] = useState<string | null>(null);
   const [myOrders, setMyOrders] = useState<OrderRecord[]>([]);
   const [myOrdersError, setMyOrdersError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
@@ -660,18 +682,45 @@ export default function Account() {
     [directoryUsers]
   );
 
-  const paidOrdersCount = useMemo(() => orders.filter((order) => order.status === "paid").length, [orders]);
+  /**
+   * The Orders section is storefront-only. Anything an admin registered by hand predates
+   * the Sales module and belongs there instead, so it is filtered out everywhere except
+   * the Finance reconciliation view, which still needs the raw collection.
+   */
+  const onlineOrders = useMemo(() => orders.filter((order) => !order.isManual), [orders]);
+  const paidOrdersCount = useMemo(
+    () => onlineOrders.filter((order) => order.status === "paid").length,
+    [onlineOrders]
+  );
   const deliveringOrdersCount = useMemo(
-    () => orders.filter((order) => order.status === "delivering").length,
-    [orders]
+    () => onlineOrders.filter((order) => order.status === "delivering").length,
+    [onlineOrders]
   );
   const deliveredOrdersCount = useMemo(
-    () => orders.filter((order) => order.status === "delivered").length,
-    [orders]
+    () => onlineOrders.filter((order) => order.status === "delivered").length,
+    [onlineOrders]
   );
   const guestOrdersCount = useMemo(
-    () => orders.filter((order) => order.auth.isAnonymous).length,
-    [orders]
+    () => onlineOrders.filter((order) => order.auth.isAnonymous).length,
+    [onlineOrders]
+  );
+  const paidSalesCount = useMemo(() => sales.filter((sale) => sale.status !== "new").length, [sales]);
+  const deliveredSalesCount = useMemo(
+    () => sales.filter((sale) => sale.status === "delivered").length,
+    [sales]
+  );
+  const individualSalesCount = useMemo(
+    () => sales.filter((sale) => sale.customer.type === "individual").length,
+    [sales]
+  );
+  const organizationSalesCount = useMemo(
+    () => sales.filter((sale) => sale.customer.type === "organization").length,
+    [sales]
+  );
+  /** Only settled sales count as revenue — a "new" sale is still awaiting payment. */
+  const salesRevenueTotal = useMemo(
+    () => sales.reduce((sum, sale) => (sale.status === "new" ? sum : sum + sale.totals.grandTotal), 0),
+    [sales]
   );
   const contactMessagesLast7DaysCount = useMemo(() => {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -695,8 +744,8 @@ export default function Account() {
     ],
     [language]
   );
-  const orderSourceOptions = useMemo(() => getOrderSourceOptions(language), [language]);
-  const manualOrdersCount = useMemo(() => orders.filter((order) => order.isManual).length, [orders]);
+  const saleChannelOptions = useMemo(() => getSaleChannelOptions(language), [language]);
+  const saleCustomerTypeOptions = useMemo(() => getSaleCustomerTypeOptions(language), [language]);
   const implementedSections = new Set<AdminSection>([
     "dashboard",
     "website",
@@ -707,6 +756,7 @@ export default function Account() {
     "directSales",
     "messages",
     "orders",
+    "sales",
     "users",
     "factoryOverview",
     "factoryInventory",
@@ -888,11 +938,19 @@ export default function Account() {
               {
                 id: "orders",
                 label: "Захиалга",
-                description: "Order review, payment state, fulfillment handoff.",
+                description: "Онлайн дэлгүүрээр ирсэн захиалгын төлөв, төлбөр, хүргэлт.",
                 icon: <WalletCards size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
+              },
+              {
+                id: "sales",
+                label: "Борлуулалт",
+                description: "Дэлгүүр, мессенжер, утас — онлайнаас бусад бүх борлуулалт.",
+                icon: <ShoppingBag size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "crmService",
@@ -1189,11 +1247,19 @@ export default function Account() {
               {
                 id: "orders",
                 label: "Orders",
-                description: "Order review, payment state, and fulfillment handoff.",
+                description: "Online store orders — review, payment state, fulfillment handoff.",
                 icon: <WalletCards size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
+              },
+              {
+                id: "sales",
+                label: "Sales",
+                description: "Store, Messenger, phone — every sale made outside the online store.",
+                icon: <ShoppingBag size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
               {
                 id: "crmService",
@@ -1360,6 +1426,24 @@ export default function Account() {
       },
       onError: (subscriptionError) => {
         setOrdersError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setSales([]);
+      setSalesError(null);
+      return;
+    }
+
+    return subscribeToSales({
+      onData: (nextSales) => {
+        setSales(nextSales);
+        setSalesError(null);
+      },
+      onError: (subscriptionError) => {
+        setSalesError(subscriptionError.message);
       },
     });
   }, [isPrivilegedUser]);
@@ -1579,7 +1663,7 @@ export default function Account() {
   }, [isPrivilegedUser, user]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "messages" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
+    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "sales" || activeSection === "messages" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
       setActiveSection("dashboard");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2209,22 +2293,27 @@ export default function Account() {
    * Items are aggregated per product so a product appearing in several order lines
    * (e.g. different variants) is written once.
    */
-  const applyOrderSoldCountDelta = (items: OrderItemPayload[], sign: 1 | -1) => {
-    const itemsByProduct = new Map<number, OrderItemPayload[]>();
-    for (const item of items) {
-      const list = itemsByProduct.get(item.productId) ?? [];
-      list.push(item);
-      itemsByProduct.set(item.productId, list);
+  const applySoldCountAdjustments = (adjustments: { items: OrderItemPayload[]; sign: 1 | -1 }[]) => {
+    // Every adjustment is folded into one write per product. Calling this twice in a row
+    // would not work: both calls read the same `products` snapshot, so the second write
+    // would overwrite the first.
+    const signedItemsByProduct = new Map<number, { item: OrderItemPayload; sign: 1 | -1 }[]>();
+    for (const { items, sign } of adjustments) {
+      for (const item of items) {
+        const list = signedItemsByProduct.get(item.productId) ?? [];
+        list.push({ item, sign });
+        signedItemsByProduct.set(item.productId, list);
+      }
     }
 
-    itemsByProduct.forEach((productItems, productId) => {
+    signedItemsByProduct.forEach((productItems, productId) => {
       const currentProduct = products.find((p) => p.id === productId);
       if (!currentProduct) return;
 
       let nextSoldCount = currentProduct.soldCount ?? 0;
       const nextVariants = currentProduct.variants?.map((v) => ({ ...v }));
 
-      for (const item of productItems) {
+      for (const { item, sign } of productItems) {
         nextSoldCount = Math.max(0, nextSoldCount + sign * item.quantity);
         if (nextVariants && item.variant) {
           const idx = nextVariants.findIndex((v) => v.name === item.variant);
@@ -2244,46 +2333,83 @@ export default function Account() {
     });
   };
 
-  const openManualOrderModal = () => {
-    setManualOrderModal({
+  const applyOrderSoldCountDelta = (items: OrderItemPayload[], sign: 1 | -1) =>
+    applySoldCountAdjustments([{ items, sign }]);
+
+  const createEmptySaleDraft = (): SaleDraft => ({
+    id: "",
+    saleNumber: "",
+    status: "delivered",
+    channel: "store",
+    paymentMethod: "cash",
+    customer: {
+      type: "individual",
+      fullName: "",
+      organizationName: "",
+      registrationNumber: "",
+      phoneNumber: "",
+      email: null,
+      note: "",
+    },
+    address: {
+      region: DEFAULT_ADDRESS_REGION,
+      districtOrSoum: "",
+      khorooOrBag: "",
+      streetAddress: "",
+      additionalAddress: "",
+    },
+    items: [],
+    shippingFee: 0,
+  });
+
+  const openSaleCreateModal = () => {
+    setSaleModal({ mode: "create", draft: createEmptySaleDraft() });
+    setSaleModalError(null);
+  };
+
+  const openSaleModal = (sale: SaleRecord) => {
+    const previous = cloneSaleRecord(sale);
+    setSaleModal({
+      mode: "edit",
+      previous,
       draft: {
-        source: "messenger",
-        status: "new",
-        paymentMethod: "cash",
-        customer: { fullName: "", phoneNumber: "", email: null, note: "" },
-        address: {
-          region: DEFAULT_ADDRESS_REGION,
-          districtOrSoum: "",
-          khorooOrBag: "",
-          streetAddress: "",
-          additionalAddress: "",
-        },
-        items: [],
-        shippingFee: SHIPPING_FEE,
+        id: previous.id,
+        saleNumber: previous.saleNumber,
+        status: previous.status,
+        channel: previous.channel,
+        paymentMethod: previous.paymentMethod,
+        customer: { ...previous.customer },
+        address: { ...previous.address },
+        items: previous.items.map((item) => ({ ...item })),
+        shippingFee: previous.totals.shippingFee,
       },
     });
-    setManualOrderError(null);
+    setSaleModalError(null);
   };
 
-  const closeManualOrderModal = () => {
-    if (savingManualOrder) {
+  const closeSaleModal = () => {
+    if (savingSale) {
       return;
     }
 
-    setManualOrderModal(null);
-    setManualOrderError(null);
+    setSaleModal(null);
+    setSaleModalError(null);
   };
 
-  const handleManualOrderSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!manualOrderModal) {
+    if (!saleModal) {
       return;
     }
 
-    const draft = manualOrderModal.draft;
-    const customer = {
+    const draft = saleModal.draft;
+    const isOrganization = draft.customer.type === "organization";
+    const customer: SaleCustomerPayload = {
+      type: draft.customer.type,
       fullName: draft.customer.fullName.trim(),
+      organizationName: isOrganization ? draft.customer.organizationName.trim() : "",
+      registrationNumber: isOrganization ? draft.customer.registrationNumber.trim() : "",
       phoneNumber: draft.customer.phoneNumber.trim(),
       email: draft.customer.email?.trim() ? draft.customer.email.trim() : null,
       note: draft.customer.note.trim(),
@@ -2296,12 +2422,12 @@ export default function Account() {
       additionalAddress: draft.address.additionalAddress.trim(),
     };
 
+    // Offline sales are often walk-ins with nothing to record beyond the goods, so
+    // neither the recipient details nor the delivery address are mandatory here.
     const items = draft.items.filter((item) => item.productId > 0 && item.quantity > 0);
 
     if (items.length === 0) {
-      setManualOrderError(
-        language === "MN" ? "Дор хаяж нэг бараа нэмнэ үү." : "Add at least one item.",
-      );
+      setSaleModalError(language === "MN" ? "Дор хаяж нэг бараа нэмнэ үү." : "Add at least one item.");
       return;
     }
 
@@ -2311,47 +2437,74 @@ export default function Account() {
       0,
     );
     const shippingFee = Math.max(0, Math.round(draft.shippingFee));
+    const totals = { subtotal, shippingFee, grandTotal: subtotal + shippingFee, discountTotal };
 
-    setSavingManualOrder(true);
-    setManualOrderError(null);
+    setSavingSale(true);
+    setSaleModalError(null);
 
     try {
-      await createManualOrder({
-        source: draft.source,
+      const input = {
         status: draft.status,
+        channel: draft.channel,
         paymentMethod: draft.paymentMethod,
         customer,
         address,
         items,
-        totals: {
-          subtotal,
-          shippingFee,
-          grandTotal: subtotal + shippingFee,
-          discountTotal,
-        },
+        totals,
         createdByUid: user?.uid ?? "",
         createdByName: profile?.displayName ?? user?.email ?? "",
-      });
+      };
 
-      // Stock is deducted at the "delivered" boundary — same rule the order edit
-      // modal applies when an existing order crosses into/out of delivered.
-      if (draft.status === "delivered") {
-        applyOrderSoldCountDelta(items, 1);
+      if (saleModal.mode === "edit" && saleModal.previous) {
+        const previous = saleModal.previous;
+        await updateSale(previous.id, previous, input);
+
+        // Stock moves at the "delivered" boundary, the same rule orders follow. Releasing
+        // the old items and reserving the new ones has to happen in one pass so an edit
+        // that changes both the status and the item list nets out correctly.
+        applySoldCountAdjustments([
+          ...(previous.status === "delivered" ? [{ items: previous.items, sign: -1 as const }] : []),
+          ...(draft.status === "delivered" ? [{ items, sign: 1 as const }] : []),
+        ]);
+      } else {
+        await createSale(input);
+
+        if (draft.status === "delivered") {
+          applyOrderSoldCountDelta(items, 1);
+        }
       }
 
-      setManualOrderModal(null);
-      setManualOrderError(null);
+      setSaleModal(null);
+      setSaleModalError(null);
     } catch (error) {
-      setManualOrderError(
+      setSaleModalError(
         error instanceof Error
           ? error.message
           : language === "MN"
-            ? "Захиалга бүртгэж чадсангүй."
-            : "Unable to register the order.",
+            ? "Борлуулалтыг хадгалж чадсангүй."
+            : "Unable to save the sale.",
       );
     } finally {
-      setSavingManualOrder(false);
+      setSavingSale(false);
     }
+  };
+
+  const handleSaleDeleteRequest = (sale: SaleRecord) => {
+    openConfirmModal({
+      title: language === "MN" ? "Борлуулалт устгах" : "Delete sale",
+      description:
+        language === "MN"
+          ? `${sale.saleNumber} борлуулалтыг устгах уу? Санхүүгийн бичилт нь цуцлагдана.`
+          : `Delete sale ${sale.saleNumber}? Its journal entry will be reversed.`,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: async () => {
+        await deleteSale(sale.id, sale);
+        if (sale.status === "delivered") {
+          applyOrderSoldCountDelta(sale.items, -1);
+        }
+      },
+    });
   };
 
   const handleOrderCustomerChange =
@@ -2403,21 +2556,6 @@ export default function Account() {
             draft: {
               ...current.draft,
               status: nextStatus,
-            },
-          }
-        : current
-    );
-  };
-
-  const handleOrderSourceChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    const nextSource = event.target.value as OrderSource;
-    setOrderModal((current) =>
-      current
-        ? {
-            ...current,
-            draft: {
-              ...current.draft,
-              source: nextSource,
             },
           }
         : current
@@ -2719,16 +2857,26 @@ export default function Account() {
     directoryUsers,
     directoryError,
     userRoleCounts,
-    // orders
-    orders,
+    // orders — storefront checkouts only
+    orders: onlineOrders,
+    /** Raw collection including legacy hand-registered orders; Finance reconciliation needs it. */
+    allOrders: orders,
     ordersError,
     paidOrdersCount,
     deliveringOrdersCount,
     deliveredOrdersCount,
     guestOrdersCount,
     orderStatusOptions,
-    orderSourceOptions,
-    manualOrdersCount,
+    // sales — every channel other than the storefront
+    sales,
+    salesError,
+    paidSalesCount,
+    deliveredSalesCount,
+    individualSalesCount,
+    organizationSalesCount,
+    salesRevenueTotal,
+    saleChannelOptions,
+    saleCustomerTypeOptions,
     // messages
     contactMessages,
     contactMessagesError,
@@ -2815,7 +2963,8 @@ export default function Account() {
     openTestimonialModal,
     openUserProfileModal,
     openOrderModal,
-    openManualOrderModal,
+    openSaleModal,
+    openSaleCreateModal,
     setCustomerModal,
     setTransactionModal,
     setPackagingModal,
@@ -2831,13 +2980,16 @@ export default function Account() {
     handleNavigationDeleteRequest,
     handleJournalEntryDeleteRequest,
     handleDiscountDeleteRequest,
+    handleSaleDeleteRequest,
     // helpers
     formatAdminDateTime,
     formatStorePrice,
     getOrderStatusLabel,
     getOrderStatusClassName,
-    getOrderSourceLabel,
     getOrderPaymentStatusLabel,
+    getSaleChannelLabel,
+    getSaleCustomerTypeLabel,
+    getSaleCustomerName,
     getOrderTotalQuantity,
     getAuthMethodLabel,
     getRoleLabel,
@@ -2978,19 +3130,18 @@ export default function Account() {
     handleOrderCustomerChange,
     handleOrderAddressChange,
     handleOrderStatusChange,
-    handleOrderSourceChange,
     handleOrderPaymentMethodChange,
     handleOrderModalSubmit,
     orderModalError,
     savingOrderModal,
     deleteOrder,
-    manualOrderModal,
-    setManualOrderModal,
-    closeManualOrderModal,
-    handleManualOrderSubmit,
-    manualOrderError,
-    setManualOrderError,
-    savingManualOrder,
+    saleModal,
+    setSaleModal,
+    closeSaleModal,
+    handleSaleSubmit,
+    saleModalError,
+    setSaleModalError,
+    savingSale,
     userProfileModal,
     setUserProfileModal,
     closeUserProfileModal,
@@ -3223,6 +3374,8 @@ export default function Account() {
             <MessagesPage ctx={adminCtx} />
           ) : activeSection === "orders" ? (
             <OrdersPage ctx={adminCtx} />
+          ) : activeSection === "sales" ? (
+            <SalesPage ctx={adminCtx} />
           ) : activeSection === "users" ? (
             <UsersPage ctx={adminCtx} />
           ) : activeSection === "categories" ? (

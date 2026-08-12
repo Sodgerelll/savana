@@ -2353,6 +2353,31 @@
   gap: 1rem;
 }
 
+/* The head of a collapsible inline card — a full-width button that keeps the plain
+   card-head look. */
+.admin-inline-card-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-inline-card-toggle-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text);
+  opacity: 0.78;
+}
+
+.admin-inline-card-toggle:hover .admin-inline-card-toggle-meta {
+  opacity: 1;
+}
+
 .admin-repeater-toolbar {
   display: flex;
   justify-content: space-between;
@@ -3155,6 +3180,12 @@
   .admin-inline-card-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* The toggle keeps its chevron on the right even when other heads stack. */
+  .admin-inline-card-toggle {
+    flex-direction: row;
+    align-items: center;
   }
 
   .admin-order-item-main {

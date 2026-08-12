@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pencil, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
 
@@ -14,28 +13,17 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
     deliveringOrdersCount,
     deliveredOrdersCount,
     guestOrdersCount,
-    manualOrdersCount,
-    orderSourceOptions,
     openOrderModal,
-    openManualOrderModal,
     openConfirmModal,
     deleteOrder,
     formatAdminDateTime,
     formatStorePrice,
     getOrderStatusLabel,
     getOrderStatusClassName,
-    getOrderSourceLabel,
     getOrderPaymentStatusLabel,
     getOrderTotalQuantity,
     getAuthMethodLabel,
   } = ctx;
-
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-
-  const visibleOrders = useMemo(
-    () => (sourceFilter === "all" ? (orders as any[]) : (orders as any[]).filter((order: any) => order.source === sourceFilter)),
-    [orders, sourceFilter],
-  );
 
   return (
     <>
@@ -43,13 +31,11 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
         <div>
           <p className="admin-kicker">{copy.orders}</p>
           <h1>{copy.ordersTitle}</h1>
-          <p>{copy.ordersText}</p>
-        </div>
-        <div className="admin-topbar-actions">
-          <button type="button" className="btn btn-primary" onClick={openManualOrderModal}>
-            <Plus size={16} />
-            {language === "MN" ? "Гараар захиалга бүртгэх" : "Register order manually"}
-          </button>
+          <p>
+            {language === "MN"
+              ? "Онлайн дэлгүүрээр орж ирсэн захиалгууд. Бусад сувгийн борлуулалт Борлуулалт цэсэнд бүртгэгдэнэ."
+              : "Orders placed through the online store. Sales from other channels live in the Sales section."}
+          </p>
         </div>
       </div>
 
@@ -76,35 +62,6 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
           <span>{copy.guestOrders}</span>
           <strong>{guestOrdersCount}</strong>
         </div>
-        <div className="admin-summary-card admin-summary-card-compact">
-          <span>{language === "MN" ? "Гараар бүртгэсэн" : "Manually registered"}</span>
-          <strong>{manualOrdersCount}</strong>
-        </div>
-      </div>
-
-      <div className="admin-filter-bar">
-        <div className="admin-filter-group">
-          <SlidersHorizontal size={14} className="admin-filter-group-icon" />
-          <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-            <option value="all">{language === "MN" ? "Бүх төрөл" : "All order types"}</option>
-            {(orderSourceOptions as any[]).map((option: any) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="admin-filter-meta">
-          {sourceFilter !== "all" && (
-            <button type="button" className="admin-filter-clear" onClick={() => setSourceFilter("all")}>
-              <X size={14} />
-              {language === "MN" ? "Цэвэрлэх" : "Clear"}
-            </button>
-          )}
-          <span className="admin-filter-count">
-            {visibleOrders.length} / {orders.length} {language === "MN" ? "үр дүн" : "results"}
-          </span>
-        </div>
       </div>
 
       <div className="admin-data-card">
@@ -124,7 +81,6 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
               <tr>
                 <th>{language === "MN" ? "Захиалга" : "Order"}</th>
                 <th>{language === "MN" ? "Үүссэн хугацаа" : "Created"}</th>
-                <th>{language === "MN" ? "Захиалгын төрөл" : "Order type"}</th>
                 <th>{copy.status}</th>
                 <th>{language === "MN" ? "Бараа" : "Items"}</th>
                 <th>{copy.paymentLabel}</th>
@@ -139,14 +95,14 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
               </tr>
             </thead>
             <tbody>
-              {visibleOrders.length === 0 ? (
+              {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="admin-table-empty">
+                  <td colSpan={13} className="admin-table-empty">
                     {copy.emptyOrders}
                   </td>
                 </tr>
               ) : (
-                visibleOrders.map((order: any) => (
+                (orders as any[]).map((order: any) => (
                   <tr key={order.id}>
                     <td>
                       <button type="button" className="admin-table-link" onClick={() => openOrderModal(order)}>
@@ -159,14 +115,6 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                     <td>
                       <div className="admin-table-primary">
                         <strong>{formatAdminDateTime(order.createdAt, language)}</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <strong>{getOrderSourceLabel(order.source, language)}</strong>
-                        {order.isManual && (
-                          <small>{language === "MN" ? "Гараар бүртгэсэн" : "Registered manually"}</small>
-                        )}
                       </div>
                     </td>
                     <td>
@@ -213,11 +161,7 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                     </td>
                     <td>
                       <span className="admin-table-code">
-                        {order.isManual
-                          ? language === "MN"
-                            ? "Админ"
-                            : "Admin"
-                          : order.auth.isAnonymous
+                        {order.auth.isAnonymous
                           ? language === "MN"
                             ? "Зочин"
                             : "Guest"

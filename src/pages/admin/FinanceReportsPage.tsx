@@ -34,6 +34,7 @@ const MONTH_NAMES_EN = [
 
 const SOURCE_LABELS: Record<string, { mn: string; en: string }> = {
   order: { mn: "Онлайн захиалга", en: "Online order" },
+  sale: { mn: "Борлуулалт", en: "Sale" },
   transfer: { mn: "Шилжүүлэг", en: "Transfer" },
   payment: { mn: "Төлбөр", en: "Payment" },
   directSale: { mn: "Шууд борлуулалт", en: "Direct sale" },

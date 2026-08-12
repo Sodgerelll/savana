@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type FormEvent } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { AdminModal } from "./AdminModal";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductCode, getProductLabel } from "./adminHelpers";
@@ -9,6 +9,8 @@ import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
+import { SHIPPING_FEE } from "../../lib/orders";
+import { saleChannelRequiresAddress } from "../../lib/sales";
 import type { CustomerType } from "../../lib/customers";
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
@@ -25,6 +27,43 @@ function CatLeaf({ node, selected, onSelect, indent, bold }: { node: any; select
       {node.collection.name}
       {selected && <span className="admin-cat-check">✓</span>}
     </button>
+  );
+}
+
+/**
+ * An inline card whose body folds away. Used for optional modal sections so the form
+ * opens short — the state lives here, so it resets to collapsed whenever the modal
+ * (and with it this component) unmounts.
+ */
+function AdminCollapsibleCard({
+  title,
+  note,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  note?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="admin-inline-card">
+      <button
+        type="button"
+        className="admin-inline-card-head admin-inline-card-toggle"
+        onClick={() => setOpen((previous) => !previous)}
+        aria-expanded={open}
+      >
+        <strong>{title}</strong>
+        <span className="admin-inline-card-toggle-meta">
+          {note && <small className="admin-inline-note">{note}</small>}
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>
+      </button>
+      {open && children}
+    </div>
   );
 }
 
@@ -166,18 +205,18 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     handleOrderCustomerChange,
     handleOrderAddressChange,
     handleOrderStatusChange,
-    handleOrderSourceChange,
     handleOrderPaymentMethodChange,
     handleOrderModalSubmit,
     orderModalError,
     savingOrderModal,
-    orderSourceOptions,
-    manualOrderModal,
-    setManualOrderModal,
-    closeManualOrderModal,
-    handleManualOrderSubmit,
-    manualOrderError,
-    savingManualOrder,
+    saleModal,
+    setSaleModal,
+    closeSaleModal,
+    handleSaleSubmit,
+    saleModalError,
+    savingSale,
+    saleChannelOptions,
+    saleCustomerTypeOptions,
     userProfileModal,
     setUserProfileModal,
     closeUserProfileModal,
@@ -3944,22 +3983,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         </label>
 
         <label className="admin-field">
-          <span>{language === "MN" ? "Захиалгын төрөл" : "Order type"}</span>
-          <select value={orderModal.draft.source} onChange={handleOrderSourceChange}>
-            {orderSourceOptions.map((sourceOption: any) => (
-              <option key={sourceOption.value} value={sourceOption.value}>
-                {sourceOption.label}
-              </option>
-            ))}
-          </select>
-          <small>
-            {language === "MN"
-              ? "Захиалга ямар сувгаар ирснийг тэмдэглэнэ."
-              : "Records the channel the order came through."}
-          </small>
-        </label>
-
-        <label className="admin-field">
           <span>{language === "MN" ? "Төлбөрийн хэлбэр" : "Payment method"}</span>
           <select value={orderModal.draft.payment.method} onChange={handleOrderPaymentMethodChange}>
             <option value="bonum">Bonum</option>
@@ -4151,14 +4174,20 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   </AdminModal>
 )}
 
-{manualOrderModal && (() => {
-  const draft = manualOrderModal.draft;
+{saleModal && (() => {
+  const draft = saleModal.draft;
+  const isEdit = saleModal.mode === "edit";
   const patchDraft = (patch: any) =>
-    setManualOrderModal({ ...manualOrderModal, draft: { ...draft, ...patch } });
+    setSaleModal({ ...saleModal, draft: { ...draft, ...patch } });
   const patchItem = (index: number, patch: any) => {
     const nextItems = draft.items.map((item: any, i: number) => (i === index ? { ...item, ...patch } : item));
     patchDraft({ items: nextItems });
   };
+
+  const isOrganization = draft.customer.type === "organization";
+  // Delivered channels still prefill the shipping fee, but no customer or address
+  // field is mandatory — an offline sale can be booked with the goods alone.
+  const deliveryChannel = saleChannelRequiresAddress(draft.channel);
 
   const subtotal = draft.items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
   const discountTotal = draft.items.reduce(
@@ -4186,38 +4215,76 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
 
   return (
     <AdminModal
-      title={language === "MN" ? "Гараар захиалга бүртгэх" : "Register order manually"}
+      title={
+        isEdit
+          ? language === "MN"
+            ? `Борлуулалт засах (${draft.saleNumber})`
+            : `Edit sale (${draft.saleNumber})`
+          : language === "MN"
+            ? "Борлуулалт бүртгэх"
+            : "Register a sale"
+      }
       description={
         language === "MN"
-          ? "Мессенжер, утас, имэйлээр ирсэн захиалгыг энд бүртгэнэ."
-          : "Register orders that arrived through Messenger, phone or email."
+          ? "Дэлгүүр, мессенжер, утас гэх мэт онлайнаас бусад сувгийн борлуулалт."
+          : "Sales made through any channel other than the online store."
       }
-      onClose={closeManualOrderModal}
+      onClose={closeSaleModal}
       xl
-      disableClose={savingManualOrder}
+      disableClose={savingSale}
     >
-      <form className="admin-modal-form" onSubmit={handleManualOrderSubmit}>
-        {manualOrderError && <div className="admin-sync-error">{manualOrderError}</div>}
+      <form className="admin-modal-form" onSubmit={handleSaleSubmit}>
+        {saleModalError && <div className="admin-sync-error">{saleModalError}</div>}
 
         <div className="admin-form-grid">
           <label className="admin-field">
-            <span>{language === "MN" ? "Захиалгын төрөл" : "Order type"}</span>
+            <span>{language === "MN" ? "Борлуулалтын суваг" : "Sales channel"}</span>
             <select
-              value={draft.source}
-              onChange={(event: any) => patchDraft({ source: event.target.value })}
+              value={draft.channel}
+              onChange={(event: any) => {
+                const channel = event.target.value;
+                // Switching to a delivered channel offers the standard shipping fee, but
+                // never overwrites a fee the admin already typed.
+                const needsDelivery = saleChannelRequiresAddress(channel);
+                patchDraft({
+                  channel,
+                  shippingFee: needsDelivery && !draft.shippingFee ? SHIPPING_FEE : draft.shippingFee,
+                });
+              }}
               required
             >
-              {orderSourceOptions.map((sourceOption: any) => (
-                <option key={sourceOption.value} value={sourceOption.value}>
-                  {sourceOption.label}
+              {saleChannelOptions.map((channelOption: any) => (
+                <option key={channelOption.value} value={channelOption.value}>
+                  {channelOption.label}
                 </option>
               ))}
             </select>
             <small>
-              {language === "MN"
-                ? "Захиалга ямар сувгаар ирснийг тэмдэглэнэ."
-                : "Records the channel the order came through."}
+              {deliveryChannel
+                ? language === "MN"
+                  ? "Хүргэлттэй суваг — хүргэлтийн үнэ автоматаар бөглөгдөнө."
+                  : "Delivered channel — the shipping fee is prefilled."
+                : language === "MN"
+                  ? "Газар дээрх борлуулалт — хүргэлтийн үнэгүй."
+                  : "Over-the-counter sale — no shipping fee."}
             </small>
+          </label>
+
+          <label className="admin-field">
+            <span>{language === "MN" ? "Харилцагчийн төрөл" : "Customer type"}</span>
+            <select
+              value={draft.customer.type}
+              onChange={(event: any) =>
+                patchDraft({ customer: { ...draft.customer, type: event.target.value } })
+              }
+              required
+            >
+              {saleCustomerTypeOptions.map((typeOption: any) => (
+                <option key={typeOption.value} value={typeOption.value}>
+                  {typeOption.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="admin-field">
@@ -4232,8 +4299,8 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <small>
               {draft.status === "new"
                 ? language === "MN"
-                  ? "Төлбөр хүлээгдэж буй захиалга болно."
-                  : "The order is saved with a pending payment."
+                  ? "Төлбөр хүлээгдэж буй борлуулалт болно."
+                  : "The sale is saved with a pending payment."
                 : language === "MN"
                   ? "Төлбөр төлөгдсөн гэж бүртгэгдэж, санхүүгийн бичилт хийгдэнэ."
                   : "Saved as paid — the revenue journal entry is posted."}
@@ -4253,13 +4320,41 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           </label>
         </div>
 
-        <details className="admin-inline-card admin-collapsible-card">
-          <summary className="admin-inline-card-head">
-            <strong>{copy.customerInfo}</strong>
-          </summary>
+        <AdminCollapsibleCard
+          title={copy.customerInfo}
+          note={language === "MN" ? "Сонголттой" : "Optional"}
+        >
           <div className="admin-form-grid">
+            {isOrganization && (
+              <>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Байгууллагын нэр" : "Organization name"}</span>
+                  <input
+                    type="text"
+                    value={draft.customer.organizationName}
+                    onChange={(event: any) =>
+                      patchDraft({ customer: { ...draft.customer, organizationName: event.target.value } })
+                    }
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Регистрийн дугаар" : "Register number"}</span>
+                  <input
+                    type="text"
+                    value={draft.customer.registrationNumber}
+                    onChange={(event: any) =>
+                      patchDraft({ customer: { ...draft.customer, registrationNumber: event.target.value } })
+                    }
+                  />
+                </label>
+              </>
+            )}
             <label className="admin-field">
-              <span>{language === "MN" ? "Хүлээн авагчийн нэр" : "Recipient name"}</span>
+              <span>
+                {isOrganization
+                  ? language === "MN" ? "Холбоо барих хүн" : "Contact person"
+                  : language === "MN" ? "Худалдан авагчийн нэр" : "Buyer name"}
+              </span>
               <input
                 type="text"
                 value={draft.customer.fullName}
@@ -4299,12 +4394,12 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               />
             </label>
           </div>
-        </details>
+        </AdminCollapsibleCard>
 
-        <details className="admin-inline-card admin-collapsible-card">
-          <summary className="admin-inline-card-head">
-            <strong>{copy.addressInfo}</strong>
-          </summary>
+        <AdminCollapsibleCard
+          title={copy.addressInfo}
+          note={language === "MN" ? "Сонголттой" : "Optional"}
+        >
           <div className="admin-form-grid">
             <label className="admin-field">
               <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
@@ -4385,7 +4480,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               />
             </label>
           </div>
-        </details>
+        </AdminCollapsibleCard>
 
         <div className="admin-data-card" style={{ marginTop: "1rem" }}>
           <div className="admin-data-card-head">
@@ -4619,13 +4714,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           <button
             type="button"
             className="btn btn-outline"
-            onClick={closeManualOrderModal}
-            disabled={savingManualOrder}
+            onClick={closeSaleModal}
+            disabled={savingSale}
           >
             {copy.cancel}
           </button>
-          <button type="submit" className="btn btn-primary" disabled={savingManualOrder}>
-            {savingManualOrder ? "..." : copy.save}
+          <button type="submit" className="btn btn-primary" disabled={savingSale}>
+            {savingSale ? "..." : copy.save}
           </button>
         </div>
       </form>

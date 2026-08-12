@@ -5,13 +5,15 @@ import type { AdminCtx } from "./adminShellTypes";
 import type { CrmPaymentRecord } from "../../lib/crmPayments";
 import type { CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { DirectSaleRecord } from "../../lib/directSales";
+import type { SaleRecord } from "../../lib/sales";
+import { getSaleCustomerName } from "./adminHelpers";
 import { ACCOUNT_CODES } from "../../lib/accounting/chartOfAccounts";
 
 type ReconStatus = "ok" | "missing" | "mismatch";
 
 interface ReconRow {
   id: string;
-  sourceType: "order" | "directSale" | "customerTransaction" | "payment";
+  sourceType: "order" | "sale" | "directSale" | "customerTransaction" | "payment";
   number: string;
   name: string;
   date: string | null;
@@ -25,6 +27,7 @@ interface ReconRow {
 
 const SOURCE_LABELS: Record<ReconRow["sourceType"], { mn: string; en: string }> = {
   order: { mn: "Онлайн захиалга", en: "Online order" },
+  sale: { mn: "Борлуулалт", en: "Sale" },
   directSale: { mn: "Шууд борлуулалт", en: "Direct sale" },
   customerTransaction: { mn: "Борлуулагчийн гүйлгээ", en: "Seller transaction" },
   payment: { mn: "Авлагын төлбөр", en: "AR payment" },
@@ -49,7 +52,10 @@ function statusFor(expected: number, actual: number, entryCount: number): ReconS
 
 export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
   const {
-    orders,
+    // The raw order collection: legacy hand-registered orders still carry ledger entries
+    // under sourceType "order", so excluding them here would report them as orphans.
+    allOrders: orders,
+    sales,
     customerTransactions,
     directSales,
     crmPayments,
@@ -98,7 +104,30 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       });
     }
 
-    // 2. Direct/POS sales → revenue 4300 credit must equal lineTotal.
+    // 2. Settled offline sales → revenue must equal grandTotal. Sales post to 4300, but
+    // sales migrated out of the old manual-order flow carry their original 4100 entry,
+    // so both revenue accounts are netted together.
+    for (const sale of (sales as SaleRecord[]) ?? []) {
+      if (sale.status === "new") continue;
+      const entries = entriesBySource.get(`sale:${sale.id}`) ?? [];
+      const actual =
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_DIRECT, "credit") +
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit");
+      const expected = sale.totals.grandTotal;
+      result.push({
+        id: `offlineSale-${sale.id}`,
+        sourceType: "sale",
+        number: sale.saleNumber,
+        name: getSaleCustomerName(sale) || (mn ? "Нэргүй" : "Unnamed"),
+        date: sale.paidAt ?? sale.createdAt,
+        expected,
+        actual,
+        entryCount: entries.length,
+        status: statusFor(expected, actual, entries.length),
+      });
+    }
+
+    // 3. Direct/POS sales → revenue 4300 credit must equal lineTotal.
     for (const sale of (directSales as DirectSaleRecord[]) ?? []) {
       const entries = entriesBySource.get(`directSale:${sale.id}`) ?? [];
       const actual = netOnAccount(entries, ACCOUNT_CODES.REVENUE_DIRECT, "credit");
@@ -115,7 +144,7 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       });
     }
 
-    // 3. Seller transactions → wholesale revenue 4200 credit (or returns 4910 debit) must equal grandTotal.
+    // 4. Seller transactions → wholesale revenue 4200 credit (or returns 4910 debit) must equal grandTotal.
     for (const tx of (customerTransactions as CustomerTransactionRecord[]) ?? []) {
       const entries = entriesBySource.get(`customerTransaction:${tx.id}`) ?? [];
       const isReturn = tx.type === "return";
@@ -136,7 +165,7 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       });
     }
 
-    // 4. AR payments → AR 1110 credit must equal the payment amount.
+    // 5. AR payments → AR 1110 credit must equal the payment amount.
     for (const payment of (crmPayments as CrmPaymentRecord[]) ?? []) {
       const entries = entriesBySource.get(`payment:${payment.id}`) ?? [];
       const actual = netOnAccount(entries, ACCOUNT_CODES.AR, "credit");
@@ -154,7 +183,7 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
     }
 
     return result.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
-  }, [orders, directSales, customerTransactions, crmPayments, entriesBySource, mn]);
+  }, [orders, sales, directSales, customerTransactions, crmPayments, entriesBySource, mn]);
 
   // Journal entries whose source document is no longer visible (e.g. a deleted
   // seller transaction). Not automatically an error — deletions keep their
@@ -162,14 +191,15 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
   const orphanEntries = useMemo(() => {
     const knownIds = new Set<string>();
     for (const order of (orders as any[]) ?? []) knownIds.add(`order:${order.id}`);
+    for (const sale of (sales as SaleRecord[]) ?? []) knownIds.add(`sale:${sale.id}`);
     for (const sale of (directSales as DirectSaleRecord[]) ?? []) knownIds.add(`directSale:${sale.id}`);
     for (const tx of (customerTransactions as CustomerTransactionRecord[]) ?? []) knownIds.add(`customerTransaction:${tx.id}`);
     for (const payment of (crmPayments as CrmPaymentRecord[]) ?? []) knownIds.add(`payment:${payment.id}`);
-    const checkedTypes = new Set(["order", "directSale", "customerTransaction", "payment"]);
+    const checkedTypes = new Set(["order", "sale", "directSale", "customerTransaction", "payment"]);
     return ((journalEntries as any[]) ?? []).filter(
       (entry) => checkedTypes.has(entry.sourceType) && !knownIds.has(`${entry.sourceType}:${entry.sourceId}`),
     );
-  }, [journalEntries, orders, directSales, customerTransactions, crmPayments]);
+  }, [journalEntries, orders, sales, directSales, customerTransactions, crmPayments]);
 
   const okCount = rows.filter((r) => r.status === "ok").length;
   const missingRows = rows.filter((r) => r.status === "missing");

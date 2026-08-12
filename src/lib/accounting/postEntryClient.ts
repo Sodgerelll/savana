@@ -13,7 +13,7 @@ import type { BuiltEntry, JournalLine } from "./entryBuilders";
 
 export const JOURNAL_ENTRIES_COLLECTION = "journalEntries";
 
-export type SourceType = "order" | "transfer" | "payment" | "directSale" | "customerTransaction";
+export type SourceType = "order" | "sale" | "transfer" | "payment" | "directSale" | "customerTransaction";
 
 export interface PostJournalEntryMeta {
   sourceType: SourceType;

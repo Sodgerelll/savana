@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Aggregates how much revenue was given away as discounts across the three
- * sales channels (online orders, direct/POS sales, seller transfers).
+ * Aggregates how much revenue was given away as discounts across the sales
+ * channels (online orders, offline sales, direct/POS sales, seller transfers).
  * Only recorded discounts are counted: an item counts as discounted when its
  * stored originalUnitPrice (list price at sale time) exceeds the sale price,
  * plus any transaction-level discount on customer transactions.
@@ -17,6 +17,8 @@ export interface DiscountSourceStats {
 
 export interface DiscountStats {
   orders: DiscountSourceStats;
+  /** Offline sales registered in the Sales module (store, messenger, phone, …). */
+  sales: DiscountSourceStats;
   directSales: DiscountSourceStats;
   transfers: DiscountSourceStats;
   total: DiscountSourceStats;
@@ -39,10 +41,12 @@ function matchesPrefix(date: string | null | undefined, datePrefix: string): boo
 export function computeDiscountStats(
   {
     orders,
+    sales,
     directSales,
     customerTransactions,
   }: {
     orders: any[] | null | undefined;
+    sales?: any[] | null | undefined;
     directSales: any[] | null | undefined;
     customerTransactions: any[] | null | undefined;
   },
@@ -50,6 +54,7 @@ export function computeDiscountStats(
 ): DiscountStats {
   const stats: DiscountStats = {
     orders: { amount: 0, count: 0 },
+    sales: { amount: 0, count: 0 },
     directSales: { amount: 0, count: 0 },
     transfers: { amount: 0, count: 0 },
     total: { amount: 0, count: 0 },
@@ -61,6 +66,16 @@ export function computeDiscountStats(
     if (amount > 0) {
       stats.orders.amount += amount;
       stats.orders.count += 1;
+    }
+  }
+
+  // Sales carry the same item shape as orders, so the per-line rule is identical.
+  for (const sale of sales ?? []) {
+    if (!matchesPrefix(sale?.createdAt, datePrefix)) continue;
+    const amount = (sale?.items ?? []).reduce((sum: number, item: any) => sum + lineDiscount(item), 0);
+    if (amount > 0) {
+      stats.sales.amount += amount;
+      stats.sales.count += 1;
     }
   }
 
@@ -85,7 +100,8 @@ export function computeDiscountStats(
     }
   }
 
-  stats.total.amount = stats.orders.amount + stats.directSales.amount + stats.transfers.amount;
-  stats.total.count = stats.orders.count + stats.directSales.count + stats.transfers.count;
+  stats.total.amount =
+    stats.orders.amount + stats.sales.amount + stats.directSales.amount + stats.transfers.amount;
+  stats.total.count = stats.orders.count + stats.sales.count + stats.directSales.count + stats.transfers.count;
   return stats;
 }

@@ -1,6 +1,13 @@
 import type { Product } from "../../data/products";
 import type { JournalEntry, SiteNavigationItem } from "../../data/storefront";
-import { ORDER_SOURCE_VALUES, type OrderRecord, type OrderSource, type OrderStatus } from "../../lib/orders";
+import type { OrderItemPayload, OrderRecord, OrderStatus } from "../../lib/orders";
+import {
+  SALE_CHANNEL_VALUES,
+  SALE_CUSTOMER_TYPE_VALUES,
+  type SaleChannel,
+  type SaleCustomerType,
+  type SaleRecord,
+} from "../../lib/sales";
 import type { UserAuthMethod, UserProfile, UserRole } from "../../lib/userProfiles";
 
 export function getProductCode(productId: number): string {
@@ -104,40 +111,75 @@ export function getOrderStatusClassName(status: OrderStatus) {
   }
 }
 
-export function getOrderSourceLabel(source: OrderSource, language: "MN" | "EN") {
-  switch (source) {
+export function getSaleChannelLabel(channel: SaleChannel, language: "MN" | "EN") {
+  switch (channel) {
+    case "store":
+      return language === "MN" ? "Дэлгүүр" : "Store";
     case "messenger":
       return language === "MN" ? "Мессенжер" : "Messenger";
     case "facebook":
-      return language === "MN" ? "ФБ" : "Facebook";
+      return language === "MN" ? "Фэйсбүүк" : "Facebook";
     case "instagram":
       return language === "MN" ? "Инстаграм" : "Instagram";
     case "phone":
       return language === "MN" ? "Утас" : "Phone";
     case "email":
       return language === "MN" ? "Имэйл" : "Email";
-    case "walk_in":
-      return language === "MN" ? "Дэлгүүр" : "Walk-in";
+    case "fair":
+      return language === "MN" ? "Үзэсгэлэн" : "Fair / Market";
+    case "own_use":
+      return language === "MN" ? "Өөрийн хэрэгцээнд" : "Own use";
     case "gift":
       return language === "MN" ? "Бэлэг" : "Gift";
-    case "usage":
-      return language === "MN" ? "Хэрэглээ" : "Usage";
-    case "other":
-      return language === "MN" ? "Бусад" : "Other";
     default:
-      return language === "MN" ? "Веб" : "Web";
+      return language === "MN" ? "Бусад" : "Other";
   }
 }
 
-export function getOrderSourceOptions(language: "MN" | "EN") {
-  return ORDER_SOURCE_VALUES.map((source) => ({
-    value: source,
-    label: getOrderSourceLabel(source, language),
+export function getSaleChannelOptions(language: "MN" | "EN") {
+  return SALE_CHANNEL_VALUES.map((channel) => ({
+    value: channel,
+    label: getSaleChannelLabel(channel, language),
   }));
 }
 
-export function getOrderTotalQuantity(order: OrderRecord) {
-  return order.items.reduce((total, item) => total + item.quantity, 0);
+export function getSaleCustomerTypeLabel(type: SaleCustomerType, language: "MN" | "EN") {
+  if (type === "organization") {
+    return language === "MN" ? "Байгууллага" : "Organization";
+  }
+
+  return language === "MN" ? "Хувь хүн" : "Individual";
+}
+
+export function getSaleCustomerTypeOptions(language: "MN" | "EN") {
+  return SALE_CUSTOMER_TYPE_VALUES.map((type) => ({
+    value: type,
+    label: getSaleCustomerTypeLabel(type, language),
+  }));
+}
+
+/** Buyer shown in lists: the organization for a company sale, the person otherwise. */
+export function getSaleCustomerName(sale: SaleRecord) {
+  if (sale.customer.type === "organization") {
+    return sale.customer.organizationName || sale.customer.fullName || sale.customer.phoneNumber;
+  }
+
+  return sale.customer.fullName || sale.customer.phoneNumber;
+}
+
+export function cloneSaleRecord(sale: SaleRecord): SaleRecord {
+  return {
+    ...sale,
+    customer: { ...sale.customer },
+    address: { ...sale.address },
+    items: sale.items.map((item) => ({ ...item })),
+    totals: { ...sale.totals },
+  };
+}
+
+/** Works for both orders and sales — they share the item payload shape. */
+export function getOrderTotalQuantity(document: { items: OrderItemPayload[] }) {
+  return document.items.reduce((total, item) => total + item.quantity, 0);
 }
 
 export function getOrderPaymentStatusLabel(status: OrderRecord["payment"]["status"], language: "MN" | "EN") {

@@ -12,14 +12,11 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { buildManualOrderEntry } from "./accounting/entryBuilders";
-import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 export const ORDERS_COLLECTION = "orders";
 export const ORDER_SCHEMA_VERSION = 1;
@@ -29,7 +26,11 @@ export type OrderPaymentStatus = "pending" | "paid" | "failed" | "cancelled";
 export type OrderStatus = "new" | "paid" | "delivering" | "delivered";
 export const ORDER_STATUS_VALUES = ["new", "paid", "delivering", "delivered"] as const;
 
-/** Channel the order arrived through. Storefront checkout always writes "web". */
+/**
+ * Channel the order arrived through. Every order this module creates is a storefront
+ * checkout and writes "web" — the non-web values only appear on legacy documents saved
+ * before offline sales moved to their own module (see src/lib/sales.ts).
+ */
 export type OrderSource =
   | "web"
   | "messenger"
@@ -119,23 +120,6 @@ export interface CreateOrderInput {
   totals: OrderTotalsPayload;
 }
 
-/**
- * An order the admin took by hand (Messenger, phone, walk-in, …) and typed into the
- * Orders page. No Bonum invoice is involved — payment method and status come straight
- * from the form.
- */
-export interface CreateManualOrderInput {
-  source: OrderSource;
-  status: OrderStatus;
-  paymentMethod: OrderPaymentMethod;
-  customer: OrderCustomerPayload;
-  address: OrderAddressPayload;
-  items: OrderItemPayload[];
-  totals: OrderTotalsPayload;
-  createdByUid: string;
-  createdByName?: string;
-}
-
 export interface CreatedOrder {
   id: string;
   orderNumber: string;
@@ -147,7 +131,10 @@ export interface OrderRecord {
   orderNumber: string;
   status: OrderStatus;
   source: OrderSource;
-  /** True for orders registered by an admin from the Orders page. */
+  /**
+   * True on legacy orders an admin registered by hand before the Sales module existed.
+   * The Orders page hides them; scripts/migrate-manual-orders-to-sales.mjs moves them.
+   */
   isManual: boolean;
   createdByUid: string | null;
   currency: string;
@@ -391,108 +378,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-
-  return {
-    id: orderRef.id,
-    orderNumber,
-    payment,
-  };
-}
-
-/** Best-effort COGS for an order: sums costPrice × quantity for the products that carry one. */
-async function sumOrderCogs(items: OrderItemPayload[]): Promise<number> {
-  const productIds = Array.from(new Set(items.map((item) => item.productId).filter((id) => id > 0)));
-  const costByProductId = new Map<number, number>();
-
-  await Promise.all(
-    productIds.map(async (productId) => {
-      const snapshot = await getDoc(doc(db, "products", String(productId)));
-      if (!snapshot.exists()) {
-        return;
-      }
-
-      const costPrice = Number((snapshot.data() as Record<string, unknown>).costPrice ?? 0);
-      if (costPrice > 0) {
-        costByProductId.set(productId, costPrice);
-      }
-    }),
-  );
-
-  return items.reduce((sum, item) => sum + (costByProductId.get(item.productId) ?? 0) * item.quantity, 0);
-}
-
-/**
- * Registers an order the admin took by hand. Unlike the storefront flow no Bonum invoice
- * is created, so the payment is whatever the admin selected. When the order is registered
- * as already settled (paid/delivering/delivered) the revenue journal entry is posted in
- * the same batch, so manual sales reach Finance the same way Bonum-paid web orders do.
- */
-export async function createManualOrder(input: CreateManualOrderInput): Promise<CreatedOrder> {
-  const orderRef = doc(collection(db, ORDERS_COLLECTION));
-  const orderNumber = createOrderNumber();
-  const isSettled = input.status !== "new";
-
-  const payment: OrderPaymentPayload = {
-    method: input.paymentMethod,
-    provider: input.paymentMethod,
-    status: isSettled ? "paid" : "pending",
-    amount: input.totals.grandTotal,
-    qrPayload: "",
-    invoiceId: null,
-    paidAt: isSettled ? new Date().toISOString() : null,
-  };
-
-  // Both reads (product costPrice) and the entry-number transaction must complete before
-  // the batch is assembled — writeBatch itself cannot read.
-  const cogsAmount = isSettled ? await sumOrderCogs(input.items) : 0;
-  const entryNumber = isSettled ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-  let journalEntryId: string | null = null;
-
-  if (entryNumber) {
-    const entryRef = postJournalEntry(
-      batch,
-      entryNumber,
-      buildManualOrderEntry({
-        grandTotal: input.totals.grandTotal,
-        cogsAmount,
-        paymentMethod: input.paymentMethod,
-      }),
-      {
-        sourceType: "order",
-        sourceId: orderRef.id,
-        sourceNumber: orderNumber,
-        description: `Гараар бүртгэсэн захиалга: ${orderNumber}`,
-        createdBy: input.createdByUid,
-        createdByName: input.createdByName ?? "",
-      },
-    );
-    journalEntryId = entryRef.id;
-  }
-
-  batch.set(orderRef, {
-    orderNumber,
-    schemaVersion: ORDER_SCHEMA_VERSION,
-    status: input.status,
-    source: input.source,
-    isManual: true,
-    currency: "MNT",
-    // Manual orders belong to no signed-in shopper — an empty uid never matches
-    // isOrderOwner(), so they stay admin-only.
-    auth: { uid: "", isAnonymous: false, method: "manual" },
-    customer: input.customer,
-    address: input.address,
-    items: input.items,
-    totals: input.totals,
-    payment,
-    createdByUid: input.createdByUid,
-    journalEntryId,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
 
   return {
     id: orderRef.id,
