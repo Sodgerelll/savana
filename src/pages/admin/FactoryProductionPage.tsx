@@ -95,6 +95,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
         status: "planning",
         plannedQuantity: 0, actualQuantity: null,
         startedAt: null, expectedReadyAt: null, readyAt: null,
+        plannedVariant: firstProduct?.variants?.[0]?.name ?? null,
         supplies: [], totalCost: 0, notes: "",
       },
     });
@@ -111,6 +112,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
         status: batch.status,
         plannedQuantity: batch.plannedQuantity, actualQuantity: batch.actualQuantity,
         startedAt: batch.startedAt, expectedReadyAt: batch.expectedReadyAt, readyAt: batch.readyAt,
+        plannedVariant: batch.plannedVariant ?? null,
         supplies: batch.supplies.map((s: any) => ({ ...s })),
         totalCost: batch.totalCost, notes: batch.notes,
       },
@@ -122,7 +124,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
     if (!target) return;
     const today = new Date().toISOString().slice(0, 10);
     const product = products.find((p: any) => p.id === batch.productId);
-    const firstVariant = product?.variants?.[0]?.name ?? "";
+    const firstVariant = batch.plannedVariant ?? product?.variants?.[0]?.name ?? "";
     setProductionAdvanceError(null);
     setProductionAdvanceModal({
       batch, targetStatus: target,
@@ -243,7 +245,14 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
                       </td>
                       <td>{idx + 1}</td>
                       <td><strong>{batch.batchCode}</strong></td>
-                      <td>{getProductLabel(batch.productId, batch.productName)}</td>
+                      <td>
+                        {getProductLabel(batch.productId, batch.productName)}
+                        {(batch.producedVariant || batch.plannedVariant) && (
+                          <span style={{ marginLeft: 8, color: "#6366f1", fontSize: "0.78rem", fontWeight: 600 }}>
+                            {batch.producedVariant ?? batch.plannedVariant}
+                          </span>
+                        )}
+                      </td>
                       <td>
                         <span style={{
                           display: "inline-block",

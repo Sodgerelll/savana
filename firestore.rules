@@ -164,6 +164,11 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    match /productionRecipes/{documentId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     match /rawMaterialPurchases/{documentId} {
       allow read, list: if hasPrivilegedProfileRole();
       allow create, delete: if hasPrivilegedProfileRole();

@@ -7,6 +7,11 @@ import { getProductCode, getProductLabel } from "./adminHelpers";
 import type { EntityStatus } from "../../data/products";
 import type { SiteNavigationItem } from "../../data/storefront";
 import type { RawMaterialCategory } from "../../lib/rawMaterials";
+import {
+  buildSuppliesFromRecipe,
+  calculateSuppliesCost,
+  findRecipeFor,
+} from "../../lib/productionRecipes";
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
 import { SHIPPING_FEE } from "../../lib/orders";
@@ -179,6 +184,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     setProductionAdvanceSaving,
     productionAdvanceError,
     setProductionAdvanceError,
+    productionRecipes,
+    productionRecipeModal,
+    setProductionRecipeModal,
+    productionRecipeSaving,
+    setProductionRecipeSaving,
+    productionRecipeError,
+    setProductionRecipeError,
+    createProductionRecipe,
+    updateProductionRecipe,
     customerModal,
     setCustomerModal,
     customerSavingState,
@@ -2146,7 +2160,43 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   </AdminModal>
 )}
 
-{productionBatchModal && (
+{productionBatchModal && (() => {
+  const batchDraft = productionBatchModal.draft;
+  const batchEditable =
+    productionBatchModal.mode === "create" || productionBatchModal.previous?.status === "planning";
+  const batchProduct = products.find((p: any) => p.id === batchDraft.productId);
+  const batchVariants = (batchProduct?.variants ?? []) as Array<{ name: string }>;
+  const rawMaterialIndex = new Map(
+    (rawMaterials as any[]).map((r: any) => [r.id, { name: r.name, unit: r.unit, unitCost: r.unitCost }]),
+  );
+  const matchedRecipe = findRecipeFor(
+    (productionRecipes ?? []) as any[],
+    batchDraft.productId,
+    batchDraft.plannedVariant,
+  );
+
+  /**
+   * Applies a draft change and, whenever a recipe covers the product/variant,
+   * recomputes the supply lines for the planned quantity.
+   */
+  const patchBatchDraft = (patch: any, { recalc = true }: { recalc?: boolean } = {}) => {
+    const nextDraft = { ...batchDraft, ...patch };
+    if (recalc && batchEditable) {
+      const recipe = findRecipeFor(
+        (productionRecipes ?? []) as any[],
+        nextDraft.productId,
+        nextDraft.plannedVariant,
+      );
+      if (recipe) {
+        const supplies = buildSuppliesFromRecipe(recipe, nextDraft.plannedQuantity, rawMaterialIndex);
+        nextDraft.supplies = supplies;
+        nextDraft.totalCost = calculateSuppliesCost(supplies);
+      }
+    }
+    setProductionBatchModal({ ...productionBatchModal, draft: nextDraft });
+  };
+
+  return (
   <AdminModal
     title={productionBatchModal.mode === "create" ? copy.productionBatchModalCreate : copy.productionBatchModalEdit}
     onClose={() => setProductionBatchModal(null)}
@@ -2173,6 +2223,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               productName,
               plannedQuantity: draft.plannedQuantity,
               expectedReadyAt: draft.expectedReadyAt,
+              plannedVariant: draft.plannedVariant ?? null,
               supplies: draft.supplies,
               totalCost: draft.totalCost,
               notes: draft.notes,
@@ -2186,6 +2237,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               expectedReadyAt: draft.expectedReadyAt,
               startedAt: draft.startedAt,
               readyAt: draft.readyAt,
+              plannedVariant: draft.plannedVariant ?? null,
               supplies: draft.supplies,
               totalCost: draft.totalCost,
               notes: draft.notes,
@@ -2209,17 +2261,14 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         <span>{copy.productionBatchProduct}</span>
         <select
           value={productionBatchModal.draft.productId}
-          disabled={productionBatchModal.mode === "edit" && productionBatchModal.previous?.status !== "planning"}
+          disabled={!batchEditable}
           onChange={(e: any)=> {
             const pid = Number(e.target.value);
             const selected = products.find((p: any)=> p.id === pid);
-            setProductionBatchModal({
-              ...productionBatchModal,
-              draft: {
-                ...productionBatchModal.draft,
-                productId: pid,
-                productName: selected ? selected.name : "",
-              },
+            patchBatchDraft({
+              productId: pid,
+              productName: selected ? selected.name : "",
+              plannedVariant: selected?.variants?.[0]?.name ?? null,
             });
           }}
           required
@@ -2230,19 +2279,30 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           ))}
         </select>
       </label>
+      {batchVariants.length > 0 && (
+        <label className="admin-field">
+          <span>{copy.productionBatchVariant}</span>
+          <select
+            value={productionBatchModal.draft.plannedVariant ?? ""}
+            disabled={!batchEditable}
+            onChange={(e: any)=> patchBatchDraft({ plannedVariant: e.target.value || null })}
+            required
+          >
+            <option value="" disabled>—</option>
+            {batchVariants.map((v) => (
+              <option key={v.name} value={v.name}>{v.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="admin-field">
         <span>{copy.productionBatchPlannedQty}</span>
         <input
           type="number"
           min="1"
           value={productionBatchModal.draft.plannedQuantity}
-          disabled={productionBatchModal.mode === "edit" && productionBatchModal.previous?.status !== "planning"}
-          onChange={(e: any)=>
-            setProductionBatchModal({
-              ...productionBatchModal,
-              draft: { ...productionBatchModal.draft, plannedQuantity: Number(e.target.value) || 0 },
-            })
-          }
+          disabled={!batchEditable}
+          onChange={(e: any)=> patchBatchDraft({ plannedQuantity: Number(e.target.value) || 0 })}
           required
         />
       </label>
@@ -2252,10 +2312,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           type="date"
           value={productionBatchModal.draft.expectedReadyAt ?? ""}
           onChange={(e: any)=>
-            setProductionBatchModal({
-              ...productionBatchModal,
-              draft: { ...productionBatchModal.draft, expectedReadyAt: e.target.value || null },
-            })
+            patchBatchDraft({ expectedReadyAt: e.target.value || null }, { recalc: false })
           }
         />
       </label>
@@ -2263,10 +2320,40 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         {copy.productionBatchCuringHint}
       </p>
 
+      {batchEditable && (
+        <div
+          className="admin-field admin-field-wide"
+          style={{
+            background: matchedRecipe ? "#ecfdf5" : "#fffbeb",
+            border: `1px solid ${matchedRecipe ? "#a7f3d0" : "#fde68a"}`,
+            borderRadius: 8,
+            padding: "8px 12px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: "0.82rem", color: matchedRecipe ? "#047857" : "#b45309" }}>
+            {matchedRecipe ? copy.productionBatchRecipeApplied : copy.productionBatchRecipeMissing}
+          </span>
+          {matchedRecipe && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => patchBatchDraft({})}
+            >
+              {copy.productionBatchRecipeRecalc}
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="admin-field admin-field-wide">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
           <strong>{copy.productionBatchSupplies}</strong>
-          {(productionBatchModal.mode === "create" || productionBatchModal.previous?.status === "planning") && (
+          {batchEditable && (
             <button
               type="button"
               className="btn btn-outline btn-sm"
@@ -2443,7 +2530,8 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
       </div>
     </form>
   </AdminModal>
-)}
+  );
+})()}
 
 {productionAdvanceModal && (
   <AdminModal
@@ -2603,6 +2691,306 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     </form>
   </AdminModal>
 )}
+
+{productionRecipeModal && (() => {
+  const recipeDraft = productionRecipeModal.draft;
+  const recipeCategories = ((collections ?? []) as any[]).filter((c: any) =>
+    (products as any[]).some((p: any) => p.category === c.slug),
+  );
+  const productsInCategory = (products as any[]).filter(
+    (p: any) => !recipeDraft.category || p.category === recipeDraft.category,
+  );
+  const recipeProduct = (products as any[]).find((p: any) => p.id === recipeDraft.productId);
+  const recipeVariants = (recipeProduct?.variants ?? []) as Array<{ name: string }>;
+
+  const recipeCost = (sups: any[]) =>
+    sups.reduce((s: number, sup: any) => (sup.unitCost != null ? s + sup.quantity * sup.unitCost : s), 0);
+
+  const patchRecipeDraft = (patch: any) =>
+    setProductionRecipeModal({
+      ...productionRecipeModal,
+      draft: { ...recipeDraft, ...patch },
+    });
+
+  const setRecipeSupplies = (supplies: any[]) =>
+    patchRecipeDraft({ supplies, totalCost: recipeCost(supplies) });
+
+  const computedRecipeTotal = recipeCost(recipeDraft.supplies);
+  const recipeBase = recipeDraft.baseQuantity > 0 ? recipeDraft.baseQuantity : 1;
+
+  return (
+  <AdminModal
+    title={productionRecipeModal.mode === "create" ? copy.recipeModalCreate : copy.recipeModalEdit}
+    onClose={() => setProductionRecipeModal(null)}
+    disableClose={productionRecipeSaving}
+    wide
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        const draft = productionRecipeModal.draft;
+        if (draft.supplies.length === 0) {
+          setProductionRecipeError(copy.recipeEmptySupplies);
+          return;
+        }
+        if (draft.baseQuantity <= 0) {
+          setProductionRecipeError(copy.recipeBaseQuantityHint);
+          return;
+        }
+        const duplicate = ((productionRecipes ?? []) as any[]).some(
+          (r: any) =>
+            r.id !== draft.id &&
+            r.productId === draft.productId &&
+            (r.variantName ?? null) === (draft.variantName ?? null),
+        );
+        if (duplicate) {
+          setProductionRecipeError(copy.recipeDuplicate);
+          return;
+        }
+        setProductionRecipeSaving(true);
+        setProductionRecipeError(null);
+        try {
+          const selected = (products as any[]).find((p: any) => p.id === draft.productId);
+          const payload = {
+            productId: draft.productId,
+            productName: selected ? selected.name : draft.productName,
+            category: selected ? selected.category : draft.category,
+            variantName: draft.variantName ?? null,
+            baseQuantity: draft.baseQuantity,
+            supplies: draft.supplies,
+            totalCost: recipeCost(draft.supplies),
+            notes: draft.notes,
+          };
+          if (productionRecipeModal.mode === "create") {
+            await createProductionRecipe({ ...payload, createdByUid: user?.uid ?? "" });
+          } else {
+            await updateProductionRecipe(draft.id, payload);
+          }
+          setProductionRecipeModal(null);
+        } catch (err) {
+          setProductionRecipeError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setProductionRecipeSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field">
+        <span>{copy.recipeCategory}</span>
+        <select
+          value={recipeDraft.category ?? ""}
+          onChange={(e: any) => {
+            const slug = e.target.value;
+            const firstInCategory = (products as any[]).find((p: any) => !slug || p.category === slug);
+            patchRecipeDraft({
+              category: slug,
+              productId: firstInCategory ? firstInCategory.id : 0,
+              productName: firstInCategory ? firstInCategory.name : "",
+              variantName: firstInCategory?.variants?.[0]?.name ?? null,
+            });
+          }}
+        >
+          <option value="">{copy.allCategories}</option>
+          {recipeCategories.map((c: any) => (
+            <option key={c.id} value={c.slug}>{c.name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.recipeProduct}</span>
+        <select
+          value={recipeDraft.productId}
+          onChange={(e: any) => {
+            const pid = Number(e.target.value);
+            const selected = (products as any[]).find((p: any) => p.id === pid);
+            patchRecipeDraft({
+              productId: pid,
+              productName: selected ? selected.name : "",
+              category: selected ? selected.category : recipeDraft.category,
+              variantName: selected?.variants?.[0]?.name ?? null,
+            });
+          }}
+          required
+        >
+          <option value={0} disabled>—</option>
+          {productsInCategory.map((p: any) => (
+            <option key={p.id} value={p.id}>{getProductLabel(p.id, p.name)}</option>
+          ))}
+        </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.recipeVariant}</span>
+        <select
+          value={recipeDraft.variantName ?? ""}
+          disabled={recipeVariants.length === 0}
+          onChange={(e: any) => patchRecipeDraft({ variantName: e.target.value || null })}
+        >
+          <option value="">{copy.recipeVariantAll}</option>
+          {recipeVariants.map((v) => (
+            <option key={v.name} value={v.name}>{v.name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.recipeBaseQuantity}</span>
+        <input
+          type="number"
+          min="1"
+          step="any"
+          value={recipeDraft.baseQuantity}
+          onChange={(e: any) => patchRecipeDraft({ baseQuantity: Number(e.target.value) || 0 })}
+          required
+        />
+      </label>
+      <p className="admin-field-hint" style={{ gridColumn: "1 / -1", color: "#64748b", fontSize: "0.8rem" }}>
+        {copy.recipeBaseQuantityHint}
+      </p>
+
+      <div className="admin-field admin-field-wide">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+          <strong>{copy.recipeSupplies}</strong>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => {
+              const firstRm = (rawMaterials as any[])[0];
+              if (!firstRm) return;
+              setRecipeSupplies([
+                ...recipeDraft.supplies,
+                {
+                  rawMaterialId: firstRm.id,
+                  rawMaterialName: firstRm.name,
+                  quantity: 0,
+                  unit: firstRm.unit,
+                  unitCost: firstRm.unitCost,
+                },
+              ]);
+            }}
+          >
+            <Plus size={14} /> {copy.recipeAddSupply}
+          </button>
+        </div>
+        {recipeDraft.supplies.length === 0 ? (
+          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{copy.recipeEmptySupplies}</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>{copy.rawMaterialName}</th>
+                  <th style={{ textAlign: "right", padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>{copy.packagingRemaining}</th>
+                  <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>{copy.rawMaterialUnit}</th>
+                  <th style={{ textAlign: "right", padding: "4px 8px 6px 0", color: "#6b7280", fontWeight: 500 }}>{copy.rawMaterialUnitCost}</th>
+                  <th style={{ textAlign: "right", padding: "4px 0   6px 0", color: "#6b7280", fontWeight: 500 }}>{copy.recipeTotalCost}</th>
+                  <th style={{ width: 36 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {recipeDraft.supplies.map((supply: any, idx: number) => {
+                  const lineTotal = supply.unitCost != null ? supply.quantity * supply.unitCost : null;
+                  return (
+                    <tr key={idx} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "5px 8px 5px 0" }}>
+                        <select
+                          value={supply.rawMaterialId}
+                          style={{ width: "100%" }}
+                          onChange={(e: any) => {
+                            const rmId = Number(e.target.value);
+                            const newRm = (rawMaterials as any[]).find((r: any) => r.id === rmId);
+                            if (!newRm) return;
+                            const next = [...recipeDraft.supplies];
+                            next[idx] = {
+                              rawMaterialId: newRm.id,
+                              rawMaterialName: newRm.name,
+                              quantity: supply.quantity,
+                              unit: newRm.unit,
+                              unitCost: newRm.unitCost,
+                            };
+                            setRecipeSupplies(next);
+                          }}
+                        >
+                          {(rawMaterials as any[]).map((r: any) => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ padding: "5px 8px 5px 0" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={supply.quantity}
+                          style={{ width: "100%", textAlign: "right" }}
+                          onChange={(e: any) => {
+                            const next = [...recipeDraft.supplies];
+                            next[idx] = { ...supply, quantity: Number(e.target.value) || 0 };
+                            setRecipeSupplies(next);
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: "5px 8px 5px 0", color: "#64748b", whiteSpace: "nowrap" }}>{supply.unit}</td>
+                      <td style={{ padding: "5px 8px 5px 0", textAlign: "right", color: "#6b7280" }}>
+                        {supply.unitCost != null ? supply.unitCost.toLocaleString() : "—"}
+                      </td>
+                      <td style={{ padding: "5px 0 5px 0", textAlign: "right", fontWeight: 500, color: "#374151" }}>
+                        {lineTotal !== null ? lineTotal.toLocaleString() : "—"}
+                      </td>
+                      <td style={{ padding: "5px 0 5px 8px", textAlign: "right" }}>
+                        <button
+                          type="button"
+                          className="admin-icon-btn"
+                          onClick={() => setRecipeSupplies(recipeDraft.supplies.filter((_: any, i: number) => i !== idx))}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={4} style={{ paddingTop: 8, textAlign: "right", fontWeight: 600, color: "#374151", fontSize: "0.82rem" }}>
+                    {copy.recipeTotalCost}:
+                  </td>
+                  <td style={{ paddingTop: 8, textAlign: "right", fontWeight: 700, color: "#111827" }}>
+                    {computedRecipeTotal > 0 ? computedRecipeTotal.toLocaleString() : "—"}
+                  </td>
+                  <td />
+                </tr>
+                <tr>
+                  <td colSpan={4} style={{ paddingTop: 4, textAlign: "right", fontWeight: 500, color: "#6b7280", fontSize: "0.8rem" }}>
+                    {copy.recipeUnitCost}:
+                  </td>
+                  <td style={{ paddingTop: 4, textAlign: "right", fontWeight: 600, color: "#374151", fontSize: "0.8rem" }}>
+                    {computedRecipeTotal > 0 ? Math.round(computedRecipeTotal / recipeBase).toLocaleString() : "—"}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <label className="admin-field admin-field-wide">
+        <span>{copy.recipeNotes}</span>
+        <textarea
+          rows={2}
+          value={recipeDraft.notes}
+          onChange={(e: any) => patchRecipeDraft({ notes: e.target.value })}
+        />
+      </label>
+      {productionRecipeError && <div className="admin-modal-error">{productionRecipeError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setProductionRecipeModal(null)} disabled={productionRecipeSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={productionRecipeSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+  );
+})()}
 
 {customerModal && (
   <AdminModal

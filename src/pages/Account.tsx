@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   Globe,
   LayoutDashboard,
   LogOut,
@@ -101,6 +102,14 @@ import {
   type ProductionBatchSupply,
 } from "../lib/productionBatches";
 import {
+  createProductionRecipe,
+  deleteProductionRecipe,
+  subscribeToProductionRecipes,
+  updateProductionRecipe,
+  type ProductionRecipe,
+  type ProductionRecipeSupply,
+} from "../lib/productionRecipes";
+import {
   createCustomer,
   createEmptyCustomerDraft,
   getNextCustomerCode,
@@ -141,6 +150,7 @@ import CrmCustomerTransactionsPage from "./admin/CrmCustomerTransactionsPage";
 import CrmOverviewPage from "./admin/CrmOverviewPage";
 import FactoryOverviewPage from "./admin/FactoryOverviewPage";
 import FactoryProductionPage from "./admin/FactoryProductionPage";
+import FactoryRecipesPage from "./admin/FactoryRecipesPage";
 import FactoryInventoryPage from "./admin/FactoryInventoryPage";
 import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
@@ -209,6 +219,7 @@ type AdminSection =
   | "financeReports"
   | "factoryOverview"
   | "factoryProduction"
+  | "factoryRecipes"
   | "rawMaterials"
   | "factoryInventory";
 type ModalMode = "create" | "edit" | "edit-limited";
@@ -337,6 +348,8 @@ interface ProductionBatchDraft {
   startedAt: string | null;
   expectedReadyAt: string | null;
   readyAt: string | null;
+  /** Variant the batch is produced for — selects which recipe fills the supplies. */
+  plannedVariant: string | null;
   supplies: ProductionBatchSupply[];
   totalCost: number;
   notes: string;
@@ -346,6 +359,24 @@ interface ProductionBatchModalState {
   mode: ModalMode;
   draft: ProductionBatchDraft;
   previous?: ProductionBatch;
+}
+
+interface ProductionRecipeDraft {
+  id: string;
+  productId: number;
+  productName: string;
+  category: string;
+  variantName: string | null;
+  baseQuantity: number;
+  supplies: ProductionRecipeSupply[];
+  totalCost: number;
+  notes: string;
+}
+
+interface ProductionRecipeModalState {
+  mode: ModalMode;
+  draft: ProductionRecipeDraft;
+  previous?: ProductionRecipe;
 }
 
 interface ProductionAdvanceModalState {
@@ -409,7 +440,7 @@ const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
   "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
-  "factoryOverview", "factoryProduction", "rawMaterials", "factoryInventory",
+  "factoryOverview", "factoryProduction", "factoryRecipes", "rawMaterials", "factoryInventory",
 ]);
 
 export default function Account() {
@@ -498,6 +529,10 @@ export default function Account() {
   const [productionAdvanceModal, setProductionAdvanceModal] = useState<ProductionAdvanceModalState | null>(null);
   const [productionAdvanceSaving, setProductionAdvanceSaving] = useState(false);
   const [productionAdvanceError, setProductionAdvanceError] = useState<string | null>(null);
+  const [productionRecipes, setProductionRecipes] = useState<ProductionRecipe[]>([]);
+  const [productionRecipeModal, setProductionRecipeModal] = useState<ProductionRecipeModalState | null>(null);
+  const [productionRecipeSaving, setProductionRecipeSaving] = useState(false);
+  const [productionRecipeError, setProductionRecipeError] = useState<string | null>(null);
   const [navigationBannerUploadError, setNavigationBannerUploadError] = useState<string | null>(null);
   const [navigationBannerUploading, setNavigationBannerUploading] = useState(false);
   const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
@@ -761,6 +796,7 @@ export default function Account() {
     "factoryOverview",
     "factoryInventory",
     "factoryProduction",
+    "factoryRecipes",
     "rawMaterials",
     "crmOverview",
     "crmCustomers",
@@ -1062,6 +1098,13 @@ export default function Account() {
                 label: "Үйлдвэрлэл",
                 description: "Batch planning, work order, BOM execution.",
                 icon: <RotateCcw size={18} />,
+                implemented: true,
+              },
+              {
+                id: "factoryRecipes",
+                label: "Жор",
+                description: "Ангилал, variant тус бүрийн үйлдвэрлэлийн орц.",
+                icon: <ClipboardList size={18} />,
                 implemented: true,
               },
               {
@@ -1374,6 +1417,20 @@ export default function Account() {
                 implemented: true,
               },
               {
+                id: "factoryRecipes",
+                label: "Recipes",
+                description: "Production recipes per product category and variant.",
+                icon: <ClipboardList size={18} />,
+                implemented: true,
+              },
+              {
+                id: "rawMaterials",
+                label: "Raw materials",
+                description: "Raw material stock, usage, and purchases.",
+                icon: <Package size={18} />,
+                implemented: true,
+              },
+              {
                 id: "factoryInventory",
                 label: "Inventory",
                 description: "Raw material, packaging, and finished goods stock.",
@@ -1619,6 +1676,24 @@ export default function Account() {
       unsub = subscribeToProductionBatches({
         onData: (batches) => { if (alive) { setProductionBatches(batches); setProductionBatchError(null); } },
         onError: (err) => { if (alive) { setProductionBatchError(err.message); retryTimer = setTimeout(subscribe, 5000); } },
+      });
+    };
+    subscribe();
+    return () => { alive = false; unsub?.(); if (retryTimer !== undefined) clearTimeout(retryTimer); };
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setProductionRecipes([]);
+      return;
+    }
+    let alive = true;
+    let unsub: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const subscribe = () => {
+      unsub = subscribeToProductionRecipes({
+        onData: (recipes) => { if (alive) { setProductionRecipes(recipes); setProductionRecipeError(null); } },
+        onError: (err) => { if (alive) { setProductionRecipeError(err.message); retryTimer = setTimeout(subscribe, 5000); } },
       });
     };
     subscribe();
@@ -2932,6 +3007,9 @@ export default function Account() {
     productionBatches,
     productionBatchError,
     productionAdvanceError,
+    productionRecipes,
+    productionRecipeError,
+    setProductionRecipeError,
     // navigation state
     adminMenuGroups,
     activeMenuGroup,
@@ -2971,6 +3049,7 @@ export default function Account() {
     setRawMaterialModal,
     setProductionBatchModal,
     setProductionAdvanceModal,
+    setProductionRecipeModal,
     // delete request handlers
     handleCollectionDeleteRequest,
     handleProductDeleteRequest,
@@ -3034,6 +3113,9 @@ export default function Account() {
     createProductionBatch,
     updateProductionBatch,
     advanceProductionBatch,
+    createProductionRecipe,
+    updateProductionRecipe,
+    deleteProductionRecipe,
     createCustomer,
     updateCustomer,
     createCustomerTransaction,
@@ -3108,6 +3190,9 @@ export default function Account() {
     productionAdvanceModal,
     productionAdvanceSaving,
     setProductionAdvanceSaving,
+    productionRecipeModal,
+    productionRecipeSaving,
+    setProductionRecipeSaving,
     customerModal,
     customerSavingState,
     setCustomerSavingState,
@@ -3392,6 +3477,8 @@ export default function Account() {
             <FactoryOverviewPage ctx={adminCtx} />
           ) : activeSection === "factoryProduction" ? (
             <FactoryProductionPage ctx={adminCtx} />
+          ) : activeSection === "factoryRecipes" ? (
+            <FactoryRecipesPage ctx={adminCtx} />
           ) : activeSection === "rawMaterials" ? (
             <RawMaterialsPage ctx={adminCtx} />
           ) : activeSection === "factoryInventory" ? (

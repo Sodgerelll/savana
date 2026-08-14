@@ -38,6 +38,8 @@ export interface ProductionBatch {
   startedAt: string | null;
   expectedReadyAt: string | null;
   readyAt: string | null;
+  /** For variant products: which variant the batch is planned for (drives the recipe). */
+  plannedVariant: string | null;
   /** For variant products: which variant received the produced quantity. */
   producedVariant: string | null;
   supplies: ProductionBatchSupply[];
@@ -53,6 +55,7 @@ export interface CreateProductionBatchInput {
   productName: string;
   plannedQuantity: number;
   expectedReadyAt?: string | null;
+  plannedVariant?: string | null;
   supplies: ProductionBatchSupply[];
   totalCost: number;
   notes?: string;
@@ -66,6 +69,7 @@ export interface UpdateProductionBatchInput {
   expectedReadyAt?: string | null;
   startedAt?: string | null;
   readyAt?: string | null;
+  plannedVariant?: string | null;
   supplies: ProductionBatchSupply[];
   totalCost: number;
   notes?: string;
@@ -112,6 +116,10 @@ function deserializeBatch(
     expectedReadyAt:
       typeof data.expectedReadyAt === "string" ? data.expectedReadyAt : null,
     readyAt: typeof data.readyAt === "string" ? data.readyAt : null,
+    plannedVariant:
+      typeof data.plannedVariant === "string" && data.plannedVariant.length > 0
+        ? data.plannedVariant
+        : null,
     producedVariant:
       typeof data.producedVariant === "string" ? data.producedVariant : null,
     supplies: Array.isArray(data.supplies)
@@ -245,6 +253,7 @@ export async function createProductionBatch(
     startedAt: null,
     expectedReadyAt: input.expectedReadyAt ?? null,
     readyAt: null,
+    plannedVariant: input.plannedVariant ?? null,
     supplies: input.supplies,
     totalCost: input.totalCost,
     notes: input.notes ?? "",
@@ -283,6 +292,7 @@ export async function updateProductionBatch(
     productName: next.productName,
     plannedQuantity: next.plannedQuantity,
     expectedReadyAt: next.expectedReadyAt ?? null,
+    plannedVariant: next.plannedVariant ?? null,
     supplies: next.supplies,
     totalCost: next.totalCost,
     notes: next.notes ?? "",
@@ -364,7 +374,8 @@ export async function advanceProductionBatch(
 
     if (hasVariants) {
       // Variant products: produced units must be assigned to a specific variant.
-      const variantName = patch.variantName;
+      // Falls back to the variant the batch was planned for.
+      const variantName = patch.variantName ?? previous.plannedVariant;
       if (!variantName) {
         throw new Error("VARIANT_REQUIRED");
       }
