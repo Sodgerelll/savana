@@ -28,6 +28,7 @@ import {
   getCrmContactDisplayName,
   getNextCrmContactCode,
   matchesCrmContactSearch,
+  normalizeContactPhone,
   searchCrmContacts,
   updateCrmContact,
   type CrmContactDraftInput,
@@ -99,6 +100,21 @@ describe("getCrmContactDisplayName", () => {
     expect(
       getCrmContactDisplayName(makeContact({ type: "organization", organizationName: "  ", fullName: "Bat" })),
     ).toBe("Bat");
+  });
+});
+
+// ─── normalizeContactPhone ────────────────────────────────────────────────────
+
+describe("normalizeContactPhone", () => {
+  it("reduces a phone to its digits so formatting never splits one person in two", () => {
+    expect(normalizeContactPhone("9900-1234")).toBe("99001234");
+    expect(normalizeContactPhone("+976 99 00 12 34")).toBe("97699001234");
+    expect(normalizeContactPhone("(99) 001234")).toBe("99001234");
+  });
+
+  it("returns an empty string when there is nothing to match on", () => {
+    expect(normalizeContactPhone("")).toBe("");
+    expect(normalizeContactPhone("—")).toBe("");
   });
 });
 
@@ -191,6 +207,14 @@ describe("createCrmContact", () => {
     const [, payload] = (setDoc as Mock).mock.calls[0];
     expect(payload.fullName).toBe("Bat");
     expect(payload.phoneNumber).toBe("99001234");
+  });
+
+  it("stores the phone's digits as the lookup key for the storefront sync", async () => {
+    await createCrmContact(makeDraftInput({ phoneNumber: "9900-1234" }));
+
+    const [, payload] = (setDoc as Mock).mock.calls[0];
+    expect(payload.phoneNumber).toBe("9900-1234");
+    expect(payload.phoneDigits).toBe("99001234");
   });
 
   it("keeps organization fields for an organization", async () => {

@@ -67,6 +67,15 @@ export interface CrmContactDraftInput {
   status?: CrmContactStatus;
 }
 
+/**
+ * Digits only, so "9900-1234", "+976 99001234" and "99001234" all identify the same
+ * person. Stored alongside the typed phone as `phoneDigits` and used to match a
+ * storefront buyer to the contact they already have here.
+ */
+export function normalizeContactPhone(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
 function parseTimestamp(value: unknown): string | null {
   if (typeof value === "string") {
     return value;
@@ -184,6 +193,8 @@ function serializeCrmContactPayload(input: CrmContactDraftInput) {
     organizationName: isOrganization ? (input.organizationName ?? "").trim() : "",
     registrationNumber: isOrganization ? (input.registrationNumber ?? "").trim() : "",
     phoneNumber: input.phoneNumber.trim(),
+    // Kept in step with phoneNumber so the storefront-order sync matches on it.
+    phoneDigits: normalizeContactPhone(input.phoneNumber),
     secondaryPhone: (input.secondaryPhone ?? "").trim(),
     email: input.email?.trim() ? input.email.trim() : null,
     address: input.address ?? null,

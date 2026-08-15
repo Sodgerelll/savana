@@ -2,13 +2,12 @@
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
-import { getCrmContactDisplayName, matchesCrmContactSearch } from "../../lib/crmContacts";
+import {
+  getCrmContactDisplayName,
+  matchesCrmContactSearch,
+  normalizeContactPhone,
+} from "../../lib/crmContacts";
 import { getProductLabel } from "./adminHelpers";
-
-/** Digits only, so "9900-1234" and "99001234" count as the same phone. */
-function normalizePhone(value: string): string {
-  return value.replace(/\D/g, "");
-}
 
 export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -17,6 +16,7 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
     crmContacts,
     crmContactsError,
     sales,
+    orders,
     openCrmContactCreateModal,
     openCrmContactModal,
     handleCrmContactDeleteRequest,
@@ -34,45 +34,74 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
   const [expandedContactId, setExpandedContactId] = useState<string | null>(null);
 
   /**
-   * Purchases per customer. A sale counts when it was booked against the customer, and
-   * also when it merely carries their phone number — sales registered before the
-   * directory existed have no link, but the phone still identifies who bought.
+   * Purchases per customer, pooling offline sales and storefront orders into one history.
+   * A sale counts when it was booked against the customer, and either kind counts when it
+   * merely carries their phone number — purchases made before the directory existed have
+   * no link, but the phone still identifies who bought.
    */
-  const salesByContactId = useMemo(() => {
+  const purchasesByContactId = useMemo(() => {
     const grouped = new Map<string, any[]>();
     const contactIdByPhone = new Map<string, string>();
 
     (crmContacts as any[]).forEach((contact: any) => {
       grouped.set(contact.id, []);
-      const phone = normalizePhone(contact.phoneNumber);
-      // First contact registered with a phone wins it, so one sale is never counted twice.
+      const phone = normalizeContactPhone(contact.phoneNumber);
+      // First contact registered with a phone wins it, so one purchase is never counted twice.
       if (phone && !contactIdByPhone.has(phone)) {
         contactIdByPhone.set(phone, contact.id);
       }
     });
 
-    (sales as any[]).forEach((sale: any) => {
-      const linkedId = sale.customer.contactId
-        ? sale.customer.contactId
-        : contactIdByPhone.get(normalizePhone(sale.customer.phoneNumber ?? "")) ?? null;
-
-      if (linkedId && grouped.has(linkedId)) {
-        grouped.get(linkedId)!.push(sale);
+    const attach = (contactId: string | null, purchase: any) => {
+      if (contactId && grouped.has(contactId)) {
+        grouped.get(contactId)!.push(purchase);
       }
+    };
+
+    (sales as any[]).forEach((sale: any) => {
+      attach(
+        sale.customer.contactId ??
+          contactIdByPhone.get(normalizeContactPhone(sale.customer.phoneNumber ?? "")) ??
+          null,
+        {
+          key: `sale-${sale.id}`,
+          number: sale.saleNumber,
+          createdAt: sale.createdAt,
+          channelLabel: getSaleChannelLabel(sale.channel, language),
+          status: sale.status,
+          items: sale.items,
+          total: sale.totals.grandTotal,
+        },
+      );
     });
 
+    (orders as any[]).forEach((order: any) => {
+      attach(contactIdByPhone.get(normalizeContactPhone(order.customer.phoneNumber ?? "")) ?? null, {
+        key: `order-${order.id}`,
+        number: order.orderNumber,
+        createdAt: order.createdAt,
+        channelLabel: mn ? "Онлайн дэлгүүр" : "Online store",
+        status: order.status,
+        items: order.items,
+        total: order.totals.grandTotal,
+      });
+    });
+
+    grouped.forEach((purchases) =>
+      purchases.sort((a: any, b: any) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))),
+    );
+
     return grouped;
-  }, [crmContacts, sales]);
+  }, [crmContacts, sales, orders, language, mn, getSaleChannelLabel]);
 
   const contactPurchaseSummary = (contactId: string) => {
-    const contactSales = salesByContactId.get(contactId) ?? [];
-    const revenue = contactSales.reduce((sum: number, sale: any) => sum + sale.totals.grandTotal, 0);
+    const purchases = purchasesByContactId.get(contactId) ?? [];
 
     return {
-      sales: contactSales,
-      revenue,
-      // Sales arrive newest-first from Firestore, so the first row is the latest purchase.
-      lastPurchaseAt: contactSales[0]?.createdAt ?? null,
+      purchases,
+      revenue: purchases.reduce((sum: number, purchase: any) => sum + purchase.total, 0),
+      // Sorted newest-first above, so the first row is the latest purchase.
+      lastPurchaseAt: purchases[0]?.createdAt ?? null,
     };
   };
 
@@ -264,9 +293,9 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                     <td>
                       <div className="admin-table-primary">
                         <strong>
-                          {purchases.sales.length} {mn ? "удаа" : "×"}
+                          {purchases.purchases.length} {mn ? "удаа" : "×"}
                         </strong>
-                        {purchases.sales.length > 0 && <small>{formatStorePrice(purchases.revenue)}</small>}
+                        {purchases.purchases.length > 0 && <small>{formatStorePrice(purchases.revenue)}</small>}
                       </div>
                     </td>
                     <td>
@@ -310,7 +339,7 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                       <td colSpan={11}>
                         <div className="admin-product-expand">
                           <div className="admin-product-expand-section">
-                            {purchases.sales.length === 0 ? (
+                            {purchases.purchases.length === 0 ? (
                               <p className="admin-inline-note" style={{ margin: 0 }}>
                                 {copy.contactNoPurchases}
                               </p>
@@ -322,7 +351,7 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                                       <th style={{ width: "2rem", textAlign: "center", color: "#aaa", fontWeight: 500 }}>
                                         #
                                       </th>
-                                      <th style={{ textAlign: "center" }}>{mn ? "Борлуулалт" : "Sale"}</th>
+                                      <th style={{ textAlign: "center" }}>{mn ? "Дугаар" : "Number"}</th>
                                       <th style={{ textAlign: "center" }}>{mn ? "Огноо" : "Date"}</th>
                                       <th style={{ textAlign: "center" }}>{mn ? "Суваг" : "Channel"}</th>
                                       <th style={{ textAlign: "center" }}>{copy.status}</th>
@@ -332,25 +361,23 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {purchases.sales.map((sale: any, saleIndex: number) => (
-                                      <tr key={sale.id}>
+                                    {purchases.purchases.map((purchase: any, purchaseIndex: number) => (
+                                      <tr key={purchase.key}>
                                         <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>
-                                          {saleIndex + 1}
+                                          {purchaseIndex + 1}
                                         </td>
-                                        <td style={{ textAlign: "center" }}>{sale.saleNumber}</td>
+                                        <td style={{ textAlign: "center" }}>{purchase.number}</td>
                                         <td style={{ textAlign: "center" }}>
-                                          {formatAdminDateTime(sale.createdAt, language)}
+                                          {formatAdminDateTime(purchase.createdAt, language)}
                                         </td>
+                                        <td style={{ textAlign: "center" }}>{purchase.channelLabel}</td>
                                         <td style={{ textAlign: "center" }}>
-                                          {getSaleChannelLabel(sale.channel, language)}
-                                        </td>
-                                        <td style={{ textAlign: "center" }}>
-                                          <span className={getOrderStatusClassName(sale.status)}>
-                                            {getOrderStatusLabel(sale.status, language)}
+                                          <span className={getOrderStatusClassName(purchase.status)}>
+                                            {getOrderStatusLabel(purchase.status, language)}
                                           </span>
                                         </td>
                                         <td style={{ textAlign: "left" }}>
-                                          {sale.items
+                                          {purchase.items
                                             .map(
                                               (item: any) =>
                                                 `${getProductLabel(item.productId, item.name)}${
@@ -359,9 +386,9 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                                             )
                                             .join(", ") || "—"}
                                         </td>
-                                        <td style={{ textAlign: "center" }}>{getOrderTotalQuantity(sale)}</td>
+                                        <td style={{ textAlign: "center" }}>{getOrderTotalQuantity(purchase)}</td>
                                         <td style={{ textAlign: "center" }}>
-                                          <strong>{formatStorePrice(sale.totals.grandTotal)}</strong>
+                                          <strong>{formatStorePrice(purchase.total)}</strong>
                                         </td>
                                       </tr>
                                     ))}
@@ -374,7 +401,7 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                           <div className="admin-product-expand-stats">
                             <div className="admin-expand-stat">
                               <small>{copy.contactPurchaseCount}</small>
-                              <strong>{purchases.sales.length}</strong>
+                              <strong>{purchases.purchases.length}</strong>
                             </div>
                             <div className="admin-expand-stat">
                               <small>{copy.contactPurchaseTotal}</small>
@@ -391,8 +418,8 @@ export default function CrmContactsPage({ ctx }: { ctx: AdminCtx }) {
                             <div className="admin-expand-stat">
                               <small>{copy.contactAveragePurchase}</small>
                               <strong>
-                                {purchases.sales.length > 0
-                                  ? formatStorePrice(Math.round(purchases.revenue / purchases.sales.length))
+                                {purchases.purchases.length > 0
+                                  ? formatStorePrice(Math.round(purchases.revenue / purchases.purchases.length))
                                   : "—"}
                               </strong>
                             </div>

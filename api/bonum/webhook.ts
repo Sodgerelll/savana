@@ -12,6 +12,7 @@
 import { createHmac } from 'node:crypto';
 import { getAdminFirestore } from './_firebaseAdmin.js';
 import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
+import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
 
 // Validate x-checksum-v2 header using HmacSHA256 over the compact JSON body string
 function isValidChecksum(bodyStr: string, signature: string): boolean {
@@ -89,4 +90,12 @@ async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPaymen
   if (paymentBody.amount != null) bonumFields['bonumAmount'] = Number(paymentBody.amount);
 
   await postOrderPaidEntry(db, orderId, bonumFields);
+
+  // The buyer joins the CRM directory, but never at the cost of the payment: a failure
+  // here is logged and swallowed so the order still ends up marked paid.
+  try {
+    await upsertOrderContact(db, orderId);
+  } catch (err) {
+    console.error('[bonum/webhook] customer directory sync failed:', err);
+  }
 }

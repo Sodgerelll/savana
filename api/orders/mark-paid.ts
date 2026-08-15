@@ -13,6 +13,7 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { bonumGet } from '../bonum/_client.js';
 import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
+import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
 
 interface BonumInvoiceBody {
   status?: string;
@@ -87,6 +88,14 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
 
     await postOrderPaidEntry(db, orderId, bonumFields);
+
+    // The buyer joins the CRM directory, but never at the cost of the payment: a failure
+    // here is logged and swallowed so the order is still reported as paid.
+    try {
+      await upsertOrderContact(db, orderId);
+    } catch (err) {
+      console.error('[orders/mark-paid] customer directory sync failed:', err);
+    }
 
     const updatedSnap = await orderRef.get();
     res.status(200).json({ payment: (updatedSnap.data() as Record<string, unknown>).payment });
