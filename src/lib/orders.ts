@@ -434,6 +434,27 @@ async function verifyBonumPayment(invoiceId: string): Promise<BonumCheckResult> 
  * direct-Firestore write (no journal entry) only when the server reports it has no Admin SDK
  * credentials configured (local dev without FIREBASE_SERVICE_ACCOUNT_JSON).
  */
+/**
+ * Asks the server to record this order's buyer in the CRM customer directory. Runs as
+ * soon as the order is placed, so a shopper who never gets round to paying is still
+ * registered as someone who tried to buy.
+ *
+ * Deliberately never throws: the buyer is already saved on the order itself, so a failed
+ * directory sync must not surface as a checkout error. The paid path upserts the same
+ * buyer again, which covers anything missed here.
+ */
+export async function registerOrderContact(orderId: string): Promise<void> {
+  try {
+    await fetch("/api/orders/register-contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId }),
+    });
+  } catch (error) {
+    console.warn("[orders] customer directory sync failed:", error);
+  }
+}
+
 export async function markOrderAsPaid(orderId: string) {
   const res = await fetch("/api/orders/mark-paid", {
     method: "POST",

@@ -4,17 +4,19 @@
  *
  * Background
  * ----------
- * From now on every paid online order registers its buyer automatically — see
- * api/_lib/upsertOrderContact.ts, called from the Bonum webhook and /api/orders/mark-paid.
- * Orders that were already paid before that shipped have no contact, so this script walks
- * them once. It applies the same rules as the live path:
+ * From now on every online order registers its buyer automatically, as soon as it is
+ * placed — see api/_lib/upsertOrderContact.ts, called from /api/orders/register-contact
+ * at checkout and again from the Bonum webhook and /api/orders/mark-paid on payment.
+ * Orders placed before that shipped have no contact, so this script walks them once. It
+ * applies the same rules as the live path:
  *
  *   - Matching is on the phone number's digits, so one person is never duplicated.
  *   - An existing contact is only filled in where the directory is blank — an admin's own
  *     edits are never overwritten.
  *   - Orders without a phone are skipped; there is nothing to match them on.
  *
- * Only paid orders count. An abandoned checkout that never got paid is not a customer.
+ * Payment is not required: someone who placed an order and never paid still gets a
+ * contact, matching what the live checkout now does.
  *
  * Re-running is safe: a buyer who already has a contact is matched, not duplicated.
  *
@@ -101,21 +103,21 @@ async function run(db) {
     stamped += 1;
   }
 
-  // 2. Register the buyer of every paid storefront order.
+  // 2. Register the buyer of every storefront order, paid or not.
   const ordersSnapshot = await db.collection("orders").get();
-  const paidOrders = ordersSnapshot.docs
+  const storefrontOrders = ordersSnapshot.docs
     .map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }))
-    .filter((order) => !order.isManual && order.status !== "new")
+    .filter((order) => !order.isManual)
     // Oldest first, so the earliest order is the one that names a new contact.
     .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
 
-  console.log(`${paidOrders.length} paid storefront order(s) to walk.`);
+  console.log(`${storefrontOrders.length} storefront order(s) to walk.`);
 
   let created = 0;
   let filled = 0;
   let skipped = 0;
 
-  for (const order of paidOrders) {
+  for (const order of storefrontOrders) {
     const customer = order.customer ?? {};
     const digits = phoneDigitsOf(customer.phoneNumber);
 

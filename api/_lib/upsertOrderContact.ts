@@ -1,6 +1,7 @@
 // Server-side (Admin SDK) mirroring of a storefront buyer into the CRM customer
 // directory (/crmContacts), so everyone who ordered online is searchable there next to
-// the customers an admin registered by hand.
+// the customers an admin registered by hand. Called when an order is placed
+// (/api/orders/register-contact) and again when it is paid (Bonum webhook, mark-paid).
 //
 // This runs in Vercel's Node serverless runtime, which is why it re-implements the small
 // bits of src/lib/crmContacts.ts it needs (phone normalization, HAR- code numbering)
@@ -42,12 +43,14 @@ function buildAddress(source: Record<string, unknown>): Record<string, string> |
 }
 
 /**
- * Records the buyer of `orderId` in the customer directory.
+ * Records the buyer of `orderId` in the customer directory. Payment is not a condition —
+ * this runs when the order is placed, so someone who ordered and never paid is still
+ * registered, and runs again when payment lands.
  *
  * Matching is on the phone number's digits — the one field checkout always requires. A
  * buyer who already has a contact (registered by an admin or by an earlier order) is not
  * duplicated: only the fields the directory is still missing get filled in, so an admin's
- * own edits are never overwritten. That makes this safe to call on every payment.
+ * own edits are never overwritten. That makes it safe to call as often as it is.
  *
  * Returns the contact's document id, or null when there was nothing to record.
  */

@@ -41,6 +41,7 @@ vi.mock("firebase/firestore", () => ({
 
 import { getDoc, onSnapshot, updateDoc } from "firebase/firestore";
 import {
+  registerOrderContact,
   subscribeToOrders,
   updateOrderByAdmin,
   type OrderPaymentPayload,
@@ -50,6 +51,33 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   (getDoc as Mock).mockResolvedValue({ exists: () => false, data: () => ({}) });
+});
+
+// ─── registerOrderContact ─────────────────────────────────────────────────────
+
+describe("registerOrderContact", () => {
+  it("posts the order id to the directory endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ contactId: "c1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await registerOrderContact("order-7");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/orders/register-contact");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ orderId: "order-7" });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("swallows a failure so a checkout is never broken by the directory", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(registerOrderContact("order-7")).resolves.toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
 });
 
 // ─── updateOrderByAdmin ───────────────────────────────────────────────────────

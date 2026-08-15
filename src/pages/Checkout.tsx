@@ -8,6 +8,7 @@ import { getDistrictOrSoumOptions, getKhorooOrBagOptions, DEFAULT_ADDRESS_REGION
 import {
   createOrder,
   markOrderAsPaid,
+  registerOrderContact,
   SHIPPING_FEE,
   type OrderItemPayload,
   type OrderPaymentPayload,
@@ -425,6 +426,11 @@ export default function Checkout() {
         items: nextItems,
         totals: nextTotals,
       });
+
+      // The buyer joins the CRM directory as soon as the order exists, without waiting for
+      // payment. Fire-and-forget — it never throws, and the shopper moves on to the QR
+      // step regardless.
+      void registerOrderContact(result.id);
 
       setPendingOrder({
         id: result.id,
