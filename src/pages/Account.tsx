@@ -1,11 +1,14 @@
 import {
   Activity,
+  BookOpen,
+  Bot,
   Building2,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   ClipboardList,
   Globe,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -13,6 +16,7 @@ import {
   Package,
   Percent,
   RotateCcw,
+  Settings2,
   ShoppingBag,
   Store,
   Trash2,
@@ -44,6 +48,17 @@ import {
   type UserRole,
 } from "../lib/userProfiles";
 import { subscribeToContactMessages, type ContactMessageRecord } from "../lib/contactMessages";
+import { subscribeToChatSettings } from "../lib/chat/chatSettings";
+import { subscribeToChatFaqs } from "../lib/chat/faqStore";
+import { countAwaitingHuman, subscribeToChatConversations } from "../lib/chat/conversationStore";
+import { subscribeToChatLeads } from "../lib/chat/leadStore";
+import {
+  DEFAULT_CHAT_SETTINGS,
+  type ChatConversationRecord,
+  type ChatFaqRecord,
+  type ChatLeadRecord,
+  type ChatSettingsRecord,
+} from "../lib/chat/types";
 import {
   deleteOrder,
   subscribeToOrders,
@@ -168,6 +183,11 @@ import FactoryInventoryPage from "./admin/FactoryInventoryPage";
 import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
+import ChatOverviewPage from "./admin/ChatOverviewPage";
+import ChatKnowledgePage from "./admin/ChatKnowledgePage";
+import ChatConversationsPage from "./admin/ChatConversationsPage";
+import ChatLeadsPage from "./admin/ChatLeadsPage";
+import ChatSettingsPage from "./admin/ChatSettingsPage";
 import DirectSalesPage from "./admin/DirectSalesPage";
 import FinancePage from "./admin/FinancePage";
 import FinancePaymentsPage from "./admin/FinancePaymentsPage";
@@ -226,7 +246,11 @@ type AdminSection =
   | "crmContacts"
   | "crmCustomers"
   | "crmCustomerTransactions"
-  | "crmService"
+  | "chatOverview"
+  | "chatConversations"
+  | "chatKnowledge"
+  | "chatLeads"
+  | "chatSettings"
   | "financeOverview"
   | "financePayments"
   | "financeReconciliation"
@@ -447,7 +471,7 @@ interface AdminMenuItem {
 }
 
 interface AdminMenuGroup {
-  key: "common" | "website" | "crm" | "finance" | "factory";
+  key: "common" | "website" | "crm" | "chat" | "finance" | "factory";
   label: string;
   description: string;
   icon: ReactNode;
@@ -459,9 +483,21 @@ interface AdminMenuGroup {
 
 const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
-  "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions", "crmService",
+  "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions",
+  "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
   "factoryOverview", "factoryProduction", "factoryRecipes", "rawMaterials", "factoryInventory",
+]);
+
+/**
+ * Sections a non-privileged (customer) session must never land on. Reaching one
+ * by typing its URL bounces back to the dashboard; the Firestore rules are the
+ * real gate, this only keeps the UI honest.
+ */
+const PRIVILEGED_SECTIONS = new Set<string>([
+  "users", "orders", "sales", "messages",
+  "crmContacts", "crmCustomers", "crmCustomerTransactions",
+  "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
 ]);
 
 export default function Account() {
@@ -574,6 +610,14 @@ export default function Account() {
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [contactMessages, setContactMessages] = useState<ContactMessageRecord[]>([]);
   const [contactMessagesError, setContactMessagesError] = useState<string | null>(null);
+  const [chatSettings, setChatSettings] = useState<ChatSettingsRecord>(DEFAULT_CHAT_SETTINGS);
+  const [chatSettingsError, setChatSettingsError] = useState<string | null>(null);
+  const [chatFaqs, setChatFaqs] = useState<ChatFaqRecord[]>([]);
+  const [chatFaqsError, setChatFaqsError] = useState<string | null>(null);
+  const [chatConversations, setChatConversations] = useState<ChatConversationRecord[]>([]);
+  const [chatConversationsError, setChatConversationsError] = useState<string | null>(null);
+  const [chatLeads, setChatLeads] = useState<ChatLeadRecord[]>([]);
+  const [chatLeadsError, setChatLeadsError] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [sales, setSales] = useState<SaleRecord[]>([]);
@@ -617,6 +661,7 @@ export default function Account() {
     common: true,
     website: true,
     crm: false,
+    chat: false,
     finance: false,
     factory: false,
   });
@@ -805,6 +850,15 @@ export default function Account() {
     ],
     [language]
   );
+  // Drives the sidebar badge so an escalation is visible without opening the section.
+  const chatAwaitingHumanCount = useMemo(
+    () => countAwaitingHuman(chatConversations),
+    [chatConversations],
+  );
+  const chatPendingLeadCount = useMemo(
+    () => chatLeads.filter((lead) => lead.status === "new").length,
+    [chatLeads],
+  );
   const saleChannelOptions = useMemo(() => getSaleChannelOptions(language), [language]);
   const saleCustomerTypeOptions = useMemo(() => getSaleCustomerTypeOptions(language), [language]);
   const implementedSections = new Set<AdminSection>([
@@ -828,6 +882,11 @@ export default function Account() {
     "crmContacts",
     "crmCustomers",
     "crmCustomerTransactions",
+    "chatOverview",
+    "chatKnowledge",
+    "chatConversations",
+    "chatLeads",
+    "chatSettings",
     "financeOverview",
     "financePayments",
     "financeReconciliation",
@@ -1023,11 +1082,78 @@ export default function Account() {
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
               },
+            ],
+          },
+          {
+            key: "chat",
+            label: "AI Chat",
+            badge: chatAwaitingHumanCount > 0 ? chatAwaitingHumanCount : undefined,
+            description: "Facebook, Instagram, вэб сувгийн AI туслах, ярианы түүх, мэдлэгийн сан.",
+            icon: <Bot size={20} />,
+            highlights: [
               {
-                id: "crmService",
-                label: "Service inbox",
-                description: "Inquiry, issue, comment, escalation handling.",
+                label: "Сувгууд",
+                value: "FB · IG · Веб",
+                note: "Нэг ботоор Messenger, Instagram Direct, вэбсайтын виджетэд хариулна.",
+              },
+              {
+                label: "Мэдлэг",
+                value: "Каталог",
+                note: "Бүтээгдэхүүн, ангилал, хөнгөлөлт, FAQ-аас бот автоматаар суралцана.",
+              },
+              {
+                label: "Шилжүүлэг",
+                value: "Handover",
+                note: "Бот чадахгүй үед хүн рүү шилжүүлж, админы хариу сувгаараа буцна.",
+              },
+            ],
+            architectureNotes: [
+              "AI хариу нь Vercel /api/chat дээр ажиллана — Gemini түлхүүр браузерын bundle-д хэзээ ч орохгүй.",
+              "Prompt нь products, collections, discounts, chat_faqs-аас угсарна; хэрэглэгчийн хувийн мэдээлэл оруулахгүй.",
+              "Чатын бүх бичилт server-side Admin SDK-аар хийгдэнэ — клиент талаас зөвхөн уншина.",
+            ],
+            items: [
+              {
+                id: "chatOverview",
+                label: "Хяналт",
+                description: "Ярианы урсгал, хариултын чанар, ботын төлөв.",
+                icon: <Activity size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "chatConversations",
+                label: "Ярианы түүх",
+                description: "Бүх сувгийн яриа, хүн рүү шилжүүлсэн хүсэлт, админы хариу.",
                 icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+                badge: chatAwaitingHumanCount > 0 ? chatAwaitingHumanCount : undefined,
+              },
+              {
+                id: "chatKnowledge",
+                label: "Мэдлэгийн сан",
+                description: "FAQ, нэмэлт мэдээлэл, ботын үндсэн заавар.",
+                icon: <BookOpen size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "chatLeads",
+                label: "Чатын хүсэлт",
+                description: "Чатаас ирсэн захиалга, лавлагаа — борлуулалт болгож хувиргана.",
+                icon: <Inbox size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+                badge: chatPendingLeadCount > 0 ? chatPendingLeadCount : undefined,
+              },
+              {
+                id: "chatSettings",
+                label: "Чат тохиргоо",
+                description: "Facebook/Instagram холболт, виджет, загвар, temperature.",
+                icon: <Settings2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
             ],
           },
@@ -1347,11 +1473,78 @@ export default function Account() {
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
               },
+            ],
+          },
+          {
+            key: "chat",
+            label: "AI Chat",
+            badge: chatAwaitingHumanCount > 0 ? chatAwaitingHumanCount : undefined,
+            description: "AI assistant across Facebook, Instagram and the web widget.",
+            icon: <Bot size={20} />,
+            highlights: [
               {
-                id: "crmService",
-                label: "Service inbox",
-                description: "Inquiry, issue, comment, and escalation handling.",
+                label: "Channels",
+                value: "FB · IG · Web",
+                note: "One bot answers Messenger, Instagram Direct and the storefront widget.",
+              },
+              {
+                label: "Knowledge",
+                value: "Catalog",
+                note: "Products, collections, discounts and FAQs feed the bot automatically.",
+              },
+              {
+                label: "Escalation",
+                value: "Handover",
+                note: "The bot hands off to a human, whose reply returns on the same channel.",
+              },
+            ],
+            architectureNotes: [
+              "AI replies run on Vercel /api/chat — the Gemini key never reaches the browser bundle.",
+              "Prompts are built from products, collections, discounts and chat_faqs; no customer PII.",
+              "Every chat write goes through the server Admin SDK — clients only ever read.",
+            ],
+            items: [
+              {
+                id: "chatOverview",
+                label: "Overview",
+                description: "Conversation volume, reply quality, and bot status.",
+                icon: <Activity size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "chatConversations",
+                label: "Conversations",
+                description: "Threads across every channel, handovers, and admin replies.",
                 icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+                badge: chatAwaitingHumanCount > 0 ? chatAwaitingHumanCount : undefined,
+              },
+              {
+                id: "chatKnowledge",
+                label: "Knowledge base",
+                description: "FAQs, extra facts, and the bot's base instructions.",
+                icon: <BookOpen size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "chatLeads",
+                label: "Chat requests",
+                description: "Orders and enquiries captured in chat — convert them to sales.",
+                icon: <Inbox size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+                badge: chatPendingLeadCount > 0 ? chatPendingLeadCount : undefined,
+              },
+              {
+                id: "chatSettings",
+                label: "Chat settings",
+                description: "Facebook/Instagram connection, widget, model, and temperature.",
+                icon: <Settings2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
             ],
           },
@@ -1779,6 +1972,78 @@ export default function Account() {
   }, [isPrivilegedUser]);
 
   useEffect(() => {
+    if (!isPrivilegedUser) {
+      setChatSettings(DEFAULT_CHAT_SETTINGS);
+      setChatSettingsError(null);
+      return;
+    }
+
+    return subscribeToChatSettings({
+      onData: (nextSettings) => {
+        setChatSettings(nextSettings);
+        setChatSettingsError(null);
+      },
+      onError: (subscriptionError) => {
+        setChatSettingsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setChatFaqs([]);
+      setChatFaqsError(null);
+      return;
+    }
+
+    return subscribeToChatFaqs({
+      onData: (nextFaqs) => {
+        setChatFaqs(nextFaqs);
+        setChatFaqsError(null);
+      },
+      onError: (subscriptionError) => {
+        setChatFaqsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setChatConversations([]);
+      setChatConversationsError(null);
+      return;
+    }
+
+    return subscribeToChatConversations({
+      onData: (nextConversations) => {
+        setChatConversations(nextConversations);
+        setChatConversationsError(null);
+      },
+      onError: (subscriptionError) => {
+        setChatConversationsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
+      setChatLeads([]);
+      setChatLeadsError(null);
+      return;
+    }
+
+    return subscribeToChatLeads({
+      onData: (nextLeads) => {
+        setChatLeads(nextLeads);
+        setChatLeadsError(null);
+      },
+      onError: (subscriptionError) => {
+        setChatLeadsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
     if (isPrivilegedUser || !user) {
       setMyOrders([]);
       setMyOrdersError(null);
@@ -1798,7 +2063,7 @@ export default function Account() {
   }, [isPrivilegedUser, user]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "sales" || activeSection === "messages" || activeSection === "crmContacts" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
+    if (!isPrivilegedUser && PRIVILEGED_SECTIONS.has(activeSection)) {
       setActiveSection("dashboard");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3143,6 +3408,15 @@ export default function Account() {
     contactMessagesError,
     contactMessagesLast7DaysCount,
     latestContactMessageAt,
+    // ai chat
+    chatSettings,
+    chatSettingsError,
+    chatFaqs,
+    chatFaqsError,
+    chatConversations,
+    chatConversationsError,
+    chatLeads,
+    chatLeadsError,
     // direct sales
     directSales,
     directSalesError,
@@ -3655,6 +3929,16 @@ export default function Account() {
             <AnalyticsPage ctx={adminCtx} />
           ) : activeSection === "messages" ? (
             <MessagesPage ctx={adminCtx} />
+          ) : activeSection === "chatOverview" ? (
+            <ChatOverviewPage ctx={adminCtx} />
+          ) : activeSection === "chatKnowledge" ? (
+            <ChatKnowledgePage ctx={adminCtx} />
+          ) : activeSection === "chatConversations" ? (
+            <ChatConversationsPage ctx={adminCtx} />
+          ) : activeSection === "chatLeads" ? (
+            <ChatLeadsPage ctx={adminCtx} />
+          ) : activeSection === "chatSettings" ? (
+            <ChatSettingsPage ctx={adminCtx} />
           ) : activeSection === "orders" ? (
             <OrdersPage ctx={adminCtx} />
           ) : activeSection === "sales" ? (

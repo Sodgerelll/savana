@@ -1,0 +1,190 @@
+// Shared vocabulary for the AI chat module.
+//
+// The serverless side (api/chat/**) deliberately re-declares the small subset it
+// needs rather than importing from here: it runs in Vercel's Node runtime under
+// its own tsconfig, the same reason api/_lib/* re-implements its helpers.
+
+/** Where a conversation came from. `admin_test` never reaches a real customer. */
+export type ChatChannel = "facebook" | "instagram" | "widget" | "admin_test";
+export const CHAT_CHANNEL_VALUES = ["facebook", "instagram", "widget", "admin_test"] as const;
+
+/**
+ * - `active` — the bot is handling it
+ * - `handover` — the bot asked for a human and nobody has replied yet
+ * - `admin_active` — a human is replying; the bot stays quiet
+ * - `resolved` / `abandoned` — closed, by an admin or by silence
+ */
+export type ChatConversationStatus = "active" | "handover" | "admin_active" | "resolved" | "abandoned";
+export const CHAT_CONVERSATION_STATUS_VALUES = [
+  "active",
+  "handover",
+  "admin_active",
+  "resolved",
+  "abandoned",
+] as const;
+
+/** `admin` marks a message a human typed, so the UI can tell it from the bot. */
+export type ChatMessageRole = "user" | "assistant" | "admin" | "system";
+export const CHAT_MESSAGE_ROLE_VALUES = ["user", "assistant", "admin", "system"] as const;
+
+export type ChatLeadType = "order" | "inquiry" | "complaint" | "callback";
+export const CHAT_LEAD_TYPE_VALUES = ["order", "inquiry", "complaint", "callback"] as const;
+
+export type ChatLeadStatus = "new" | "processing" | "converted" | "dismissed";
+export const CHAT_LEAD_STATUS_VALUES = ["new", "processing", "converted", "dismissed"] as const;
+
+export const CHAT_COLLECTIONS = {
+  CONVERSATIONS: "chat_conversations",
+  /** Subcollection under a conversation document. */
+  MESSAGES: "messages",
+  FAQS: "chat_faqs",
+  SETTINGS: "chat_settings",
+  LEADS: "chat_leads",
+} as const;
+
+/** SAVANA is a single storefront, so the settings collection holds one document. */
+export const CHAT_SETTINGS_DOC_ID = "main";
+
+export const CHAT_SCHEMA_VERSION = 1;
+
+export const CHAT_LIMITS = {
+  MAX_MESSAGE_LENGTH: 1000,
+  /** Turns of history sent to the model — matches the cap inside api/chat/_lib/gemini.ts. */
+  MAX_HISTORY_MESSAGES: 20,
+  /** Client-side debounce so a held Enter key cannot spam the API route. */
+  CLIENT_RATE_LIMIT_MS: 1500,
+  REQUEST_TIMEOUT_MS: 40_000,
+} as const;
+
+export interface ChatMessageRecord {
+  id: string;
+  role: ChatMessageRole;
+  content: string;
+  /** Set when the bot answered by invoking a tool rather than writing prose. */
+  toolName: string | null;
+  /** Display name of the admin who typed this, for `role: "admin"` messages. */
+  authorName: string | null;
+  createdAt: string | null;
+}
+
+export interface ChatConversationRecord {
+  id: string;
+  schemaVersion: number;
+  channel: ChatChannel;
+  status: ChatConversationStatus;
+  /** Platform-side sender id (Facebook PSID / Instagram IGSID). Null for the widget. */
+  externalUserId: string | null;
+  /** Firebase uid when a signed-in customer used the widget — drives the owner read rule. */
+  userId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  messageCount: number;
+  /** Preview text for the conversation list, so the list needs no subcollection reads. */
+  lastMessagePreview: string;
+  lastMessageAt: string | null;
+  /** Why the bot escalated, shown to the admin picking the thread up. */
+  handoverReason: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChatFaqRecord {
+  id: string;
+  question: string;
+  answer: string;
+  /** Free-text grouping shown in the admin list; not tied to storefront categories. */
+  topic: string;
+  order: number;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChatLeadRecord {
+  id: string;
+  schemaVersion: number;
+  type: ChatLeadType;
+  status: ChatLeadStatus;
+  conversationId: string;
+  channel: ChatChannel;
+  customerName: string;
+  customerPhone: string;
+  note: string;
+  /** Products the customer named in chat — an admin turns these into an order. */
+  items: ChatLeadItem[];
+  /** Set once an admin converts the lead; links to the created order document. */
+  convertedOrderId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ChatLeadItem {
+  productId: number | null;
+  name: string;
+  variant: string | null;
+  quantity: number;
+}
+
+export interface ChatSettingsRecord {
+  isActive: boolean;
+  botName: string;
+  welcomeMessage: string;
+  /** Appended to the generated system prompt; the admin's own house rules. */
+  basePrompt: string;
+  /** Short facts the bot should know that do not belong in a FAQ entry. */
+  knowledgePoints: string[];
+  /** Consecutive bot failures before it offers a human. */
+  handoverThreshold: number;
+  /** Model id from the admin picker; empty means use the server's default chain. */
+  model: string;
+  temperature: number;
+  facebook: ChatFacebookSettings;
+  widget: ChatWidgetSettings;
+  updatedAt: string | null;
+}
+
+export interface ChatFacebookSettings {
+  isActive: boolean;
+  pageId: string;
+  /**
+   * Page Access Token. Never read this into the storefront bundle — the
+   * chat_settings read rule is admin-only precisely because of this field.
+   */
+  pageAccessToken: string;
+  /** Instagram Business account id linked to the page, when IG is enabled. */
+  instagramAccountId: string;
+  instagramIsActive: boolean;
+  /** Auto-reply to comments on page posts, not just direct messages. */
+  replyToComments: boolean;
+}
+
+export interface ChatWidgetSettings {
+  isActive: boolean;
+  primaryColor: string;
+  position: "bottom-right" | "bottom-left";
+}
+
+export const DEFAULT_CHAT_SETTINGS: ChatSettingsRecord = {
+  isActive: false,
+  botName: "SAVANA туслах",
+  welcomeMessage: "Сайн байна уу! SAVANA-гийн байгалийн саван, арьс арчилгааны талаар юу асуух вэ?",
+  basePrompt: "",
+  knowledgePoints: [],
+  handoverThreshold: 2,
+  model: "",
+  temperature: 0.7,
+  facebook: {
+    isActive: false,
+    pageId: "",
+    pageAccessToken: "",
+    instagramAccountId: "",
+    instagramIsActive: false,
+    replyToComments: false,
+  },
+  widget: {
+    isActive: false,
+    primaryColor: "#3f5d45",
+    position: "bottom-right",
+  },
+  updatedAt: null,
+};

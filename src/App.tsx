@@ -14,6 +14,7 @@ import CartDrawer from "./components/CartDrawer";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import CustomCursor from "./components/CustomCursor";
 import SoapBubbles from "./components/SoapBubbles";
+import ChatWidget from "./components/chat/ChatWidget";
 import { getPageBannerNavigationItem, getRenderableSettings } from "./lib/storefrontHelpers";
 
 const Home = lazy(() => import("./pages/Home"));
@@ -112,6 +113,9 @@ function AppShell() {
       </main>
       {!hideFooter && <Footer />}
       <CartDrawer />
+      {/* Storefront only: the admin has its own test chat, and the widget would
+          sit on top of the admin UI. */}
+      {!isAdminPath && <ChatWidget />}
       <PwaInstallPrompt />
     </>
   );

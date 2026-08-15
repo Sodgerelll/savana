@@ -1,0 +1,105 @@
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("../../lib/firebase", () => ({ db: {} }));
+
+vi.mock("firebase/firestore", () => ({
+  doc: vi.fn(),
+  onSnapshot: vi.fn(),
+  serverTimestamp: vi.fn(),
+  setDoc: vi.fn(),
+}));
+
+import { deserializeChatSettings } from "../../lib/chat/chatSettings";
+import { DEFAULT_CHAT_SETTINGS } from "../../lib/chat/types";
+
+describe("deserializeChatSettings", () => {
+  it("returns the full defaults when the document does not exist", () => {
+    expect(deserializeChatSettings(undefined)).toEqual(DEFAULT_CHAT_SETTINGS);
+  });
+
+  it("returns the full defaults for an empty document", () => {
+    expect(deserializeChatSettings({})).toEqual(DEFAULT_CHAT_SETTINGS);
+  });
+
+  it("keeps stored values and fills only the missing ones", () => {
+    const result = deserializeChatSettings({
+      isActive: true,
+      botName: "Савана бот",
+      facebook: { pageId: "12345" },
+    });
+
+    expect(result.isActive).toBe(true);
+    expect(result.botName).toBe("Савана бот");
+    expect(result.facebook.pageId).toBe("12345");
+    // Untouched fields fall back rather than becoming undefined.
+    expect(result.welcomeMessage).toBe(DEFAULT_CHAT_SETTINGS.welcomeMessage);
+    expect(result.facebook.pageAccessToken).toBe("");
+    expect(result.widget).toEqual(DEFAULT_CHAT_SETTINGS.widget);
+  });
+
+  it("ignores fields stored with the wrong type", () => {
+    const result = deserializeChatSettings({
+      isActive: "yes",
+      handoverThreshold: "many",
+      temperature: null,
+      botName: 42,
+    });
+
+    expect(result.isActive).toBe(DEFAULT_CHAT_SETTINGS.isActive);
+    expect(result.handoverThreshold).toBe(DEFAULT_CHAT_SETTINGS.handoverThreshold);
+    expect(result.temperature).toBe(DEFAULT_CHAT_SETTINGS.temperature);
+    expect(result.botName).toBe(DEFAULT_CHAT_SETTINGS.botName);
+  });
+
+  it("drops non-string entries from knowledgePoints", () => {
+    const result = deserializeChatSettings({
+      knowledgePoints: ["Хүргэлт 8000₮", 5, null, "Ажлын цаг 10:00-19:00"],
+    });
+
+    expect(result.knowledgePoints).toEqual(["Хүргэлт 8000₮", "Ажлын цаг 10:00-19:00"]);
+  });
+
+  it("falls back to an empty knowledge list when the field is not an array", () => {
+    expect(deserializeChatSettings({ knowledgePoints: "Хүргэлт 8000₮" }).knowledgePoints).toEqual([]);
+  });
+
+  it("accepts bottom-left but rejects any other widget position", () => {
+    expect(deserializeChatSettings({ widget: { position: "bottom-left" } }).widget.position).toBe(
+      "bottom-left",
+    );
+    expect(deserializeChatSettings({ widget: { position: "top-middle" } }).widget.position).toBe(
+      "bottom-right",
+    );
+  });
+
+  it("survives nested objects stored as the wrong type", () => {
+    const result = deserializeChatSettings({ facebook: "not-an-object", widget: 7 });
+
+    expect(result.facebook).toEqual(DEFAULT_CHAT_SETTINGS.facebook);
+    expect(result.widget).toEqual(DEFAULT_CHAT_SETTINGS.widget);
+  });
+
+  it("reads a Firestore Timestamp updatedAt as an ISO string", () => {
+    const result = deserializeChatSettings({
+      updatedAt: { toDate: () => new Date("2026-08-15T10:00:00.000Z") },
+    });
+
+    expect(result.updatedAt).toBe("2026-08-15T10:00:00.000Z");
+  });
+
+  it("passes an already-serialized updatedAt through unchanged", () => {
+    expect(deserializeChatSettings({ updatedAt: "2026-08-15T10:00:00.000Z" }).updatedAt).toBe(
+      "2026-08-15T10:00:00.000Z",
+    );
+  });
+
+  it("reports a pending serverTimestamp as null instead of crashing", () => {
+    expect(deserializeChatSettings({ updatedAt: null }).updatedAt).toBeNull();
+  });
+
+  it("keeps the bot disabled by default so it cannot answer before it is configured", () => {
+    expect(DEFAULT_CHAT_SETTINGS.isActive).toBe(false);
+    expect(DEFAULT_CHAT_SETTINGS.facebook.isActive).toBe(false);
+    expect(DEFAULT_CHAT_SETTINGS.widget.isActive).toBe(false);
+  });
+});

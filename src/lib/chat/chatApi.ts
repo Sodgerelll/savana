@@ -1,0 +1,130 @@
+import { auth } from "../firebase";
+import { CHAT_LIMITS, type ChatMessageRole } from "./types";
+
+/** A turn as the assistant route expects it — only user/assistant reach the model. */
+export interface ChatApiHistoryEntry {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface SendAssistantMessageInput {
+  message: string;
+  history?: ChatApiHistoryEntry[];
+  /** Ignored when `useStorefrontPrompt` is true. */
+  systemPrompt?: string;
+  /**
+   * Build the real customer-facing prompt on the server from live catalog data.
+   * The test chat sets this so an admin tries exactly what a customer gets.
+   */
+  useStorefrontPrompt?: boolean;
+  /** Base64 without the `data:` prefix. */
+  imageBase64?: string;
+  imageMimeType?: string;
+  model?: string;
+  temperature?: number;
+  /** Raise above 800 for bulk work such as generating a batch of FAQs. */
+  maxOutputTokens?: number;
+}
+
+export interface AssistantReply {
+  reply: string;
+  latencyMs: number;
+}
+
+/**
+ * Thrown for every non-2xx answer. `message` is already the Mongolian sentence
+ * the server chose, so callers can surface it directly.
+ */
+export class ChatApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ChatApiError";
+    this.status = status;
+  }
+}
+
+/** Drops `admin`/`system` turns, which the model must not see as its own voice. */
+export function toApiHistory(
+  messages: Array<{ role: ChatMessageRole; content: string }>,
+): ChatApiHistoryEntry[] {
+  return messages
+    .filter((entry) => entry.role === "user" || entry.role === "assistant")
+    .map((entry) => ({ role: entry.role as "user" | "assistant", content: entry.content }))
+    .slice(-CHAT_LIMITS.MAX_HISTORY_MESSAGES);
+}
+
+async function authorizationHeader(): Promise<string> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new ChatApiError("Нэвтэрсэн байх шаардлагатай.", 401);
+  }
+
+  try {
+    return `Bearer ${await currentUser.getIdToken()}`;
+  } catch {
+    throw new ChatApiError("Нэвтрэлт хугацаа дууссан. Дахин нэвтэрнэ үү.", 401);
+  }
+}
+
+/**
+ * Authenticated POST to a chat route. Aborts on the client after
+ * {@link CHAT_LIMITS.REQUEST_TIMEOUT_MS} so a hung request cannot leave a form
+ * disabled forever, and turns every non-2xx into a {@link ChatApiError}
+ * carrying the server's own Mongolian message.
+ */
+async function postToChatApi(path: string, input: unknown): Promise<Record<string, unknown>> {
+  const authorization = await authorizationHeader();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_LIMITS.REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authorization },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    throw new ChatApiError(
+      aborted ? "Хариу хэт удлаа. Дахин оролдоно уу." : "Сүлжээний алдаа гарлаа.",
+      0,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (!response.ok) {
+    const message = typeof payload.error === "string" ? payload.error : "Хариу авч чадсангүй.";
+    throw new ChatApiError(message, response.status);
+  }
+
+  return payload;
+}
+
+export async function sendAssistantMessage(
+  input: SendAssistantMessageInput,
+): Promise<AssistantReply> {
+  const payload = await postToChatApi("/api/chat/assistant", input);
+
+  return {
+    reply: typeof payload.reply === "string" ? payload.reply : "",
+    latencyMs: typeof payload.latencyMs === "number" ? payload.latencyMs : 0,
+  };
+}
+
+/** Delivers an admin's reply on the channel the conversation came in on. */
+export async function sendAdminReply(conversationId: string, message: string): Promise<void> {
+  await postToChatApi("/api/chat/reply", { conversationId, message });
+}
+
+/** Installs the greeting and persistent menu on the connected Facebook page. */
+export async function applyFacebookSetup(): Promise<string> {
+  const payload = await postToChatApi("/api/chat/setup", {});
+  return typeof payload.message === "string" ? payload.message : "Амжилттай.";
+}

@@ -1,0 +1,602 @@
+// GET  /api/chat/webhook — Facebook verification handshake
+// POST /api/chat/webhook — Facebook Messenger and Instagram Direct events
+//
+// Instagram Direct arrives here too: when an IG Business account is linked to
+// the page, Meta delivers its messages to the same webhook with
+// `object: "instagram"`. Everything downstream is channel-agnostic.
+//
+// Required env vars: FB_VERIFY_TOKEN, GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON.
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
+import { buildStorefrontPrompt, loadStorefrontContext } from './_lib/buildPrompt.js';
+import { handleCommentEvent, parseCommentChange } from './_lib/comments.js';
+import {
+  appendMessage,
+  botShouldStaySilent,
+  ensureConversation,
+  readRecentMessages,
+  setConversationStatus,
+  type ChatChannel,
+} from './_lib/conversation.js';
+import {
+  fetchImageAsBase64,
+  firstImageAttachmentUrl,
+  getUserName,
+  sendCarousel,
+  sendQuickReplies,
+  sendText,
+  sendTypingOn,
+} from './_lib/facebook.js';
+import { callGemini, callGeminiAgent, geminiErrorToUserMessage } from './_lib/gemini.js';
+import { sweepStaleLeads } from './_lib/followUp.js';
+import { checkRateLimit, markEventProcessed, releaseEvent } from './_lib/guards.js';
+import {
+  createChatLead,
+  extractName,
+  extractPhone,
+  findOpenLead,
+  isLeadComplete,
+  updateChatLead,
+} from './_lib/leads.js';
+import { canAnswerOnChannel, loadChatSettings, type ServerChatSettings } from './_lib/settings.js';
+import { CHAT_TOOLS, runTool, TOOL_NAMES, type ToolContext } from './_lib/tools.js';
+
+export const config = { maxDuration: 60 };
+
+/** Facebook resends when it does not see a 200 within roughly 20 seconds. */
+const PER_USER_RATE_LIMIT = { max: 12, windowMs: 60_000 };
+
+const START_QUICK_REPLIES = [
+  { title: 'Бүтээгдэхүүн 🌿', payload: 'SHOW_PRODUCTS' },
+  { title: 'Хямдрал 🎁', payload: 'SHOW_PROMOTIONS' },
+  { title: 'Ажилтантай ярих ☎️', payload: 'TRANSFER_TO_STAFF' },
+];
+
+/** Postback payloads the persistent menu and card buttons can produce. */
+const POSTBACK_TO_TOOL: Record<string, string> = {
+  SHOW_PRODUCTS: TOOL_NAMES.SHOW_PRODUCTS,
+  SHOW_PROMOTIONS: TOOL_NAMES.SHOW_PROMOTIONS,
+  TRANSFER_TO_STAFF: TOOL_NAMES.TRANSFER_TO_STAFF,
+};
+
+export default async function handler(req: any, res: any): Promise<void> {
+  if (req.method === 'GET') {
+    handleVerify(req, res);
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const body = req.body ?? {};
+  if (body.object !== 'page' && body.object !== 'instagram') {
+    // Not ours, but acknowledge so Meta stops retrying.
+    res.status(200).send('EVENT_RECEIVED');
+    return;
+  }
+
+  // Work is awaited before responding: a Vercel function may be frozen the
+  // instant the response is sent, so anything left running would be dropped.
+  // Facebook's ~20s tolerance is comfortably more than a Gemini turn needs.
+  try {
+    await processWebhookBody(body);
+  } catch (err) {
+    console.error('[chat/webhook] processing failed:', (err as Error).message);
+  }
+
+  res.status(200).send('EVENT_RECEIVED');
+}
+
+function handleVerify(req: any, res: any): void {
+  const expected = process.env.FB_VERIFY_TOKEN;
+  const query = req.query ?? {};
+  const mode = query['hub.mode'];
+  const token = query['hub.verify_token'];
+  const challenge = query['hub.challenge'];
+
+  if (!expected) {
+    console.error('[chat/webhook] FB_VERIFY_TOKEN is not configured');
+    res.status(503).send('Not configured');
+    return;
+  }
+
+  if (mode === 'subscribe' && token === expected) {
+    res.status(200).send(String(challenge ?? ''));
+    return;
+  }
+
+  console.warn('[chat/webhook] verification rejected');
+  res.status(403).send('Forbidden');
+}
+
+async function processWebhookBody(body: any): Promise<void> {
+  const dbPromise = getAdminFirestore();
+  if (!dbPromise) {
+    console.error('[chat/webhook] FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+    return;
+  }
+  const db = await dbPromise;
+  const settings = await loadChatSettings(db);
+
+  // `object` tells the channel apart: Meta sends "instagram" for IG Direct.
+  const channel: ChatChannel = body.object === 'instagram' ? 'instagram' : 'facebook';
+
+  if (!canAnswerOnChannel(settings, channel)) {
+    console.log(`[chat/webhook] ${channel} is not enabled; ignoring event`);
+    return;
+  }
+
+  for (const entry of body.entry ?? []) {
+    const pageId = String(entry?.id ?? '');
+
+    for (const event of entry?.messaging ?? []) {
+      try {
+        await processMessagingEvent(db, settings, channel, pageId, event);
+      } catch (err) {
+        console.error('[chat/webhook] messaging event failed:', (err as Error).message);
+      }
+    }
+
+    // Comments on page posts arrive as `changes`, not `messaging`.
+    if (settings.facebook.replyToComments) {
+      for (const change of entry?.changes ?? []) {
+        try {
+          await processCommentChange(db, settings, channel, pageId, change);
+        } catch (err) {
+          console.error('[chat/webhook] comment event failed:', (err as Error).message);
+        }
+      }
+    }
+  }
+
+  // Traffic drives the follow-up sweep: Vercel's Hobby cron is daily-only,
+  // which is useless for a 20-minute nudge. Internally throttled, so this costs
+  // one read on most requests.
+  try {
+    await sweepStaleLeads(db, { token: settings.facebook.pageAccessToken });
+  } catch (err) {
+    console.warn('[chat/webhook] follow-up sweep failed:', (err as Error).message);
+  }
+}
+
+async function processCommentChange(
+  db: any,
+  settings: ServerChatSettings,
+  channel: ChatChannel,
+  pageId: string,
+  change: any,
+): Promise<void> {
+  // Facebook posts report under `feed`, Instagram under `comments`.
+  const field = String(change?.field ?? '');
+  if (field !== 'feed' && field !== 'comments') {
+    return;
+  }
+
+  const commentChannel = channel === 'instagram' ? 'instagram' : 'facebook';
+  const event = parseCommentChange(change, pageId, commentChannel);
+  if (!event) {
+    return;
+  }
+
+  // Comment spam is a real vector on a public post, so the same per-author cap
+  // applies here as in direct messages.
+  if (!(await checkRateLimit(db, `comment:${event.authorId || event.commentId}`, PER_USER_RATE_LIMIT))) {
+    console.warn(`[chat/webhook] comment rate limit hit for ${event.authorId}`);
+    return;
+  }
+
+  await handleCommentEvent(db, event, {
+    token: settings.facebook.pageAccessToken,
+    storefront: await loadStorefrontContext(db, new Date()),
+    model: settings.model || undefined,
+    temperature: settings.temperature,
+  });
+}
+
+async function processMessagingEvent(
+  db: any,
+  settings: ServerChatSettings,
+  channel: ChatChannel,
+  pageId: string,
+  event: any,
+): Promise<void> {
+  // Echoes are our own outgoing messages coming back; replying would loop.
+  if (event?.message?.is_echo) {
+    return;
+  }
+
+  const senderId = String(event?.sender?.id ?? '');
+  if (!senderId) {
+    return;
+  }
+
+  const postbackPayload = event?.postback?.payload ?? event?.message?.quick_reply?.payload ?? null;
+  const text = String(event?.message?.text ?? '').trim();
+  // Customers routinely send a photo instead of typing — "энэ юу вэ?", "миний
+  // арьс ийм байна". Staying silent on those reads as a broken bot.
+  const imageUrl = firstImageAttachmentUrl(event?.message);
+
+  if (!postbackPayload && !text && !imageUrl) {
+    // Sticker, reaction or an attachment we cannot interpret.
+    return;
+  }
+
+  // One claim per delivery. `mid` is unique per message; postbacks have no mid,
+  // so the payload plus timestamp stands in.
+  const eventKey = postbackPayload
+    ? `pb_${pageId}_${senderId}_${event?.timestamp ?? ''}_${postbackPayload}`
+    : String(event?.message?.mid ?? `msg_${pageId}_${senderId}_${event?.timestamp ?? ''}`);
+
+  if (!(await markEventProcessed(db, eventKey))) {
+    return;
+  }
+
+  try {
+    await replyToEvent(db, settings, {
+      channel,
+      pageId,
+      senderId,
+      text,
+      postbackPayload,
+      imageUrl,
+    });
+  } catch (err) {
+    // Let Facebook's retry have another go rather than losing the message.
+    await releaseEvent(db, eventKey);
+    throw err;
+  }
+}
+
+async function replyToEvent(
+  db: any,
+  settings: ServerChatSettings,
+  params: {
+    channel: ChatChannel;
+    pageId: string;
+    senderId: string;
+    text: string;
+    postbackPayload: string | null;
+    imageUrl: string | null;
+  },
+): Promise<void> {
+  const { channel, pageId, senderId, text, postbackPayload, imageUrl } = params;
+  const token = settings.facebook.pageAccessToken;
+
+  if (!(await checkRateLimit(db, `${channel}:${senderId}`, PER_USER_RATE_LIMIT))) {
+    console.warn(`[chat/webhook] rate limit hit for ${channel}:${senderId}`);
+    return;
+  }
+
+  const customerName = await getUserName(token, senderId);
+  const conversation = await ensureConversation(db, {
+    channel,
+    pageId,
+    externalUserId: senderId,
+    customerName,
+  });
+
+  // Record what the customer sent before anything can fail, so the admin sees
+  // the message even if the reply never gets generated.
+  await appendMessage(db, conversation.id, {
+    role: 'user',
+    content: postbackPayload
+      ? `[${postbackPayload}] ${text}`.trim()
+      : text || (imageUrl ? '[зураг]' : ''),
+  });
+
+  // Contact details often arrive a message or two after the order request, so
+  // every incoming message tops up an open lead before anything else.
+  if (text) {
+    await captureContactDetails(db, conversation.id, text);
+  }
+
+  if (botShouldStaySilent(conversation)) {
+    return;
+  }
+
+  await sendTypingOn(token, senderId);
+
+  const storefront = await loadStorefrontContext(db, new Date());
+  const toolContext: ToolContext = {
+    storefront,
+    imageUrlFor: (product) => product.imageUrl || undefined,
+    lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
+  };
+
+  // A button press is an explicit instruction — run the tool directly instead
+  // of asking the model to re-derive an intent the customer already stated.
+  const directTool = postbackPayload ? resolveDirectTool(postbackPayload) : null;
+  if (directTool) {
+    const outcome = await runTool(directTool.name, directTool.args, toolContext);
+    await deliverOutcome(db, token, senderId, { ...conversation, channel }, outcome, directTool.name);
+    return;
+  }
+
+  // Only the explicit Get Started button gets the canned welcome. An ordinary
+  // first message goes to the model, whose prompt already tells it to greet
+  // once at the start — and an unmapped payload is intent we should not throw
+  // away by answering with a greeting instead.
+  if (postbackPayload === 'GET_STARTED') {
+    await sendQuickReplies(token, senderId, settings.welcomeMessage, START_QUICK_REPLIES);
+    await appendMessage(db, conversation.id, {
+      role: 'assistant',
+      content: settings.welcomeMessage,
+    });
+    return;
+  }
+
+  const history = await readRecentMessages(db, conversation.id);
+  // The turn just stored is the message being answered — sending it as history
+  // as well makes the model see it twice and repeat itself.
+  const priorHistory = history.slice(0, -1);
+
+  if (imageUrl) {
+    await answerImage(db, token, senderId, conversation, {
+      imageUrl,
+      caption: text,
+      history: priorHistory,
+      storefront,
+      settings,
+    });
+    return;
+  }
+
+  let outcome;
+  let toolName: string | null = null;
+
+  try {
+    const result = await callGeminiAgent({
+      systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+      history: priorHistory,
+      message: text || String(postbackPayload ?? ''),
+      tools: CHAT_TOOLS,
+      model: settings.model || undefined,
+      temperature: settings.temperature,
+    });
+
+    if (result.functionCall) {
+      toolName = result.functionCall.name;
+      outcome = await runTool(result.functionCall.name, result.functionCall.args, toolContext);
+    } else {
+      outcome = { text: result.text ?? '' };
+    }
+  } catch (err) {
+    console.error('[chat/webhook] generation failed:', (err as Error).message);
+    outcome = { text: geminiErrorToUserMessage(err) };
+  }
+
+  await deliverOutcome(db, token, senderId, { ...conversation, channel }, outcome, toolName);
+}
+
+/**
+ * Fills a name and phone into the conversation's open lead as they arrive.
+ *
+ * Only ever adds what is still missing — a later message must not overwrite a
+ * number the customer already confirmed.
+ */
+async function captureContactDetails(db: any, conversationId: string, text: string): Promise<void> {
+  const open = await findOpenLead(db, conversationId);
+  if (!open) {
+    return;
+  }
+
+  const patch: Record<string, unknown> = {};
+  const currentPhone = String(open.data.customerPhone ?? '');
+  const currentName = String(open.data.customerName ?? '');
+
+  if (!currentPhone) {
+    const phone = extractPhone(text);
+    if (phone) patch.customerPhone = phone;
+  }
+  if (!currentName) {
+    const name = extractName(text);
+    if (name) patch.customerName = name;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return;
+  }
+
+  await updateChatLead(db, open.id, patch);
+
+  const merged = {
+    customerName: String(patch.customerName ?? currentName),
+    customerPhone: String(patch.customerPhone ?? currentPhone),
+  };
+  if (isLeadComplete(merged)) {
+    console.log(`[chat/webhook] lead ${open.id} is ready for review`);
+  }
+}
+
+/**
+ * Answers a photo the customer sent.
+ *
+ * Runs without tools: vision plus function calling is the least reliable model
+ * combination, and a photo turn is almost always "what is this / does this suit
+ * me", which wants prose. If the answer points at a product the customer can
+ * ask for it in the next message, where the tools are available again.
+ */
+async function answerImage(
+  db: any,
+  token: string,
+  senderId: string,
+  conversation: { id: string },
+  params: {
+    imageUrl: string;
+    caption: string;
+    history: Array<{ role: 'user' | 'assistant'; content: string }>;
+    storefront: Parameters<typeof buildStorefrontPrompt>[0];
+    settings: ServerChatSettings;
+  },
+): Promise<void> {
+  const image = await fetchImageAsBase64(params.imageUrl);
+
+  if (!image) {
+    // Unsupported format, too large, or the CDN link had already expired.
+    const fallback = 'Зургийг тань нээж чадсангүй. Юу асуухыг хүсэж байгаагаа бичиж өгнө үү 🙏';
+    await sendText(token, senderId, fallback);
+    await appendMessage(db, conversation.id, { role: 'assistant', content: fallback });
+    return;
+  }
+
+  let reply: string;
+  try {
+    reply = await callGemini({
+      systemPrompt: `${buildStorefrontPrompt(params.storefront, new Date())}\n${IMAGE_REPLY_RULES}`,
+      history: params.history,
+      message: params.caption || 'Хэрэглэгч зураг илгээлээ. Юу байгааг хараад тусал.',
+      imageBase64: image.base64,
+      imageMimeType: image.mimeType,
+      model: params.settings.model || undefined,
+      temperature: params.settings.temperature,
+    });
+  } catch (err) {
+    console.error('[chat/webhook] image reply failed:', (err as Error).message);
+    reply = geminiErrorToUserMessage(err);
+  }
+
+  await sendText(token, senderId, reply);
+  await appendMessage(db, conversation.id, { role: 'assistant', content: reply });
+}
+
+const IMAGE_REPLY_RULES = `
+# ХЭРЭГЛЭГЧ ЗУРАГ ИЛГЭЭЛЭЭ
+- Зурган дээр юу байгааг хараад ТОВЧ (1-3 өгүүлбэр) хариул.
+- Манай бүтээгдэхүүн бол каталогоос нэрлэж, үнийг нь хэл.
+- Манайх биш бараа бол шүүмжлэхгүй, эелдэг хариулаад ойролцоо төстэйгөө санал болго.
+- ⛔ АРЬСНЫ ЗУРАГ бол: онош ХЭЗЭЭ Ч бүү тавь, "эмчилнэ" гэж бүү хэл.
+  Ерөнхий арчилгааны зөвлөгөө өгөөд, ноцтой санагдвал арьсны эмчид хандахыг зөвлө.
+- Баримт бичиг/шилжүүлгийн зураг бол ажилтан шалгана гэж хэлээд шилжүүл.`;
+
+function resolveDirectTool(payload: string): { name: string; args: Record<string, unknown> } | null {
+  const mapped = POSTBACK_TO_TOOL[payload];
+  if (mapped) {
+    return { name: mapped, args: {} };
+  }
+
+  // Carousel "Захиалах" buttons carry the product id.
+  const orderMatch = /^ORDER_PRODUCT_(\d+)$/.exec(payload);
+  if (orderMatch) {
+    return { name: TOOL_NAMES.START_ORDER, args: { productId: Number(orderMatch[1]) } };
+  }
+
+  return null;
+}
+
+/** Sends whatever a turn produced and records it on the conversation. */
+async function deliverOutcome(
+  db: any,
+  token: string,
+  senderId: string,
+  conversation: { id: string; channel: ChatChannel; customerName: string | null },
+  outcome: {
+    text?: string;
+    cards?: Array<{ title: string; subtitle?: string; imageUrl?: string; buttons?: any[] }>;
+    quickReplies?: Array<{ title: string; payload: string }>;
+    handoverReason?: string;
+    lead?: { productName: string; quantity: number };
+  },
+  toolName: string | null,
+): Promise<void> {
+  const conversationId = conversation.id;
+  const text = (outcome.text ?? '').trim();
+
+  if (text) {
+    if (outcome.quickReplies && outcome.quickReplies.length > 0) {
+      await sendQuickReplies(token, senderId, text, outcome.quickReplies);
+    } else {
+      await sendText(token, senderId, text);
+    }
+  }
+
+  if (outcome.cards && outcome.cards.length > 0) {
+    await sendCarousel(token, senderId, outcome.cards);
+  }
+
+  if (text || outcome.cards?.length) {
+    await appendMessage(db, conversationId, {
+      role: 'assistant',
+      content: text || `[${outcome.cards?.length ?? 0} карт]`,
+      toolName,
+    });
+  }
+
+  if (outcome.handoverReason) {
+    await setConversationStatus(db, conversationId, 'handover', {
+      handoverReason: outcome.handoverReason,
+    });
+  }
+
+  if (outcome.lead) {
+    await recordOrderLead(db, conversation, outcome.lead);
+  }
+}
+
+/**
+ * Raises — or tops up — the order lead for this conversation.
+ *
+ * One open lead per thread: a customer adding a second product should extend
+ * the request an admin is about to process, not spawn a competing one.
+ */
+async function recordOrderLead(
+  db: any,
+  conversation: { id: string; channel: ChatChannel; customerName: string | null },
+  lead: { productName: string; quantity: number },
+): Promise<void> {
+  const item = {
+    productId: null,
+    name: lead.productName,
+    variant: null,
+    quantity: lead.quantity,
+  };
+
+  const open = await findOpenLead(db, conversation.id);
+  if (open) {
+    const items = Array.isArray(open.data.items) ? open.data.items : [];
+    await updateChatLead(db, open.id, { items: [...items, item] });
+    return;
+  }
+
+  await createChatLead(db, {
+    type: 'order',
+    conversationId: conversation.id,
+    channel: conversation.channel,
+    // Messenger gives us a profile name; the customer may still supply their
+    // own, which captureContactDetails will not overwrite.
+    customerName: conversation.customerName ?? '',
+    customerPhone: '',
+    note: '',
+    items: [item],
+  });
+}
+
+/** Order status lookup for the check_order tool. */
+async function lookupOrder(
+  db: any,
+  orderNumber: string,
+): Promise<{ orderNumber: string; status: string; grandTotal: number } | null> {
+  try {
+    const snapshot = await db
+      .collection('orders')
+      .where('orderNumber', '==', orderNumber)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    const data = snapshot.docs[0].data();
+    return {
+      orderNumber: String(data.orderNumber ?? orderNumber),
+      status: String(data.status ?? 'new'),
+      grandTotal: Number(data.totals?.grandTotal ?? 0),
+    };
+  } catch (err) {
+    console.error('[chat/webhook] order lookup failed:', (err as Error).message);
+    return null;
+  }
+}
