@@ -2542,12 +2542,15 @@ export default function Account() {
     }
 
     const draft = saleModal.draft;
-    const isOrganization = draft.customer.type === "organization";
+    // The form no longer asks what kind of buyer this is: a sale carrying an organization
+    // name or register number is an organization sale, anything else is a person.
+    const organizationName = draft.customer.organizationName.trim();
+    const registrationNumber = draft.customer.registrationNumber.trim();
     const customer: SaleCustomerPayload = {
-      type: draft.customer.type,
+      type: organizationName || registrationNumber ? "organization" : "individual",
       fullName: draft.customer.fullName.trim(),
-      organizationName: isOrganization ? draft.customer.organizationName.trim() : "",
-      registrationNumber: isOrganization ? draft.customer.registrationNumber.trim() : "",
+      organizationName,
+      registrationNumber,
       phoneNumber: draft.customer.phoneNumber.trim(),
       email: draft.customer.email?.trim() ? draft.customer.email.trim() : null,
       note: draft.customer.note.trim(),

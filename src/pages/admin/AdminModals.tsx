@@ -356,7 +356,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     saleModalError,
     savingSale,
     saleChannelOptions,
-    saleCustomerTypeOptions,
     userProfileModal,
     setUserProfileModal,
     closeUserProfileModal,
@@ -4894,13 +4893,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   /**
    * Copies a directory customer into the sale. The address only follows when the contact
    * has one on file, so picking a customer never blanks an address already typed here.
+   * The buyer kind is not copied — it is inferred from the organization name on save.
    */
   const applyContactToSale = (contact: CrmContactRecord) => {
     patchDraft({
       customer: {
         ...draft.customer,
         contactId: contact.id,
-        type: contact.type,
         fullName: contact.fullName,
         organizationName: contact.type === "organization" ? contact.organizationName : "",
         registrationNumber: contact.type === "organization" ? contact.registrationNumber : "",
@@ -4921,7 +4920,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     });
   };
 
-  const isOrganization = draft.customer.type === "organization";
   // Delivered channels still prefill the shipping fee, but no customer or address
   // field is mandatory — an offline sale can be booked with the goods alone.
   const deliveryChannel = saleChannelRequiresAddress(draft.channel);
@@ -5011,23 +5009,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           </label>
 
           <label className="admin-field">
-            <span>{language === "MN" ? "Харилцагчийн төрөл" : "Customer type"}</span>
-            <select
-              value={draft.customer.type}
-              onChange={(event: any) =>
-                patchDraft({ customer: { ...draft.customer, type: event.target.value } })
-              }
-              required
-            >
-              {saleCustomerTypeOptions.map((typeOption: any) => (
-                <option key={typeOption.value} value={typeOption.value}>
-                  {typeOption.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="admin-field">
             <span>{copy.status}</span>
             <select value={draft.status} onChange={(event: any) => patchDraft({ status: event.target.value })}>
               {orderStatusOptions.map((statusOption: any) => (
@@ -5074,41 +5055,38 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             onClear={() => patchDraft({ customer: { ...draft.customer, contactId: null } })}
           />
           <div className="admin-form-grid">
-            {isOrganization && (
-              <>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Байгууллагын нэр" : "Organization name"}</span>
-                  <input
-                    type="text"
-                    value={draft.customer.organizationName}
-                    onChange={(event: any) =>
-                      patchDraft({ customer: { ...draft.customer, organizationName: event.target.value } })
-                    }
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>{language === "MN" ? "Регистрийн дугаар" : "Register number"}</span>
-                  <input
-                    type="text"
-                    value={draft.customer.registrationNumber}
-                    onChange={(event: any) =>
-                      patchDraft({ customer: { ...draft.customer, registrationNumber: event.target.value } })
-                    }
-                  />
-                </label>
-              </>
-            )}
             <label className="admin-field">
-              <span>
-                {isOrganization
-                  ? language === "MN" ? "Холбоо барих хүн" : "Contact person"
-                  : language === "MN" ? "Худалдан авагчийн нэр" : "Buyer name"}
-              </span>
+              <span>{language === "MN" ? "Худалдан авагчийн нэр" : "Buyer name"}</span>
               <input
                 type="text"
                 value={draft.customer.fullName}
                 onChange={(event: any) =>
                   patchDraft({ customer: { ...draft.customer, fullName: event.target.value } })
+                }
+              />
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Байгууллагын нэр" : "Organization name"}</span>
+              <input
+                type="text"
+                value={draft.customer.organizationName}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, organizationName: event.target.value } })
+                }
+              />
+              <small>
+                {language === "MN"
+                  ? "Бөглөвөл байгууллагын борлуулалт болж бүртгэгдэнэ."
+                  : "Filling this in books the sale as an organization sale."}
+              </small>
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Регистрийн дугаар" : "Register number"}</span>
+              <input
+                type="text"
+                value={draft.customer.registrationNumber}
+                onChange={(event: any) =>
+                  patchDraft({ customer: { ...draft.customer, registrationNumber: event.target.value } })
                 }
               />
             </label>
