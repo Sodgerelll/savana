@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { JSX } from "react";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Package, Pencil, Plus, Trash2 } from "lucide-react";
