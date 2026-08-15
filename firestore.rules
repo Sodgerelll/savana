@@ -292,6 +292,13 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    // CRM: customer directory (харилцагч) sales can be booked against. Admin-only —
+    // never read by a shopper's browser.
+    match /crmContacts/{contactId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
     match /customerTransactions/{transactionId} {
       allow read, list: if hasPrivilegedProfileRole();
       allow create, update, delete: if hasPrivilegedProfileRole();

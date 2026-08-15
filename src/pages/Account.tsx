@@ -54,6 +54,7 @@ import {
   type OrderStatus,
 } from "../lib/orders";
 import {
+  calculateSaleVat,
   createSale,
   deleteSale,
   subscribeToSales,
@@ -63,6 +64,7 @@ import {
   type SalePaymentMethod,
   type SaleRecord,
   type SaleStatus,
+  type SaleVatMode,
 } from "../lib/sales";
 import { DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
 import {
@@ -119,6 +121,16 @@ import {
   type CustomerType,
 } from "../lib/customers";
 import {
+  createCrmContact,
+  createEmptyCrmContactDraft,
+  deleteCrmContact,
+  getCrmContactDisplayName,
+  getNextCrmContactCode,
+  subscribeToCrmContacts,
+  updateCrmContact,
+  type CrmContactRecord,
+} from "../lib/crmContacts";
+import {
   checkProductHasTransactions,
   createCustomerTransaction,
   createEmptyTransactionDraft,
@@ -145,6 +157,7 @@ import CategoriesPage from "./admin/CategoriesPage";
 import OrdersPage from "./admin/OrdersPage";
 import SalesPage from "./admin/SalesPage";
 import UsersPage from "./admin/UsersPage";
+import CrmContactsPage from "./admin/CrmContactsPage";
 import CrmCustomersPage from "./admin/CrmCustomersPage";
 import CrmCustomerTransactionsPage from "./admin/CrmCustomerTransactionsPage";
 import CrmOverviewPage from "./admin/CrmOverviewPage";
@@ -210,6 +223,7 @@ type AdminSection =
   | "sales"
   | "users"
   | "crmOverview"
+  | "crmContacts"
   | "crmCustomers"
   | "crmCustomerTransactions"
   | "crmService"
@@ -301,6 +315,8 @@ interface SaleDraft {
   address: SaleRecord["address"];
   items: OrderItemPayload[];
   shippingFee: number;
+  /** Whether the 10% НӨАТ sits inside the typed prices, on top of them, or not at all. */
+  vatMode: SaleVatMode;
 }
 
 interface SaleModalState {
@@ -394,6 +410,11 @@ interface CustomerModalState {
   draft: CustomerRecord;
 }
 
+interface CrmContactModalState {
+  mode: ModalMode;
+  draft: CrmContactRecord;
+}
+
 interface CustomerTransactionModalState {
   mode: ModalMode;
   draft: CustomerTransactionRecord;
@@ -438,7 +459,7 @@ interface AdminMenuGroup {
 
 const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
-  "crmOverview", "crmCustomers", "crmCustomerTransactions", "crmService",
+  "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions", "crmService",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports",
   "factoryOverview", "factoryProduction", "factoryRecipes", "rawMaterials", "factoryInventory",
 ]);
@@ -568,6 +589,11 @@ export default function Account() {
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [customerTransactions, setCustomerTransactions] = useState<CustomerTransactionRecord[]>([]);
   const [customerTransactionsError, setCustomerTransactionsError] = useState<string | null>(null);
+  const [crmContacts, setCrmContacts] = useState<CrmContactRecord[]>([]);
+  const [crmContactsError, setCrmContactsError] = useState<string | null>(null);
+  const [crmContactModal, setCrmContactModal] = useState<CrmContactModalState | null>(null);
+  const [savingCrmContact, setSavingCrmContact] = useState(false);
+  const [crmContactModalError, setCrmContactModalError] = useState<string | null>(null);
   const [directSales, setDirectSales] = useState<DirectSaleRecord[]>([]);
   const [directSalesError, setDirectSalesError] = useState<string | null>(null);
   const [financeEntries, setFinanceEntries] = useState<FinanceEntryRecord[]>([]);
@@ -799,6 +825,7 @@ export default function Account() {
     "factoryRecipes",
     "rawMaterials",
     "crmOverview",
+    "crmContacts",
     "crmCustomers",
     "crmCustomerTransactions",
     "financeOverview",
@@ -872,6 +899,14 @@ export default function Account() {
                 description: copy.discountsText,
                 icon: <Percent size={18} />,
                 implemented: true,
+              },
+              {
+                id: "sales",
+                label: "Борлуулалт",
+                description: "Дэлгүүр, мессенжер, утас — онлайнаас бусад бүх борлуулалт.",
+                icon: <ShoppingBag size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
               },
             ],
           },
@@ -964,6 +999,14 @@ export default function Account() {
                 implemented: true,
               },
               {
+                id: "crmContacts",
+                label: "Харилцагч",
+                description: "Хувь хүн, байгууллага харилцагчийн нэр, утас, хаягийн бүртгэл.",
+                icon: <UserCircle2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
                 id: "crmCustomers",
                 label: "Борлуулагч",
                 description: "Байгууллага, хувь борлуулагчийн бүртгэл, үлдэгдэл.",
@@ -979,14 +1022,6 @@ export default function Account() {
                 implemented: true,
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
-              },
-              {
-                id: "sales",
-                label: "Борлуулалт",
-                description: "Дэлгүүр, мессенжер, утас — онлайнаас бусад бүх борлуулалт.",
-                icon: <ShoppingBag size={18} />,
-                implemented: true,
-                requiresPrivilege: true,
               },
               {
                 id: "crmService",
@@ -1189,6 +1224,14 @@ export default function Account() {
                 icon: <Percent size={18} />,
                 implemented: true,
               },
+              {
+                id: "sales",
+                label: "Sales",
+                description: "Store, Messenger, phone — every sale made outside the online store.",
+                icon: <ShoppingBag size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
             ],
           },
           {
@@ -1280,6 +1323,14 @@ export default function Account() {
                 implemented: true,
               },
               {
+                id: "crmContacts",
+                label: "Customers",
+                description: "Individual & organization customer records — name, phone, address.",
+                icon: <UserCircle2 size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
                 id: "crmCustomers",
                 label: "Sellers",
                 description: "Organization & individual seller records and balances.",
@@ -1295,14 +1346,6 @@ export default function Account() {
                 implemented: true,
                 requiresPrivilege: true,
                 badge: paidOrdersCount > 0 ? paidOrdersCount : undefined,
-              },
-              {
-                id: "sales",
-                label: "Sales",
-                description: "Store, Messenger, phone — every sale made outside the online store.",
-                icon: <ShoppingBag size={18} />,
-                implemented: true,
-                requiresPrivilege: true,
               },
               {
                 id: "crmService",
@@ -1524,6 +1567,23 @@ export default function Account() {
 
   useEffect(() => {
     if (!isPrivilegedUser) {
+      setCrmContacts([]);
+      setCrmContactsError(null);
+      return;
+    }
+    return subscribeToCrmContacts({
+      onData: (next) => {
+        setCrmContacts(next);
+        setCrmContactsError(null);
+      },
+      onError: (subscriptionError) => {
+        setCrmContactsError(subscriptionError.message);
+      },
+    });
+  }, [isPrivilegedUser]);
+
+  useEffect(() => {
+    if (!isPrivilegedUser) {
       setCustomerTransactions([]);
       setCustomerTransactionsError(null);
       return;
@@ -1738,7 +1798,7 @@ export default function Account() {
   }, [isPrivilegedUser, user]);
 
   useEffect(() => {
-    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "sales" || activeSection === "messages" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
+    if (!isPrivilegedUser && (activeSection === "users" || activeSection === "orders" || activeSection === "sales" || activeSection === "messages" || activeSection === "crmContacts" || activeSection === "crmCustomers" || activeSection === "crmCustomerTransactions")) {
       setActiveSection("dashboard");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2435,6 +2495,8 @@ export default function Account() {
     },
     items: [],
     shippingFee: 0,
+    // Retail prices in the catalog are quoted VAT-inclusive, so that is the default here.
+    vatMode: "included",
   });
 
   const openSaleCreateModal = () => {
@@ -2457,6 +2519,7 @@ export default function Account() {
         address: { ...previous.address },
         items: previous.items.map((item) => ({ ...item })),
         shippingFee: previous.totals.shippingFee,
+        vatMode: previous.totals.vatMode ?? "none",
       },
     });
     setSaleModalError(null);
@@ -2512,7 +2575,17 @@ export default function Account() {
       0,
     );
     const shippingFee = Math.max(0, Math.round(draft.shippingFee));
-    const totals = { subtotal, shippingFee, grandTotal: subtotal + shippingFee, discountTotal };
+    // НӨАТ is charged on the goods only — delivery is billed at cost and stays outside it.
+    const vatAmount = calculateSaleVat(subtotal, draft.vatMode);
+    const grandTotal = subtotal + shippingFee + (draft.vatMode === "added" ? vatAmount : 0);
+    const totals = {
+      subtotal,
+      shippingFee,
+      grandTotal,
+      discountTotal,
+      vatMode: draft.vatMode,
+      vatAmount,
+    };
 
     setSavingSale(true);
     setSaleModalError(null);
@@ -2562,6 +2635,116 @@ export default function Account() {
     } finally {
       setSavingSale(false);
     }
+  };
+
+  const openCrmContactCreateModal = async () => {
+    const draft = createEmptyCrmContactDraft();
+    try {
+      draft.code = await getNextCrmContactCode();
+    } catch {
+      draft.code = "HAR-0001";
+    }
+    setCrmContactModalError(null);
+    setCrmContactModal({ mode: "create", draft });
+  };
+
+  const openCrmContactModal = (contact: CrmContactRecord) => {
+    setCrmContactModalError(null);
+    setCrmContactModal({
+      mode: "edit",
+      draft: { ...contact, address: contact.address ? { ...contact.address } : null },
+    });
+  };
+
+  const closeCrmContactModal = () => {
+    if (savingCrmContact) {
+      return;
+    }
+
+    setCrmContactModal(null);
+    setCrmContactModalError(null);
+  };
+
+  const handleCrmContactSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!crmContactModal) {
+      return;
+    }
+
+    const draft = crmContactModal.draft;
+    const isOrganization = draft.type === "organization";
+    const name = isOrganization ? draft.organizationName.trim() : draft.fullName.trim();
+
+    if (!name) {
+      setCrmContactModalError(
+        language === "MN"
+          ? isOrganization
+            ? "Байгууллагын нэрийг оруулна уу."
+            : "Харилцагчийн нэрийг оруулна уу."
+          : isOrganization
+            ? "Enter the organization name."
+            : "Enter the customer name.",
+      );
+      return;
+    }
+
+    const address = draft.address;
+    const hasAddress =
+      address !== null &&
+      [address.region, address.districtOrSoum, address.khorooOrBag, address.streetAddress].some(
+        (part) => part.trim() !== "",
+      );
+
+    setSavingCrmContact(true);
+    setCrmContactModalError(null);
+
+    try {
+      const input = {
+        code: draft.code,
+        type: draft.type,
+        fullName: draft.fullName,
+        organizationName: draft.organizationName,
+        registrationNumber: draft.registrationNumber,
+        phoneNumber: draft.phoneNumber,
+        secondaryPhone: draft.secondaryPhone,
+        email: draft.email,
+        address: hasAddress && address ? address : null,
+        note: draft.note,
+        status: draft.status,
+      };
+
+      if (crmContactModal.mode === "create") {
+        await createCrmContact(input);
+      } else {
+        await updateCrmContact(draft.id, input);
+      }
+
+      setCrmContactModal(null);
+      setCrmContactModalError(null);
+    } catch (error) {
+      setCrmContactModalError(
+        error instanceof Error
+          ? error.message
+          : language === "MN"
+            ? "Харилцагчийг хадгалж чадсангүй."
+            : "Unable to save the customer.",
+      );
+    } finally {
+      setSavingCrmContact(false);
+    }
+  };
+
+  const handleCrmContactDeleteRequest = (contact: CrmContactRecord) => {
+    openConfirmModal({
+      title: copy.deleteContactTitle,
+      description: `${getCrmContactDisplayName(contact) || contact.code} — ${copy.deleteContactDescription}`,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: async () => {
+        await deleteCrmContact(contact.id);
+      },
+    });
   };
 
   const handleSaleDeleteRequest = (sale: SaleRecord) => {
@@ -2979,6 +3162,18 @@ export default function Account() {
     updateFinanceRecurring,
     deleteFinanceRecurring,
     crmPayments,
+    // crm contacts — the customer directory sales can be booked against
+    crmContacts,
+    crmContactsError,
+    crmContactModal,
+    setCrmContactModal,
+    crmContactModalError,
+    savingCrmContact,
+    openCrmContactCreateModal,
+    openCrmContactModal,
+    closeCrmContactModal,
+    handleCrmContactSubmit,
+    handleCrmContactDeleteRequest,
     // customers / transactions
     customers,
     customersError,
@@ -3469,6 +3664,8 @@ export default function Account() {
             <DiscountsPage ctx={adminCtx} />
           ) : activeSection === "crmOverview" ? (
             <CrmOverviewPage ctx={adminCtx} />
+          ) : activeSection === "crmContacts" ? (
+            <CrmContactsPage ctx={adminCtx} />
           ) : activeSection === "crmCustomers" ? (
             <CrmCustomersPage ctx={adminCtx} />
           ) : activeSection === "crmCustomerTransactions" ? (

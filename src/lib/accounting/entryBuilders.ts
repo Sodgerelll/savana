@@ -108,16 +108,22 @@ export function buildDirectSaleEntry(params: { lineTotal: number; cogsAmount: nu
  * Counterpart of api/_lib/postOrderPaidEntry.ts for sales taken outside the storefront:
  * revenue is booked as direct (non-online) sales and the money lands in whichever account
  * the selected payment method settles into instead of the Bonum clearing account.
+ *
+ * `grandTotal` is what the buyer pays, so any НӨАТ it carries is split off into the VAT
+ * payable account and only the net remainder is booked as revenue.
  */
 export function buildSaleEntry(params: {
   grandTotal: number;
   cogsAmount: number;
   paymentMethod: string;
+  vatAmount?: number;
 }): BuiltEntry {
   const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const vatAmount = Math.max(0, Math.min(round(params.vatAmount ?? 0), round(params.grandTotal)));
   const lines = [
     line(moneyAccount, params.grandTotal, 0),
-    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, params.grandTotal),
+    line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
+    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, round(params.grandTotal) - vatAmount),
     ...cogsLines(params.cogsAmount),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);

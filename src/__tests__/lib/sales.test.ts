@@ -185,6 +185,31 @@ describe("createSale", () => {
     });
   });
 
+  it("stores a null directory link when no customer was picked", async () => {
+    await createSale(makeSaleInput());
+
+    expect(writtenSale().customer).toMatchObject({ contactId: null });
+  });
+
+  it("keeps the directory link when a registered customer was picked", async () => {
+    await createSale(
+      makeSaleInput({
+        customer: {
+          type: "individual",
+          fullName: "Alice",
+          organizationName: "",
+          registrationNumber: "",
+          phoneNumber: "99001234",
+          email: null,
+          note: "",
+          contactId: "contact-7",
+        },
+      }),
+    );
+
+    expect(writtenSale().customer).toMatchObject({ contactId: "contact-7" });
+  });
+
   it("leaves a new sale unpaid and posts no journal entry", async () => {
     await createSale(makeSaleInput({ status: "new" }));
 
@@ -350,6 +375,13 @@ describe("subscribeToSales", () => {
 
   it("defaults a missing customer type to individual", () => {
     expect(emitSale({ saleNumber: "SL-1" }).customer.type).toBe("individual");
+  });
+
+  it("reads back the directory link, defaulting to null on sales without one", () => {
+    expect(emitSale({ saleNumber: "SL-1" }).customer.contactId).toBeNull();
+    expect(
+      emitSale({ saleNumber: "SL-1", customer: { contactId: "contact-7" } }).customer.contactId,
+    ).toBe("contact-7");
   });
 
   it("keeps a known channel, status and organization buyer", () => {

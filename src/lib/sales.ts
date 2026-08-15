@@ -36,7 +36,6 @@ export const SALE_SCHEMA_VERSION = 1;
  */
 export type SaleItemPayload = OrderItemPayload;
 export type SaleAddressPayload = OrderAddressPayload;
-export type SaleTotalsPayload = OrderTotalsPayload;
 export type SalePaymentMethod = OrderPaymentMethod;
 export type SaleStatus = OrderStatus;
 export type SalePaymentStatus = "pending" | "paid";
@@ -69,6 +68,41 @@ export const SALE_CHANNEL_VALUES = [
 export type SaleCustomerType = "individual" | "organization";
 export const SALE_CUSTOMER_TYPE_VALUES = ["individual", "organization"] as const;
 
+/** НӨАТ rate applied to sales — 10%, the single Mongolian VAT rate. */
+export const SALE_VAT_RATE = 0.1;
+
+/**
+ * How НӨАТ relates to the item prices that were typed in:
+ * - `none` — the sale carries no VAT at all
+ * - `included` — the prices already contain VAT, so it is carved out of the total
+ * - `added` — the prices are net, so VAT is charged on top of them
+ */
+export type SaleVatMode = "none" | "included" | "added";
+export const SALE_VAT_MODE_VALUES = ["none", "included", "added"] as const;
+
+export interface SaleTotalsPayload extends OrderTotalsPayload {
+  vatMode?: SaleVatMode;
+  /** НӨАТ in tugriks — carved out of `grandTotal` when included, part of it when added. */
+  vatAmount?: number;
+}
+
+/** VAT on `base` for the given mode. Included mode carves it out, added mode charges on top. */
+export function calculateSaleVat(base: number, mode: SaleVatMode): number {
+  if (base <= 0) {
+    return 0;
+  }
+
+  if (mode === "included") {
+    return Math.round(base - base / (1 + SALE_VAT_RATE));
+  }
+
+  if (mode === "added") {
+    return Math.round(base * SALE_VAT_RATE);
+  }
+
+  return 0;
+}
+
 /**
  * Channels where the goods change hands on the spot, so there is nothing to deliver —
  * own-use write-offs and gifts included.
@@ -90,6 +124,16 @@ export interface SaleCustomerPayload {
   phoneNumber: string;
   email: string | null;
   note: string;
+  /**
+   * `crmContacts` document the sale was booked against, when the admin picked a
+   * registered customer. Null for walk-ins typed in by hand — picking one is optional.
+   */
+  contactId?: string | null;
+}
+
+/** Fills the optional link field so no `undefined` ever reaches Firestore. */
+function normalizeSaleCustomer(customer: SaleCustomerPayload): SaleCustomerPayload {
+  return { ...customer, contactId: customer.contactId ?? null };
 }
 
 export interface SaleRecord {
@@ -197,6 +241,11 @@ function normalizeStatus(value: unknown): SaleStatus {
   return "new";
 }
 
+function normalizeVatMode(value: unknown): SaleVatMode {
+  // Sales registered before НӨАТ was tracked carry no mode — they stay VAT-free.
+  return value === "included" || value === "added" ? value : "none";
+}
+
 function normalizePaymentMethod(value: unknown): SalePaymentMethod {
   if (value === "bank_transfer" || value === "bonum") {
     return value;
@@ -228,6 +277,7 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
       phoneNumber: String(customerData.phoneNumber ?? ""),
       email: typeof customerData.email === "string" ? customerData.email : null,
       note: String(customerData.note ?? ""),
+      contactId: typeof customerData.contactId === "string" ? customerData.contactId : null,
     },
     address: {
       region: String(addressData.region ?? ""),
@@ -263,6 +313,8 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
       shippingFee: Number(totalsData.shippingFee ?? 0),
       grandTotal: Number(totalsData.grandTotal ?? 0),
       discountTotal: Number(totalsData.discountTotal ?? 0),
+      vatMode: normalizeVatMode(totalsData.vatMode),
+      vatAmount: Number(totalsData.vatAmount ?? 0),
     },
     paymentMethod: normalizePaymentMethod(data.paymentMethod),
     paidAt: parseTimestamp(data.paidAt),
@@ -345,6 +397,7 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
       entryNumber,
       buildSaleEntry({
         grandTotal: input.totals.grandTotal,
+        vatAmount: input.totals.vatAmount ?? 0,
         cogsAmount,
         paymentMethod: input.paymentMethod,
       }),
@@ -366,7 +419,7 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
     status: input.status,
     channel: input.channel,
     currency: "MNT",
-    customer: input.customer,
+    customer: normalizeSaleCustomer(input.customer),
     address: input.address,
     items: input.items,
     totals: input.totals,
@@ -417,6 +470,7 @@ export async function updateSale(
       entryNumber,
       buildSaleEntry({
         grandTotal: input.totals.grandTotal,
+        vatAmount: input.totals.vatAmount ?? 0,
         cogsAmount,
         paymentMethod: input.paymentMethod,
       }),
@@ -435,7 +489,7 @@ export async function updateSale(
   batch.update(doc(db, SALES_COLLECTION, id), {
     status: input.status,
     channel: input.channel,
-    customer: input.customer,
+    customer: normalizeSaleCustomer(input.customer),
     address: input.address,
     items: input.items,
     totals: input.totals,

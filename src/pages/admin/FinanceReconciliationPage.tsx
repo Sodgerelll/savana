@@ -104,16 +104,17 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       });
     }
 
-    // 2. Settled offline sales → revenue must equal grandTotal. Sales post to 4300, but
-    // sales migrated out of the old manual-order flow carry their original 4100 entry,
-    // so both revenue accounts are netted together.
+    // 2. Settled offline sales → revenue must equal grandTotal net of НӨАТ, since any VAT
+    // the sale carries is credited to 2410 instead. Sales post to 4300, but sales migrated
+    // out of the old manual-order flow carry their original 4100 entry, so both revenue
+    // accounts are netted together.
     for (const sale of (sales as SaleRecord[]) ?? []) {
       if (sale.status === "new") continue;
       const entries = entriesBySource.get(`sale:${sale.id}`) ?? [];
       const actual =
         netOnAccount(entries, ACCOUNT_CODES.REVENUE_DIRECT, "credit") +
         netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit");
-      const expected = sale.totals.grandTotal;
+      const expected = sale.totals.grandTotal - (sale.totals.vatAmount ?? 0);
       result.push({
         id: `offlineSale-${sale.id}`,
         sourceType: "sale",

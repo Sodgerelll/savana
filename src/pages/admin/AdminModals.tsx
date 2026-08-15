@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, type FormEvent, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Plus, Search, Trash2, X } from "lucide-react";
 import { AdminModal } from "./AdminModal";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductCode, getProductLabel } from "./adminHelpers";
@@ -15,8 +15,13 @@ import {
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
 import { SHIPPING_FEE } from "../../lib/orders";
-import { saleChannelRequiresAddress } from "../../lib/sales";
+import { calculateSaleVat, saleChannelRequiresAddress } from "../../lib/sales";
 import type { CustomerType } from "../../lib/customers";
+import {
+  getCrmContactDisplayName,
+  searchCrmContacts,
+  type CrmContactRecord,
+} from "../../lib/crmContacts";
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
 
@@ -68,6 +73,120 @@ function AdminCollapsibleCard({
         </span>
       </button>
       {open && children}
+    </div>
+  );
+}
+
+/** How many directory matches the sale picker lists before asking for a narrower search. */
+const SALE_CONTACT_SUGGESTION_LIMIT = 8;
+
+/**
+ * Type-ahead over the customer directory, used when registering a sale. Picking a
+ * customer is never required — a walk-in can still be typed straight into the fields
+ * below it, and the selection can be cleared to go back to typing.
+ */
+function SaleContactPicker({
+  contacts,
+  selectedId,
+  copy,
+  language,
+  onSelect,
+  onClear,
+}: {
+  contacts: CrmContactRecord[];
+  selectedId: string | null;
+  copy: any;
+  language: "MN" | "EN";
+  onSelect: (contact: CrmContactRecord) => void;
+  onClear: () => void;
+}) {
+  const [term, setTerm] = useState("");
+  const selected = contacts.find((contact) => contact.id === selectedId) ?? null;
+
+  const matches = useMemo(() => {
+    // Inactive contacts stay searchable by name so an old customer can still be picked,
+    // but they never fill the suggestion list on an empty search.
+    const pool = term.trim() ? contacts : contacts.filter((contact) => contact.status === "active");
+    return searchCrmContacts(pool, term).slice(0, SALE_CONTACT_SUGGESTION_LIMIT);
+  }, [contacts, term]);
+
+  if (selected) {
+    return (
+      <div className="admin-inline-card" style={{ marginBottom: "0.75rem" }}>
+        <div
+          className="admin-inline-card-head"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem" }}
+        >
+          <div>
+            <strong>{getCrmContactDisplayName(selected) || selected.code}</strong>
+            <small className="admin-inline-note" style={{ display: "block" }}>
+              {[selected.code, selected.phoneNumber].filter(Boolean).join(" · ")}
+            </small>
+          </div>
+          <button type="button" className="admin-filter-clear" onClick={onClear}>
+            <X size={14} />
+            {copy.saleContactClear}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-inline-card" style={{ marginBottom: "0.75rem" }}>
+      <div className="admin-inline-card-head">
+        <strong>{copy.saleContactPicker}</strong>
+        <small className="admin-inline-note">{copy.saleContactPickerNote}</small>
+      </div>
+      <div style={{ padding: "0 0.85rem 0.85rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <Search size={14} style={{ flexShrink: 0, opacity: 0.6 }} />
+          <input
+            type="text"
+            className="admin-search-input"
+            style={{ flex: 1 }}
+            placeholder={copy.contactSearchPlaceholder}
+            value={term}
+            onChange={(event) => setTerm(event.target.value)}
+          />
+        </div>
+        {contacts.length === 0 ? (
+          <small className="admin-inline-note" style={{ display: "block", marginTop: "0.5rem" }}>
+            {copy.contactEmpty}
+          </small>
+        ) : matches.length === 0 ? (
+          <small className="admin-inline-note" style={{ display: "block", marginTop: "0.5rem" }}>
+            {copy.saleContactNoMatch}
+          </small>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "0.5rem" }}>
+            {matches.map((contact) => (
+              <button
+                key={contact.id}
+                type="button"
+                className="admin-cat-item"
+                style={{ textAlign: "left", padding: "0.4rem 0.6rem" }}
+                onClick={() => {
+                  onSelect(contact);
+                  setTerm("");
+                }}
+              >
+                <span className="admin-cat-code">{contact.code}</span>
+                {getCrmContactDisplayName(contact) || "—"}
+                <small className="admin-inline-note" style={{ marginLeft: "0.5rem" }}>
+                  {[
+                    contact.type === "organization" ? copy.customerTypeOrg : copy.customerTypeInd,
+                    contact.phoneNumber,
+                    contact.status === "inactive" ? (language === "MN" ? "идэвхгүй" : "inactive") : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -199,6 +318,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     setCustomerSavingState,
     customerError,
     setCustomerError,
+    crmContacts,
+    crmContactModal,
+    setCrmContactModal,
+    crmContactModalError,
+    savingCrmContact,
+    closeCrmContactModal,
+    handleCrmContactSubmit,
     transactionModal,
     setTransactionModal,
     transactionSavingState,
@@ -3138,6 +3264,199 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   </AdminModal>
 )}
 
+{crmContactModal && (() => {
+  const draft = crmContactModal.draft;
+  const isOrganization = draft.type === "organization";
+  const address = draft.address ?? { region: "", districtOrSoum: "", khorooOrBag: "", streetAddress: "" };
+  const patchDraft = (patch: any) =>
+    setCrmContactModal({ ...crmContactModal, draft: { ...draft, ...patch } });
+  const patchAddress = (patch: any) => patchDraft({ address: { ...address, ...patch } });
+
+  return (
+    <AdminModal
+      title={crmContactModal.mode === "create" ? copy.newContact : copy.editContact}
+      description={copy.contactsText}
+      onClose={closeCrmContactModal}
+      disableClose={savingCrmContact}
+      wide
+    >
+      <form className="admin-modal-form" onSubmit={handleCrmContactSubmit}>
+        {crmContactModalError && <div className="admin-sync-error">{crmContactModalError}</div>}
+
+        <div className="admin-form-grid">
+          <label className="admin-field">
+            <span>{copy.customerCode}</span>
+            <input type="text" value={draft.code} readOnly disabled />
+          </label>
+          <label className="admin-field">
+            <span>{copy.txType}</span>
+            <select
+              value={draft.type}
+              onChange={(event: any) => patchDraft({ type: event.target.value })}
+            >
+              <option value="individual">{copy.customerTypeInd}</option>
+              <option value="organization">{copy.customerTypeOrg}</option>
+            </select>
+          </label>
+
+          {isOrganization && (
+            <>
+              <label className="admin-field">
+                <span>{language === "MN" ? "Байгууллагын нэр" : "Organization name"}</span>
+                <input
+                  type="text"
+                  value={draft.organizationName}
+                  onChange={(event: any) => patchDraft({ organizationName: event.target.value })}
+                  required
+                />
+              </label>
+              <label className="admin-field">
+                <span>{copy.customerRegNo}</span>
+                <input
+                  type="text"
+                  value={draft.registrationNumber}
+                  onChange={(event: any) => patchDraft({ registrationNumber: event.target.value })}
+                />
+              </label>
+            </>
+          )}
+
+          <label className="admin-field">
+            <span>{isOrganization ? copy.customerContactPerson : copy.customerNameLabel}</span>
+            <input
+              type="text"
+              value={draft.fullName}
+              onChange={(event: any) => patchDraft({ fullName: event.target.value })}
+              required={!isOrganization}
+            />
+          </label>
+          <label className="admin-field">
+            <span>{copy.customerPhone}</span>
+            <input
+              type="tel"
+              value={draft.phoneNumber}
+              onChange={(event: any) => patchDraft({ phoneNumber: event.target.value })}
+            />
+          </label>
+          <label className="admin-field">
+            <span>{copy.customerSecondaryPhone}</span>
+            <input
+              type="tel"
+              value={draft.secondaryPhone}
+              onChange={(event: any) => patchDraft({ secondaryPhone: event.target.value })}
+            />
+          </label>
+          <label className="admin-field">
+            <span>{copy.customerEmail}</span>
+            <input
+              type="email"
+              value={draft.email ?? ""}
+              onChange={(event: any) => patchDraft({ email: event.target.value })}
+            />
+          </label>
+          <label className="admin-field">
+            <span>{copy.status}</span>
+            <select
+              value={draft.status}
+              onChange={(event: any) => patchDraft({ status: event.target.value })}
+            >
+              <option value="active">{copy.active}</option>
+              <option value="inactive">{copy.inactive}</option>
+            </select>
+          </label>
+        </div>
+
+        <AdminCollapsibleCard
+          title={copy.customerAddress}
+          note={language === "MN" ? "Сонголттой" : "Optional"}
+        >
+          <div className="admin-form-grid">
+            <label className="admin-field">
+              <span>{language === "MN" ? "Аймаг / Хот" : "Province / City"}</span>
+              <select
+                value={address.region}
+                onChange={(event: any) =>
+                  // Districts and khoroos are region-specific — reset both when the region changes.
+                  patchAddress({ region: event.target.value, districtOrSoum: "", khorooOrBag: "" })
+                }
+              >
+                <option value="">—</option>
+                {getRegionOptions().map((region: string) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Дүүрэг / Сум" : "District / Soum"}</span>
+              <select
+                value={address.districtOrSoum}
+                onChange={(event: any) =>
+                  patchAddress({ districtOrSoum: event.target.value, khorooOrBag: "" })
+                }
+              >
+                <option value="">—</option>
+                {getDistrictOrSoumOptions(address.region).map((district: string) => (
+                  <option key={district} value={district}>
+                    {district}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{language === "MN" ? "Хороо / Баг" : "Khoroo / Bag"}</span>
+              <select
+                value={address.khorooOrBag}
+                onChange={(event: any) => patchAddress({ khorooOrBag: event.target.value })}
+                disabled={getKhorooOrBagOptions(address.region, address.districtOrSoum).length === 0}
+              >
+                <option value="">—</option>
+                {getKhorooOrBagOptions(address.region, address.districtOrSoum).map((khoroo: string) => (
+                  <option key={khoroo} value={khoroo}>
+                    {khoroo}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field admin-field-wide">
+              <span>{language === "MN" ? "Байр, орц, давхар, тоот" : "Street address"}</span>
+              <input
+                type="text"
+                value={address.streetAddress}
+                onChange={(event: any) => patchAddress({ streetAddress: event.target.value })}
+              />
+            </label>
+          </div>
+        </AdminCollapsibleCard>
+
+        <label className="admin-field admin-field-wide">
+          <span>{copy.customerNote}</span>
+          <textarea
+            rows={2}
+            value={draft.note}
+            onChange={(event: any) => patchDraft({ note: event.target.value })}
+          />
+        </label>
+
+        <div className="admin-modal-footer">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={closeCrmContactModal}
+            disabled={savingCrmContact}
+          >
+            {copy.cancel}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={savingCrmContact}>
+            {copy.save}
+          </button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+})()}
+
 {transactionModal && (
   <AdminModal
     title={transactionModal.mode === "create" ? copy.newTransaction : copy.editTransaction}
@@ -4572,6 +4891,36 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     patchDraft({ items: nextItems });
   };
 
+  /**
+   * Copies a directory customer into the sale. The address only follows when the contact
+   * has one on file, so picking a customer never blanks an address already typed here.
+   */
+  const applyContactToSale = (contact: CrmContactRecord) => {
+    patchDraft({
+      customer: {
+        ...draft.customer,
+        contactId: contact.id,
+        type: contact.type,
+        fullName: contact.fullName,
+        organizationName: contact.type === "organization" ? contact.organizationName : "",
+        registrationNumber: contact.type === "organization" ? contact.registrationNumber : "",
+        phoneNumber: contact.phoneNumber,
+        email: contact.email ?? "",
+      },
+      ...(contact.address
+        ? {
+            address: {
+              ...draft.address,
+              region: contact.address.region,
+              districtOrSoum: contact.address.districtOrSoum,
+              khorooOrBag: contact.address.khorooOrBag,
+              streetAddress: contact.address.streetAddress,
+            },
+          }
+        : {}),
+    });
+  };
+
   const isOrganization = draft.customer.type === "organization";
   // Delivered channels still prefill the shipping fee, but no customer or address
   // field is mandatory — an offline sale can be booked with the goods alone.
@@ -4584,7 +4933,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     0,
   );
   const shippingFee = Math.max(0, Math.round(draft.shippingFee || 0));
-  const grandTotal = subtotal + shippingFee;
+  // НӨАТ 10% — either carved out of the item prices or charged on top of them.
+  const vatMode = draft.vatMode ?? "none";
+  const vatAmount = calculateSaleVat(subtotal, vatMode);
+  const grandTotal = subtotal + shippingFee + (vatMode === "added" ? vatAmount : 0);
   const totalQuantity = draft.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
 
   const districtOptions = getDistrictOrSoumOptions(draft.address.region);
@@ -4711,7 +5063,16 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         <AdminCollapsibleCard
           title={copy.customerInfo}
           note={language === "MN" ? "Сонголттой" : "Optional"}
+          defaultOpen
         >
+          <SaleContactPicker
+            contacts={crmContacts as CrmContactRecord[]}
+            selectedId={draft.customer.contactId ?? null}
+            copy={copy}
+            language={language}
+            onSelect={applyContactToSale}
+            onClear={() => patchDraft({ customer: { ...draft.customer, contactId: null } })}
+          />
           <div className="admin-form-grid">
             {isOrganization && (
               <>
@@ -5071,6 +5432,42 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               onChange={(event: any) => patchDraft({ shippingFee: Math.max(0, Number(event.target.value) || 0) })}
             />
           </label>
+
+          <label className="admin-field">
+            <span>{language === "MN" ? "НӨАТ (10%)" : "VAT (10%)"}</span>
+            <select value={vatMode} onChange={(event: any) => patchDraft({ vatMode: event.target.value })}>
+              <option value="included">
+                {language === "MN" ? "Үнийн дүнд орсон" : "Included in the price"}
+              </option>
+              <option value="added">
+                {language === "MN" ? "Үнийн дүн дээр нэмэх" : "Added on top of the price"}
+              </option>
+              <option value="none">{language === "MN" ? "НӨАТ-гүй" : "No VAT"}</option>
+            </select>
+            <small>
+              {vatMode === "included"
+                ? language === "MN"
+                  ? "Барааны дүнгээс НӨАТ ялгаж тооцно — нийт дүн өөрчлөгдөхгүй."
+                  : "VAT is carved out of the item total — the grand total stays the same."
+                : vatMode === "added"
+                  ? language === "MN"
+                    ? "Барааны дүн дээр НӨАТ нэмэгдэж нийт дүн өснө."
+                    : "VAT is charged on top, raising the grand total."
+                  : language === "MN"
+                    ? "Энэ борлуулалтад НӨАТ тооцохгүй."
+                    : "No VAT is charged on this sale."}
+            </small>
+          </label>
+
+          <label className="admin-field">
+            <span>{language === "MN" ? "НӨАТ дүн" : "VAT amount"}</span>
+            <input type="text" value={formatStorePrice(vatAmount)} readOnly tabIndex={-1} />
+            <small>
+              {language === "MN"
+                ? "Барааны дүнгээс 10%-иар автоматаар бодогдоно."
+                : "Calculated automatically as 10% of the item total."}
+            </small>
+          </label>
         </div>
 
         <div className="admin-order-totals">
@@ -5092,6 +5489,18 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
             <span>{formatStorePrice(shippingFee)}</span>
           </div>
+          {vatMode !== "none" && (
+            <div className="admin-order-totals-row">
+              <span>
+                {language === "MN" ? "НӨАТ (10%)" : "VAT (10%)"}
+                {" · "}
+                {vatMode === "included"
+                  ? language === "MN" ? "үнэд багтсан" : "included"
+                  : language === "MN" ? "нэмэгдсэн" : "added"}
+              </span>
+              <span>{vatMode === "added" ? "+" : ""}{formatStorePrice(vatAmount)}</span>
+            </div>
+          )}
           <div className="admin-order-totals-row admin-order-totals-grand">
             <span>{language === "MN" ? "Нийт дүн" : "Grand total"}</span>
             <strong>{formatStorePrice(grandTotal)}</strong>

@@ -35,6 +35,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     customerTransactions,
     productionBatches,
     directSales,
+    sales,
+    getSaleChannelLabel,
+    getOrderStatusLabel,
     discounts,
     productSearchName,
     setProductSearchName,
@@ -486,10 +489,50 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                             const bDate = b.transactionDate ?? b.createdAt ?? "";
                             return bDate.localeCompare(aDate);
                           });
-                        const productDirectSales = (directSales ?? [])
-                          .filter((s: any) => s.productId === product.id)
-                          .slice()
-                          .sort((a: any, b: any) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+                        // Quick sales taken from this page and sales registered in the Sales
+                        // module are the same thing to a product — both move its stock — so
+                        // they share one list here.
+                        const productDirectSales = [
+                          ...((directSales ?? []) as any[])
+                            .filter((s: any) => s.productId === product.id)
+                            .map((s: any) => ({
+                              key: `direct-${s.id}`,
+                              source: "direct" as const,
+                              createdAt: s.createdAt,
+                              saleNumber: s.saleNumber,
+                              variant: s.variant,
+                              quantity: s.quantity,
+                              unitPrice: s.unitPrice,
+                              originalUnitPrice: s.originalUnitPrice,
+                              lineTotal: s.lineTotal,
+                              note: s.note,
+                              record: s,
+                            })),
+                          ...((sales ?? []) as any[]).flatMap((sale: any) =>
+                            (sale.items ?? [])
+                              .filter((it: any) => it.productId === product.id)
+                              .map((it: any, itemIndex: number) => ({
+                                key: `sale-${sale.id}-${itemIndex}`,
+                                source: "sale" as const,
+                                createdAt: sale.createdAt,
+                                saleNumber: sale.saleNumber,
+                                variant: it.variant,
+                                quantity: it.quantity,
+                                unitPrice: it.unitPrice,
+                                originalUnitPrice: it.originalUnitPrice,
+                                lineTotal: it.lineTotal,
+                                note: [
+                                  getSaleChannelLabel(sale.channel, language),
+                                  // Stock only moves once a sale is delivered, so anything
+                                  // short of that is flagged as not yet counted.
+                                  sale.status === "delivered" ? "" : getOrderStatusLabel(sale.status, language),
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · "),
+                                record: sale,
+                              })),
+                          ),
+                        ].sort((a: any, b: any) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
                         const readyBatches = (productionBatches ?? [])
                           .filter((b: any) => b.productId === product.id && b.status === "ready")
                           .slice()
@@ -685,10 +728,17 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                             {productDirectSales.map((s: any, idx: number) => {
                                               const disc = getLineDiscount(s, getListPrice(product, s.variant));
                                               return (
-                                              <tr key={s.id}>
+                                              <tr key={s.key}>
                                                 <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>{idx + 1}</td>
                                                 <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{formatAdminDateTime(s.createdAt, language)}</td>
-                                                <td style={{ textAlign: "center" }}><small>{s.saleNumber}</small></td>
+                                                <td style={{ textAlign: "center" }}>
+                                                  <small>{s.saleNumber}</small>
+                                                  <div style={{ color: "#aaa", fontSize: "0.7rem" }}>
+                                                    {s.source === "sale"
+                                                      ? language === "MN" ? "Борлуулалт" : "Sales module"
+                                                      : language === "MN" ? "Шууд" : "Quick sale"}
+                                                  </div>
+                                                </td>
                                                 <td style={{ textAlign: "center" }}>{s.variant || "—"}</td>
                                                 <td style={{ textAlign: "center" }}>{s.quantity}</td>
                                                 <td style={{ textAlign: "center" }}>{renderPriceCell(s.unitPrice, disc)}</td>
@@ -699,22 +749,35 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                 <td style={{ textAlign: "center", color: "#888", fontSize: "0.82rem" }}>{s.note || "—"}</td>
                                                 <td>
                                                   <div className="admin-table-actions">
-                                                    <button
-                                                      type="button"
-                                                      className="admin-icon-btn admin-icon-btn-neutral"
-                                                      onClick={(e) => { e.stopPropagation(); openEditSale(s); }}
-                                                      title={language === "MN" ? "Засах" : "Edit"}
-                                                    >
-                                                      <Pencil size={13} />
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      className="admin-icon-btn"
-                                                      onClick={(e) => { e.stopPropagation(); handleDeleteSale(s); }}
-                                                      title={language === "MN" ? "Устгах" : "Delete"}
-                                                    >
-                                                      <Trash2 size={14} />
-                                                    </button>
+                                                    {s.source === "sale" ? (
+                                                      <button
+                                                        type="button"
+                                                        className="admin-icon-btn admin-icon-btn-neutral"
+                                                        onClick={(e) => { e.stopPropagation(); setActiveSection("sales"); }}
+                                                        title={language === "MN" ? "Борлуулалтын бүртгэлээс засна" : "Edit in the Sales register"}
+                                                      >
+                                                        <ShoppingBag size={13} />
+                                                      </button>
+                                                    ) : (
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          className="admin-icon-btn admin-icon-btn-neutral"
+                                                          onClick={(e) => { e.stopPropagation(); openEditSale(s.record); }}
+                                                          title={language === "MN" ? "Засах" : "Edit"}
+                                                        >
+                                                          <Pencil size={13} />
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          className="admin-icon-btn"
+                                                          onClick={(e) => { e.stopPropagation(); handleDeleteSale(s.record); }}
+                                                          title={language === "MN" ? "Устгах" : "Delete"}
+                                                        >
+                                                          <Trash2 size={14} />
+                                                        </button>
+                                                      </>
+                                                    )}
                                                   </div>
                                                 </td>
                                               </tr>
