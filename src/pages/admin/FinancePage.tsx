@@ -219,7 +219,14 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
       if (entryModal.mode === "create") {
         await createFinanceEntry({ ...payload, createdByUid: user?.uid ?? "" });
       } else if (entryModal.id) {
-        await updateFinanceEntry(entryModal.id, payload);
+        // The previous journal entry is needed so the edit can reverse it before posting
+        // the new amounts.
+        const previous = (financeEntries as FinanceEntryRecord[]).find((e) => e.id === entryModal.id);
+        await updateFinanceEntry(
+          entryModal.id,
+          { journalEntryId: previous?.journalEntryId ?? null, createdByUid: previous?.createdByUid ?? user?.uid ?? "" },
+          payload,
+        );
       }
       setEntryModal(null);
     } catch (err: any) {
@@ -237,7 +244,7 @@ export default function FinancePage({ ctx }: { ctx: AdminCtx }) {
         : `Delete the ${entry.type} entry of ${formatStorePrice(entry.amount)} on ${entry.date}?`,
       confirmLabel: mn ? "Устгах" : "Delete",
       destructive: true,
-      onConfirm: () => deleteFinanceEntry(entry.id),
+      onConfirm: () => deleteFinanceEntry(entry.id, entry),
     });
   };
 

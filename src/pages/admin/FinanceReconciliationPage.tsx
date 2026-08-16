@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { AlertTriangle, CheckCircle2, HelpCircle, Search, X, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "../../lib/firebase";
+import { TRANSFERS_COLLECTION } from "../../services/transferService";
+import type { Transfer } from "../../types/crm";
 import type { AdminCtx } from "./adminShellTypes";
 import type { CrmPaymentRecord } from "../../lib/crmPayments";
 import type { CustomerTransactionRecord } from "../../lib/customerTransactions";
@@ -8,12 +12,13 @@ import type { DirectSaleRecord } from "../../lib/directSales";
 import type { SaleRecord } from "../../lib/sales";
 import { getSaleCustomerName } from "./adminHelpers";
 import { ACCOUNT_CODES } from "../../lib/accounting/chartOfAccounts";
+import { journalWindowStart } from "../../lib/accounting/journalQueries";
 
 type ReconStatus = "ok" | "missing" | "mismatch";
 
 interface ReconRow {
   id: string;
-  sourceType: "order" | "sale" | "directSale" | "customerTransaction" | "payment";
+  sourceType: "order" | "sale" | "directSale" | "customerTransaction" | "payment" | "transfer";
   number: string;
   name: string;
   date: string | null;
@@ -31,6 +36,7 @@ const SOURCE_LABELS: Record<ReconRow["sourceType"], { mn: string; en: string }> 
   directSale: { mn: "Шууд борлуулалт", en: "Direct sale" },
   customerTransaction: { mn: "Борлуулагчийн гүйлгээ", en: "Seller transaction" },
   payment: { mn: "Авлагын төлбөр", en: "AR payment" },
+  transfer: { mn: "Бөөний шилжүүлэг", en: "Wholesale transfer" },
 };
 
 /** Net movement (credit − debit, or debit − credit) on one account across a set of entries. */
@@ -69,6 +75,18 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
   const [statusFilter, setStatusFilter] = useState<string>("problems");
   const [search, setSearch] = useState("");
 
+  // Wholesale transfers are not part of the admin shell's context, so this page subscribes
+  // to them itself. They used to be excluded from reconciliation altogether, which left
+  // every transfer's ledger entry unchecked.
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  useEffect(
+    () =>
+      onSnapshot(collection(db, TRANSFERS_COLLECTION), (snapshot) => {
+        setTransfers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Transfer));
+      }),
+    [],
+  );
+
   // Group every journal entry by its source document. Reversals and re-posted
   // entries share the same sourceId, so summing nets the whole chain.
   const entriesBySource = useMemo(() => {
@@ -88,9 +106,14 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
     // 1. Settled online orders → revenue 4100 credit must equal grandTotal.
     for (const order of (orders as any[]) ?? []) {
       if (order.payment?.status !== "paid") continue;
-      const expected = Number(order.totals?.grandTotal ?? 0);
+      const expected = Number(order.totals?.grandTotal ?? 0) - Number(order.totals?.vatAmount ?? 0);
       const entries = entriesBySource.get(`order:${order.id}`) ?? [];
-      const actual = netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit");
+      // Delivery is credited to its own account now, so the two revenue lines are netted
+      // together against the same expected figure — entries posted before the split have
+      // no 4400 line and still add up.
+      const actual =
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit") +
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_SHIPPING, "credit");
       result.push({
         id: `order-${order.id}`,
         sourceType: "order",
@@ -113,7 +136,8 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       const entries = entriesBySource.get(`sale:${sale.id}`) ?? [];
       const actual =
         netOnAccount(entries, ACCOUNT_CODES.REVENUE_DIRECT, "credit") +
-        netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit");
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_ONLINE, "credit") +
+        netOnAccount(entries, ACCOUNT_CODES.REVENUE_SHIPPING, "credit");
       const expected = sale.totals.grandTotal - (sale.totals.vatAmount ?? 0);
       result.push({
         id: `offlineSale-${sale.id}`,
@@ -132,16 +156,17 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
     for (const sale of (directSales as DirectSaleRecord[]) ?? []) {
       const entries = entriesBySource.get(`directSale:${sale.id}`) ?? [];
       const actual = netOnAccount(entries, ACCOUNT_CODES.REVENUE_DIRECT, "credit");
+      const expected = sale.lineTotal - (sale.vatAmount ?? 0);
       result.push({
         id: `sale-${sale.id}`,
         sourceType: "directSale",
         number: sale.saleNumber,
         name: sale.productName,
         date: sale.createdAt,
-        expected: sale.lineTotal,
+        expected,
         actual,
         entryCount: entries.length,
-        status: statusFor(sale.lineTotal, actual, entries.length),
+        status: statusFor(expected, actual, entries.length),
       });
     }
 
@@ -152,7 +177,7 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       const actual = isReturn
         ? netOnAccount(entries, ACCOUNT_CODES.SALES_RETURNS, "debit")
         : netOnAccount(entries, ACCOUNT_CODES.REVENUE_WHOLESALE, "credit");
-      const expected = tx.totals.grandTotal;
+      const expected = tx.totals.grandTotal - (tx.totals.vatAmount ?? 0);
       result.push({
         id: `tx-${tx.id}`,
         sourceType: "customerTransaction",
@@ -168,6 +193,8 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
 
     // 5. AR payments → AR 1110 credit must equal the payment amount.
     for (const payment of (crmPayments as CrmPaymentRecord[]) ?? []) {
+      // Money taken at confirmation is booked by the transfer's own entry, checked above.
+      if (payment.settledWithTransfer) continue;
       const entries = entriesBySource.get(`payment:${payment.id}`) ?? [];
       const actual = netOnAccount(entries, ACCOUNT_CODES.AR, "credit");
       result.push({
@@ -183,8 +210,42 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
       });
     }
 
-    return result.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
-  }, [orders, sales, directSales, customerTransactions, crmPayments, entriesBySource, mn]);
+    // 6. Wholesale transfers → a sale credits wholesale revenue 4200 with the subtotal
+    // (any tax goes to 2410 separately); a return debits sales returns 4910 with its total.
+    // Cancelled transfers keep their entry plus a mirror reversal, so both net to zero.
+    for (const transfer of transfers) {
+      if (transfer.status === "DRAFT") continue;
+      const entries = entriesBySource.get(`transfer:${transfer.id}`) ?? [];
+      const isReturn = transfer.type === "RETURN";
+      const cancelled = transfer.status === "CANCELLED";
+      const actual = isReturn
+        ? netOnAccount(entries, ACCOUNT_CODES.SALES_RETURNS, "debit")
+        : netOnAccount(entries, ACCOUNT_CODES.REVENUE_WHOLESALE, "credit");
+      // Both directions are measured net of tax: a sale credits wholesale revenue with its
+      // subtotal, and a return debits sales returns with the same figure — the НӨАТ on
+      // either goes to 2410 on its own line.
+      const expected = cancelled ? 0 : transfer.subtotal;
+      result.push({
+        id: `transfer-${transfer.id}`,
+        sourceType: "transfer",
+        number: transfer.transferNumber,
+        name: `${transfer.customerName}${isReturn ? (mn ? " (буцаалт)" : " (return)") : ""}`,
+        date: transfer.deliveredAt?.toDate?.().toISOString() ?? transfer.createdAt?.toDate?.().toISOString() ?? null,
+        expected,
+        actual,
+        entryCount: entries.length,
+        status: statusFor(expected, actual, entries.length),
+      });
+    }
+
+    // The ledger is subscribed to over a rolling window, so a document older than that
+    // window has no entries loaded to match against and would be reported as missing a
+    // posting it does in fact have.
+    const windowStart = journalWindowStart();
+    return result
+      .filter((row) => !row.date || String(row.date).slice(0, 10) >= windowStart)
+      .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  }, [orders, sales, directSales, customerTransactions, crmPayments, transfers, entriesBySource, mn]);
 
   // Journal entries whose source document is no longer visible (e.g. a deleted
   // seller transaction). Not automatically an error — deletions keep their
@@ -195,12 +256,13 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
     for (const sale of (sales as SaleRecord[]) ?? []) knownIds.add(`sale:${sale.id}`);
     for (const sale of (directSales as DirectSaleRecord[]) ?? []) knownIds.add(`directSale:${sale.id}`);
     for (const tx of (customerTransactions as CustomerTransactionRecord[]) ?? []) knownIds.add(`customerTransaction:${tx.id}`);
+    for (const transfer of transfers) knownIds.add(`transfer:${transfer.id}`);
     for (const payment of (crmPayments as CrmPaymentRecord[]) ?? []) knownIds.add(`payment:${payment.id}`);
-    const checkedTypes = new Set(["order", "sale", "directSale", "customerTransaction", "payment"]);
+    const checkedTypes = new Set(["order", "sale", "directSale", "customerTransaction", "payment", "transfer"]);
     return ((journalEntries as any[]) ?? []).filter(
       (entry) => checkedTypes.has(entry.sourceType) && !knownIds.has(`${entry.sourceType}:${entry.sourceId}`),
     );
-  }, [journalEntries, orders, sales, directSales, customerTransactions, crmPayments]);
+  }, [journalEntries, orders, sales, directSales, customerTransactions, crmPayments, transfers]);
 
   const okCount = rows.filter((r) => r.status === "ok").length;
   const missingRows = rows.filter((r) => r.status === "missing");

@@ -5,6 +5,16 @@ export interface Product {
   name: string;
   price: number;
   compareAtPrice?: number;
+  /**
+   * Unit cost of the finished good. Drives every COGS journal line, so a product without
+   * one is sold at an unknown margin. Production writes it back from the batch that made
+   * the units; admins can also set it by hand.
+   */
+  costPrice?: number;
+  /** Price charged to WHOLESALE-category customers; falls back to `price` when unset. */
+  wholesalePrice?: number;
+  /** Remaining-stock level at which the transfer wizard starts warning. */
+  minStockLevel?: number;
   description: string;
   ingredients?: string;
   usage?: string;

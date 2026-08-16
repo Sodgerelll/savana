@@ -10,17 +10,31 @@ export const ACCOUNT_CODES = {
   CLEARING: "1030",
   AR: "1110",
   INVENTORY: "1210",
+  /** Raw materials held before production turns them into finished goods. */
+  RAW_MATERIALS: "1220",
   VAT_PAYABLE: "2410",
+  /** Owner capital — the balancing side of the opening/seed position. */
+  EQUITY: "3000",
+  /** Accumulated profit and loss — the closing counterpart of revenue and expense. */
+  RETAINED_EARNINGS: "3900",
   REVENUE_ONLINE: "4100",
   REVENUE_WHOLESALE: "4200",
   REVENUE_DIRECT: "4300",
+  /** Delivery charged to the buyer — kept apart so goods revenue is not inflated by it. */
+  REVENUE_SHIPPING: "4400",
+  /** Manually recorded income that is not a product sale (grants, refunds received, …). */
+  OTHER_INCOME: "4900",
   SALES_RETURNS: "4910",
   COGS: "5000",
+  /** Manually recorded running costs — rent, salaries, marketing, … */
+  OPERATING_EXPENSE: "5100",
+  /** Goods that left stock without a sale: gifts and own use. */
+  GOODS_WRITE_OFF: "5900",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
 
-export type AccountType = "asset" | "liability" | "revenue" | "contra_revenue" | "expense";
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "contra_revenue" | "expense";
 
 export interface ChartOfAccountsEntry {
   code: string;
@@ -36,12 +50,19 @@ export const CHART_OF_ACCOUNTS: ChartOfAccountsEntry[] = [
   { code: ACCOUNT_CODES.CLEARING, name: "Bonum/QPay clearing", nameEn: "Bonum/QPay clearing", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.AR, name: "Худалдааны авлага", nameEn: "Accounts receivable", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.INVENTORY, name: "Бэлэн бүтээгдэхүүний нөөц", nameEn: "Finished goods inventory", type: "asset", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.RAW_MATERIALS, name: "Түүхий эдийн нөөц", nameEn: "Raw materials inventory", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.VAT_PAYABLE, name: "НӨАТ-ын өглөг", nameEn: "VAT payable", type: "liability", normalBalance: "credit" },
+  { code: ACCOUNT_CODES.EQUITY, name: "Эздийн өмч", nameEn: "Owner's equity", type: "equity", normalBalance: "credit" },
+  { code: ACCOUNT_CODES.RETAINED_EARNINGS, name: "Хуримтлагдсан ашиг", nameEn: "Retained earnings", type: "equity", normalBalance: "credit" },
   { code: ACCOUNT_CODES.REVENUE_ONLINE, name: "Онлайн борлуулалтын орлого", nameEn: "Online sales revenue", type: "revenue", normalBalance: "credit" },
   { code: ACCOUNT_CODES.REVENUE_WHOLESALE, name: "Бөөний борлуулалтын орлого", nameEn: "Wholesale sales revenue", type: "revenue", normalBalance: "credit" },
   { code: ACCOUNT_CODES.REVENUE_DIRECT, name: "Дэлгүүрийн шууд борлуулалтын орлого", nameEn: "Direct/POS sales revenue", type: "revenue", normalBalance: "credit" },
+  { code: ACCOUNT_CODES.REVENUE_SHIPPING, name: "Хүргэлтийн орлого", nameEn: "Delivery income", type: "revenue", normalBalance: "credit" },
+  { code: ACCOUNT_CODES.OTHER_INCOME, name: "Бусад орлого", nameEn: "Other income", type: "revenue", normalBalance: "credit" },
   { code: ACCOUNT_CODES.SALES_RETURNS, name: "Борлуулалтын буцаалт, хөнгөлөлт", nameEn: "Sales returns & allowances", type: "contra_revenue", normalBalance: "debit" },
   { code: ACCOUNT_CODES.COGS, name: "Борлуулсан барааны өртөг", nameEn: "Cost of goods sold", type: "expense", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.OPERATING_EXPENSE, name: "Үйл ажиллагааны зардал", nameEn: "Operating expenses", type: "expense", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.GOODS_WRITE_OFF, name: "Бэлэг, дотоод хэрэглээний зардал", nameEn: "Gifts & own-use write-offs", type: "expense", normalBalance: "debit" },
 ];
 
 export const ACCOUNT_NAMES: Record<string, string> = Object.fromEntries(

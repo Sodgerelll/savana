@@ -13,7 +13,7 @@ import {
   getRenderableSettings,
   getSiteNavigationPath,
 } from "../lib/storefrontHelpers";
-import { searchOrderByNumber, type OrderRecord, type OrderStatus } from "../lib/orders";
+import { searchOrderByNumber, type OrderLookupResult, type OrderStatus } from "../lib/orders";
 import type { Product } from "../data/products";
 import logoBlack from "../assets/logoBlack.png";
 import logoWhite from "../assets/logoWhite.png";
@@ -36,7 +36,7 @@ export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [productResults, setProductResults] = useState<Product[]>([]);
-  const [orderResult, setOrderResult] = useState<OrderRecord | "not-found" | null>(null);
+  const [orderResult, setOrderResult] = useState<OrderLookupResult | "not-found" | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
 
   const activeProducts = getActiveProducts(products, collections);

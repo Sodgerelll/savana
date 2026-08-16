@@ -28,6 +28,8 @@ import {
   saveDiscount,
   saveMarket,
   saveProduct,
+  saveProductEdit,
+  patchProduct,
   saveSettings,
   saveTestimonial,
   storefrontExists,
@@ -344,7 +346,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
     runWrite(
       (async () => {
         if (changedProducts.length > 0) {
-          await Promise.all(changedProducts.map((product) => saveProduct(product)));
+          await Promise.all(changedProducts.map((product) => patchProduct(product.id, { category: product.category })));
         }
 
         if (changedHeroBanners.length > 0) {
@@ -415,7 +417,7 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
     runWrite(
       (async () => {
         if (slugChanged) {
-          await Promise.all(changedProducts.map((product) => saveProduct(product)));
+          await Promise.all(changedProducts.map((product) => patchProduct(product.id, { category: product.category })));
           await Promise.all(changedHeroBanners.map((heroBanner) => saveHeroBanner(heroBanner)));
         }
 
@@ -480,21 +482,26 @@ export function StorefrontProvider({ children }: { children: ReactNode }) {
     };
     storefrontRef.current = nextStorefront;
     setStorefront(nextStorefront);
-    runWrite(saveProduct(productDraft));
+    // saveProductEdit rather than saveProduct: the editor's draft is a snapshot of what
+    // this browser last saw, and writing it wholesale would roll back any sale or
+    // production intake that landed while the modal was open.
+    runWrite(saveProductEdit(productDraft));
   };
 
+  /**
+   * Applies a partial change to a product. Only the named fields are sent to Firestore —
+   * writing the whole document back from this local snapshot would clobber stock figures
+   * that production or a sale changed since this session last heard about them.
+   */
   const updateProduct = (productId: number, updates: Partial<Product>) => {
     const nextProducts = storefrontRef.current.products.map((product) =>
       product.id === productId ? { ...product, ...updates } : product
     );
-    const nextProduct = nextProducts.find((product) => product.id === productId);
     const nextStorefront = { ...storefrontRef.current, products: nextProducts };
     storefrontRef.current = nextStorefront;
     setStorefront(nextStorefront);
 
-    if (nextProduct) {
-      runWrite(saveProduct(nextProduct));
-    }
+    runWrite(patchProduct(productId, updates));
   };
 
   const createProduct = () => {

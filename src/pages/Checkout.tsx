@@ -12,9 +12,11 @@ import {
   SHIPPING_FEE,
   type OrderItemPayload,
   type OrderPaymentPayload,
+  type OrderTotalsPayload,
 } from "../lib/orders";
 import { applyDiscount, formatStorePrice, getActiveDiscount, getProductPrimaryImage } from "../lib/storefrontHelpers";
 import { useStorefront } from "../context/StorefrontContext";
+import { calculateVat } from "../lib/vat";
 import "./Checkout.css";
 
 interface CheckoutFormState {
@@ -27,12 +29,7 @@ interface CheckoutFormState {
   note: string;
 }
 
-interface CheckoutTotals {
-  subtotal: number;
-  shippingFee: number;
-  grandTotal: number;
-  discountTotal?: number;
-}
+type CheckoutTotals = OrderTotalsPayload;
 
 interface CheckoutOrderState {
   id: string;
@@ -48,7 +45,7 @@ export default function Checkout() {
   const { user, profile, authMethod, loading, signInAsGuest } = useAuth();
   const { items, totalPrice, clearCart, setIsCartOpen, updateQuantity, removeItem } = useCart();
   const { language } = useLanguage();
-  const { discounts } = useStorefront();
+  const { discounts, settings } = useStorefront();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [guestSessionPending, setGuestSessionPending] = useState(false);
@@ -243,9 +240,23 @@ export default function Checkout() {
   const liveTotals = useMemo<CheckoutTotals>(
     () => {
       const subtotal = totalPrice - discountSavings;
-      return { subtotal, shippingFee, grandTotal: subtotal + shippingFee, discountTotal: discountSavings };
+      // НӨАТ follows the shop-wide setting. Catalogue prices are shown to the shopper as
+      // they stand, so `included` leaves the charged total alone and only records how much
+      // of it is tax, while `added` bills the tax on top. Delivery is billed at cost and
+      // stays outside the tax, matching how the Sales module treats it.
+      const vatMode = settings.vatMode;
+      const vatAmount = calculateVat(subtotal, vatMode);
+      const grandTotal = subtotal + shippingFee + (vatMode === "added" ? vatAmount : 0);
+      return {
+        subtotal,
+        shippingFee,
+        grandTotal,
+        discountTotal: discountSavings,
+        vatMode,
+        vatAmount,
+      };
     },
-    [shippingFee, totalPrice, discountSavings],
+    [shippingFee, totalPrice, discountSavings, settings.vatMode],
   );
   const summaryItems = pendingOrder?.items ?? liveSummaryItems;
   const summaryTotals = pendingOrder?.totals ?? liveTotals;

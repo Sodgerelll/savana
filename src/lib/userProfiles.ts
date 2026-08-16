@@ -259,7 +259,16 @@ export async function syncUserProfile(
     // Re-resolves against the VITE_ADMIN_UIDS/EMAILS/PHONES (etc.) allow-lists on every sync
     // so the persisted role stays in sync with what the admin UI already grants — Firestore
     // security rules only ever see this stored field, never the client-side env allow-lists.
-    role: resolveUserRole({ uid: user.uid, email, phoneNumber, role: existingProfile?.role ?? null }),
+    // A profile can only ever be *created* as a customer — that is what the security rules
+    // allow, and rightly so: a client that could name its own role could name itself admin.
+    //
+    // This used to resolve the role from the VITE_ADMIN_* allow-lists on every sync,
+    // including the very first one, so an allow-listed admin's first sign-in tried to
+    // create a document with role "admin", the rules rejected the whole write, and they
+    // ended up with no profile at all — and therefore no access. Once a profile exists its
+    // stored role is authoritative and is left exactly as it is; raising it is an admin's
+    // job, through updateUserProfileByPrivileged().
+    role: existingProfile?.role ?? "customer",
     registrationMethod: existingProfile?.registrationMethod ?? options.registrationMethod ?? currentMethod,
     lastAuthMethod: currentMethod,
     providers,

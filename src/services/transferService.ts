@@ -10,7 +10,6 @@ import {
   serverTimestamp,
   query,
   where,
-  orderBy,
   writeBatch,
   Timestamp,
   increment,
@@ -32,37 +31,30 @@ import {
   buildPaymentReceivedEntry,
 } from "../lib/accounting/entryBuilders";
 import { generateJournalEntryNumber, postJournalEntry, readJournalEntryLines } from "../lib/accounting/postEntryClient";
+import { COUNTERS_COLLECTION, reserveDocumentNumber } from "../lib/documentNumbers";
+import { CUSTOMER_TRANSACTIONS_COLLECTION } from "../lib/customerTransactions";
+import {
+  applyStockMovement,
+  availableStock,
+  productRef,
+  readProductStockState,
+  writeProductStock,
+  PRODUCTS_COLLECTION,
+  type ProductStockState,
+} from "../lib/inventory";
 
 export const TRANSFERS_COLLECTION = "transfers";
 export const CUSTOMERS_COLLECTION = "customers";
-export const PRODUCTS_COLLECTION = "products";
 export const PAYMENTS_COLLECTION = "payments";
 export const STOCK_MOVEMENTS_COLLECTION = "stockMovements";
 export const CUSTOMER_TIMELINE_COLLECTION = "customerTimeline";
 export const CUSTOMER_PRICING_COLLECTION = "customerPricing";
-export const COUNTERS_COLLECTION = "counters";
+export { COUNTERS_COLLECTION, PRODUCTS_COLLECTION };
 
 // ─── Number Generator ─────────────────────────────────────────────────────────
 
-export async function generateTransferNumber(): Promise<string> {
-  const currentYear = new Date().getFullYear();
-  const counterRef = doc(db, COUNTERS_COLLECTION, "transfers");
-
-  return runTransaction(db, async (t) => {
-    const snap = await t.get(counterRef);
-    let lastNumber = 0;
-
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.year === currentYear) {
-        lastNumber = data.lastNumber ?? 0;
-      }
-    }
-
-    const newNumber = lastNumber + 1;
-    t.set(counterRef, { lastNumber: newNumber, year: currentYear, prefix: "TRF" });
-    return `TRF-${currentYear}-${String(newNumber).padStart(5, "0")}`;
-  });
+export function generateTransferNumber(): Promise<string> {
+  return reserveDocumentNumber("transfer");
 }
 
 // ─── Effective Price ──────────────────────────────────────────────────────────
@@ -102,22 +94,44 @@ export async function getEffectivePrice(
     return { price: 0, type: "standard", label: "Стандарт" };
   }
 
-  const product = { id: productSnap.id, ...productSnap.data() } as CrmProduct;
+  // Read the catalogue's own field names rather than the CRM view's, since this is the raw
+  // product document.
+  const productData = productSnap.data() as Record<string, unknown>;
+  const listPrice = Number(productData.price ?? 0);
+  const wholesalePrice = Number(productData.wholesalePrice ?? 0);
   const customer = { id: customerSnap.id, ...customerSnap.data() } as Customer;
 
   // 2. Wholesale category
-  if (customer.category === "WHOLESALE" && product.wholesalePrice > 0) {
-    return { price: product.wholesalePrice, type: "wholesale", label: "Бөөний" };
+  if (customer.category === "WHOLESALE" && wholesalePrice > 0) {
+    return { price: wholesalePrice, type: "wholesale", label: "Бөөний" };
   }
 
   // 3. VIP discount
   if (customer.category === "VIP" && customer.discountRate > 0) {
-    const discountedPrice = Math.round(product.unitPrice * (1 - customer.discountRate / 100));
+    const discountedPrice = Math.round(listPrice * (1 - customer.discountRate / 100));
     return { price: discountedPrice, type: "discount", label: `VIP -${customer.discountRate}%` };
   }
 
   // 4. Standard
-  return { price: product.unitPrice, type: "standard", label: "Стандарт" };
+  return { price: listPrice, type: "standard", label: "Стандарт" };
+}
+
+// ─── Customer balance ─────────────────────────────────────────────────────────
+
+/**
+ * How much a confirmed transfer adds to what the customer owes. PAID transfers add
+ * nothing; everything else adds whatever has not been settled yet.
+ */
+function outstandingDeltaFor(transfer: Pick<Transfer, "paymentStatus" | "totalAmount" | "remainingAmount">): number {
+  switch (transfer.paymentStatus) {
+    case "PAID":
+      return 0;
+    case "PARTIAL":
+      return transfer.remainingAmount;
+    default:
+      // CREDIT and UNPAID both owe the whole amount.
+      return transfer.totalAmount;
+  }
 }
 
 // ─── Create Transfer ──────────────────────────────────────────────────────────
@@ -134,6 +148,7 @@ export interface CreateTransferInput {
     unitPrice: number;
     originalPrice: number;
     discountPercent: number;
+    variant?: string | null;
   }>;
   paymentMethod: PaymentMethod;
   paidAmount: number;
@@ -149,6 +164,7 @@ export async function createTransfer(input: CreateTransferInput): Promise<string
 
   const items: TransferItem[] = input.items.map((item) => ({
     ...item,
+    variant: item.variant ?? null,
     lineTotal: Math.round(item.quantity * item.unitPrice * (1 - item.discountPercent / 100)),
   }));
 
@@ -235,30 +251,45 @@ export async function confirmTransfer(
     const customerSnap = await t.get(customerRef);
     if (!customerSnap.exists()) throw new Error("Харилцагч олдсонгүй");
 
-    // Check & deduct stock for each item
-    let cogsAmount = 0;
+    // ── Check & deduct stock. Reads run first: a Firestore transaction cannot read
+    // after it has written, and the stock states are needed to validate before anything
+    // is committed. Stock lives in totalStock/soldCount, the same pair every other module
+    // uses — the CRM's old private `currentStock` field never existed on these documents.
+    const states = new Map<string, ProductStockState>();
+    const minStockLevels = new Map<string, number>();
+
     for (const item of transfer.items) {
-      const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
-      const productSnap = await t.get(productRef);
+      const productId = item.productId;
+      if (states.has(productId)) continue;
+
+      const productSnap = await t.get(productRef(productId));
       if (!productSnap.exists()) throw new Error(`Бараа олдсонгүй: ${item.productName}`);
 
-      const product = productSnap.data() as CrmProduct;
-      const currentStock = product.currentStock ?? 0;
+      const productData = productSnap.data() as Record<string, unknown>;
+      states.set(productId, readProductStockState(productId, productData));
+      minStockLevels.set(productId, Number(productData.minStockLevel ?? 0));
+    }
 
-      if (currentStock < item.quantity) {
+    let cogsAmount = 0;
+    for (const item of transfer.items) {
+      const productId = item.productId;
+      const state = states.get(productId)!;
+      const variant = item.variant ?? null;
+      const available = availableStock(state, variant);
+
+      if (available < item.quantity) {
         throw new Error(
-          `"${item.productName}" барааны нөөц хүрэлцэхгүй байна. Нөөц: ${currentStock}, Шаардлага: ${item.quantity}`
+          `"${item.productName}" барааны нөөц хүрэлцэхгүй байна. Нөөц: ${available}, Шаардлага: ${item.quantity}`,
         );
       }
 
-      if (product.costPrice > 0) {
-        cogsAmount += product.costPrice * item.quantity;
+      if (state.costPrice > 0) {
+        cogsAmount += state.costPrice * item.quantity;
       }
 
-      const newStock = currentStock - item.quantity;
-      t.update(productRef, { currentStock: newStock });
+      applyStockMovement(state, { variant, quantity: item.quantity }, { productName: item.productName });
 
-      // Add stock movement
+      const remaining = availableStock(state, variant);
       const movRef = doc(collection(db, STOCK_MOVEMENTS_COLLECTION));
       t.set(movRef, {
         productId: item.productId,
@@ -268,17 +299,19 @@ export async function confirmTransfer(
         customerName: transfer.customerName,
         type: "OUT",
         quantity: item.quantity,
-        balanceAfter: newStock,
+        balanceAfter: remaining,
         reason: `Шилжүүлэг: ${transfer.transferNumber}`,
         createdBy: userId,
         createdByName: userName,
         createdAt: serverTimestamp(),
       });
 
-      if (newStock <= (product.minStockLevel ?? 0)) {
-        lowStockAlerts.push(`${item.productName} (нөөц: ${newStock})`);
+      if (remaining <= (minStockLevels.get(productId) ?? 0)) {
+        lowStockAlerts.push(`${item.productName} (нөөц: ${remaining})`);
       }
     }
+
+    states.forEach((state) => writeProductStock(t, state));
 
     // Post accounting journal entry (cash/AR debit, revenue/VAT credit, COGS if known)
     const builtEntry = buildTransferConfirmedEntry({
@@ -305,22 +338,41 @@ export async function confirmTransfer(
       updatedAt: serverTimestamp(),
     });
 
-    // Update customer balance and stats
-    // CREDIT: owes full amount; PARTIAL: owes remaining; UNPAID: owes full amount; PAID: owes nothing
-    const balanceDelta =
-      transfer.paymentStatus === "CREDIT"
-        ? transfer.totalAmount
-        : transfer.paymentStatus === "PARTIAL"
-          ? transfer.remainingAmount
-          : transfer.paymentStatus === "UNPAID"
-            ? transfer.totalAmount
-            : 0;
+    // Money handed over when the transfer was written up is a payment like any other and
+    // belongs in the payment record. It used to live only as a number on the transfer, so
+    // the customer's payment history and every payment report simply missed it.
+    if (transfer.paidAmount > 0) {
+      const initialPaymentRef = doc(collection(db, PAYMENTS_COLLECTION));
+      t.set(initialPaymentRef, {
+        transferId,
+        customerId: transfer.customerId,
+        customerName: transfer.customerName,
+        amount: transfer.paidAmount,
+        method: transfer.paymentMethod,
+        referenceNumber: "",
+        notes: "Шилжүүлэг батлах үеийн төлбөр",
+        // The confirm entry above already debited this money into its account, so this
+        // record carries no journal entry of its own. The flag says so, and keeps
+        // reconciliation from looking for one that was never meant to exist.
+        settledWithTransfer: true,
+        paidAt: serverTimestamp(),
+        createdBy: userId,
+        createdByName: userName,
+        createdAt: serverTimestamp(),
+      });
+    }
+
+    // Update customer balance and stats, on the same three aggregate fields the reseller
+    // transactions module maintains — one debt figure per customer, not two.
+    const outstandingDelta = outstandingDeltaFor(transfer);
 
     t.update(customerRef, {
       totalOrders: increment(1),
-      totalRevenue: increment(transfer.totalAmount),
+      totalSales: increment(transfer.totalAmount),
+      totalPaid: increment(transfer.paidAmount),
+      outstandingBalance: increment(outstandingDelta),
       lastOrderDate: serverTimestamp(),
-      ...(balanceDelta > 0 ? { balance: increment(balanceDelta) } : {}),
+      lastTransactionAt: serverTimestamp(),
     });
 
     // Timeline
@@ -411,6 +463,27 @@ export async function cancelTransfer(
   // it would require a counter read after the writes further down.
   const entryNumber = await generateJournalEntryNumber();
 
+  // Payments taken against this transfer after it was confirmed have their own journal
+  // entries, and cancelling used to leave every one of them standing: the sale was undone
+  // but the cash stayed, so the receivable account drifted negative by exactly what the
+  // customer had paid. Each one is mirrored back below, which is the ledger's way of
+  // saying the money is going back.
+  //
+  // Queried outside the transaction because the client SDK cannot run a query inside one.
+  // Payments the confirm entry already accounted for are skipped — reversing the confirm
+  // entry has taken care of those.
+  const settledPayments = await getDocs(
+    query(collection(db, PAYMENTS_COLLECTION), where("transferId", "==", transferId)),
+  );
+  const refundablePayments = settledPayments.docs
+    .map((snapshot) => snapshot.data() as { amount?: number; method?: string; settledWithTransfer?: boolean })
+    .filter((payment) => payment.settledWithTransfer !== true && Number(payment.amount ?? 0) > 0);
+
+  const refundEntryNumbers: string[] = [];
+  for (let index = 0; index < refundablePayments.length; index += 1) {
+    refundEntryNumbers.push(await generateJournalEntryNumber());
+  }
+
   await runTransaction(db, async (t) => {
     const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
     const transferSnap = await t.get(transferRef);
@@ -431,14 +504,22 @@ export async function cancelTransfer(
     if (transfer.status !== "DRAFT") {
       const customerRef = doc(db, CUSTOMERS_COLLECTION, transfer.customerId);
 
-      // Restore stock
+      // Restore stock. All reads happen before the first write below.
+      const states = new Map<string, ProductStockState>();
       for (const item of transfer.items) {
-        const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
-        const productSnap = await t.get(productRef);
+        const productId = item.productId;
+        if (states.has(productId)) continue;
+        const productSnap = await t.get(productRef(productId));
         if (!productSnap.exists()) continue;
-        const product = productSnap.data() as CrmProduct;
-        const newStock = (product.currentStock ?? 0) + item.quantity;
-        t.update(productRef, { currentStock: newStock });
+        states.set(productId, readProductStockState(productId, productSnap.data() as Record<string, unknown>));
+      }
+
+      for (const item of transfer.items) {
+        const state = states.get(item.productId);
+        if (!state) continue;
+        const variant = item.variant ?? null;
+
+        applyStockMovement(state, { variant, quantity: -item.quantity }, { validate: false });
 
         const movRef = doc(collection(db, STOCK_MOVEMENTS_COLLECTION));
         t.set(movRef, {
@@ -449,7 +530,7 @@ export async function cancelTransfer(
           customerName: transfer.customerName,
           type: "RETURN",
           quantity: item.quantity,
-          balanceAfter: newStock,
+          balanceAfter: availableStock(state, variant),
           reason: `Цуцлагдсан: ${transfer.transferNumber}`,
           createdBy: userId,
           createdByName: userName,
@@ -457,20 +538,14 @@ export async function cancelTransfer(
         });
       }
 
-      // Reverse balance and stats — include UNPAID (full amount was owed)
-      const balanceDelta =
-        transfer.paymentStatus === "CREDIT"
-          ? transfer.totalAmount
-          : transfer.paymentStatus === "PARTIAL"
-            ? transfer.remainingAmount
-            : transfer.paymentStatus === "UNPAID"
-              ? transfer.totalAmount
-              : 0;
+      states.forEach((state) => writeProductStock(t, state));
 
+      // Reverse the aggregates the confirm step applied, field for field.
       t.update(customerRef, {
         totalOrders: increment(-1),
-        totalRevenue: increment(-transfer.totalAmount),
-        ...(balanceDelta > 0 ? { balance: increment(-balanceDelta) } : {}),
+        totalSales: increment(-transfer.totalAmount),
+        totalPaid: increment(-transfer.paidAmount),
+        outstandingBalance: increment(-outstandingDeltaFor(transfer)),
       });
 
       // Reverse the original confirm entry (mirror image) if one was posted.
@@ -485,6 +560,33 @@ export async function cancelTransfer(
           createdByName: userName,
         });
       }
+
+      // Give back every payment taken against this transfer: money leaves the account it
+      // landed in and the receivable it settled is restored, which the confirm reversal
+      // then clears along with the rest of the sale.
+      //
+      // Booked against the transfer rather than the payment document, so each payment's own
+      // entry still reconciles against its own record.
+      refundablePayments.forEach((payment, index) => {
+        postJournalEntry(
+          t,
+          refundEntryNumbers[index],
+          buildReversalEntry(
+            buildPaymentReceivedEntry({
+              amount: Number(payment.amount ?? 0),
+              method: String(payment.method ?? "CASH"),
+            }).lines,
+          ),
+          {
+            sourceType: "transfer",
+            sourceId: transferId,
+            sourceNumber: transfer.transferNumber,
+            description: `Цуцлагдсан шилжүүлгийн төлбөр буцаалаа: ${transfer.transferNumber}`,
+            createdBy: userId,
+            createdByName: userName,
+          },
+        );
+      });
     }
 
     t.update(transferRef, { status: "CANCELLED", updatedAt: serverTimestamp() });
@@ -519,16 +621,35 @@ export interface AddPaymentInput {
 }
 
 export async function addPayment(input: AddPaymentInput): Promise<void> {
+  if (!(input.amount > 0)) {
+    throw new Error("Төлсөн дүн 0-ээс их байх ёстой");
+  }
+
   const entryNumber = await generateJournalEntryNumber();
 
   await runTransaction(db, async (t) => {
     const customerRef = doc(db, CUSTOMERS_COLLECTION, input.customerId);
 
-    if (input.transferId) {
-      const transferRef = doc(db, TRANSFERS_COLLECTION, input.transferId);
-      const transferSnap = await t.get(transferRef);
+    // ── Reads first: a Firestore transaction cannot read once it has written. ──
+    const transferRef = input.transferId ? doc(db, TRANSFERS_COLLECTION, input.transferId) : null;
+    const transferSnap = transferRef ? await t.get(transferRef) : null;
+    const customerSnap = await t.get(customerRef);
+
+    if (!customerSnap.exists()) throw new Error("Харилцагч олдсонгүй");
+
+    if (transferRef && transferSnap) {
       if (!transferSnap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
       const transfer = transferSnap.data() as Transfer;
+
+      // A payment can never be larger than what is still owed on the transfer. Without
+      // this the receivable account went negative and the customer's balance quietly
+      // turned into a credit no one had granted.
+      const remaining = Math.max(0, transfer.totalAmount - transfer.paidAmount);
+      if (input.amount > remaining) {
+        throw new Error(
+          `Төлсөн дүн үлдэгдлээс их байж болохгүй. Үлдэгдэл: ${formatMoney(remaining)}`,
+        );
+      }
 
       const newPaid = transfer.paidAmount + input.amount;
       const newRemaining = Math.max(0, transfer.totalAmount - newPaid);
@@ -541,10 +662,22 @@ export async function addPayment(input: AddPaymentInput): Promise<void> {
         paymentStatus: newPaymentStatus,
         updatedAt: serverTimestamp(),
       });
+    } else {
+      // A payment against no particular transfer settles the customer's running debt, so
+      // it is bounded by that debt for the same reason.
+      const outstanding = Math.max(0, Number(customerSnap.data().outstandingBalance ?? 0));
+      if (input.amount > outstanding) {
+        throw new Error(
+          `Төлсөн дүн харилцагчийн өрөөс их байж болохгүй. Өр: ${formatMoney(outstanding)}`,
+        );
+      }
     }
 
-    // Reduce customer balance
-    t.update(customerRef, { balance: increment(-input.amount) });
+    // The money received both settles debt and counts towards what the customer has paid.
+    t.update(customerRef, {
+      outstandingBalance: increment(-input.amount),
+      totalPaid: increment(input.amount),
+    });
 
     // Create payment record
     const paymentRef = doc(collection(db, PAYMENTS_COLLECTION));
@@ -595,6 +728,34 @@ export interface ReturnItem {
   sku: string;
   quantity: number;
   unitPrice: number;
+  variant?: string | null;
+}
+
+/** Identifies one returnable line of the original transfer. */
+function returnLineKey(item: { productId: string; variant?: string | null }): string {
+  return `${item.productId}|${item.variant ?? ""}`;
+}
+
+/**
+ * How much of each line of `originalTransferId` has already come back, across every return
+ * booked against it.
+ */
+async function alreadyReturnedQuantities(originalTransferId: string): Promise<Map<string, number>> {
+  const priorReturns = await getDocs(
+    query(collection(db, TRANSFERS_COLLECTION), where("parentTransferId", "==", originalTransferId)),
+  );
+
+  const returned = new Map<string, number>();
+  for (const snapshot of priorReturns.docs) {
+    const data = snapshot.data() as Partial<Transfer>;
+    if (data.status === "CANCELLED") continue;
+    for (const item of data.items ?? []) {
+      const key = returnLineKey(item);
+      returned.set(key, (returned.get(key) ?? 0) + Number(item.quantity ?? 0));
+    }
+  }
+
+  return returned;
 }
 
 export async function createReturn(
@@ -605,7 +766,13 @@ export async function createReturn(
   createdByName: string
 ): Promise<string> {
   let returnId = "";
+  // Both numbers reserve through their own transactions, so they are taken before the
+  // business transaction opens — a nested transaction would not take part in this one's
+  // retry and consistency window.
   const entryNumber = await generateJournalEntryNumber();
+  const transferNumber = await generateTransferNumber();
+  // Same reason: the client SDK cannot run a query inside a transaction.
+  const returnedSoFar = await alreadyReturnedQuantities(originalTransferId);
 
   await runTransaction(db, async (t) => {
     const origRef = doc(db, TRANSFERS_COLLECTION, originalTransferId);
@@ -617,8 +784,65 @@ export async function createReturn(
       throw new Error("Зөвхөн хүргэгдсэн шилжүүлгийн буцаалт хийх боломжтой");
     }
 
+    // Nothing used to stop the same goods being returned over and over: each return simply
+    // added its quantity back to stock and credited the customer again. A line can only
+    // give back what it delivered, minus whatever earlier returns already took.
+    const deliveredByLine = new Map<string, { quantity: number; name: string }>();
+    for (const item of orig.items) {
+      const key = returnLineKey(item);
+      const existing = deliveredByLine.get(key);
+      deliveredByLine.set(key, {
+        quantity: (existing?.quantity ?? 0) + Number(item.quantity ?? 0),
+        name: item.productName,
+      });
+    }
+
+    const requestedByLine = new Map<string, number>();
+    for (const item of returnItems) {
+      if (!(item.quantity > 0)) {
+        throw new Error(`"${item.productName}" барааны буцаах тоо 0-ээс их байх ёстой`);
+      }
+      const key = returnLineKey(item);
+      requestedByLine.set(key, (requestedByLine.get(key) ?? 0) + item.quantity);
+    }
+
+    for (const [key, requested] of requestedByLine) {
+      const delivered = deliveredByLine.get(key);
+      if (!delivered) {
+        throw new Error("Энэ шилжүүлэгт байхгүй барааг буцаах боломжгүй");
+      }
+      const remaining = delivered.quantity - (returnedSoFar.get(key) ?? 0);
+      if (requested > remaining) {
+        throw new Error(
+          `"${delivered.name}" барааны буцаах тоо хэтэрсэн байна. Боломжит: ${Math.max(0, remaining)}, Хүсэлт: ${requested}`,
+        );
+      }
+    }
+
+    // Every product read must complete before the first write in this transaction.
+    const states = new Map<string, ProductStockState>();
+    for (const item of returnItems) {
+      const productId = item.productId;
+      if (states.has(productId)) continue;
+      const productSnap = await t.get(productRef(productId));
+      if (!productSnap.exists()) continue;
+      states.set(productId, readProductStockState(productId, productSnap.data() as Record<string, unknown>));
+    }
+
     const returnTotal = returnItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const transferNumber = await generateTransferNumber();
+    // The goods came back with the tax that was charged on them, so the tax comes back too.
+    // Booking the return net of НӨАТ left the shop owing tax on a sale it had un-made.
+    const returnTaxRate = Number(orig.taxRate ?? 0);
+    const returnTaxAmount = Math.round(returnTotal * (returnTaxRate / 100));
+    const returnGrandTotal = returnTotal + returnTaxAmount;
+
+    // How much of this credit actually cancels debt. Anything beyond what the customer
+    // still owes is money already handed over that has to come back to them — recorded as
+    // a refund due rather than pushed into the balance, where it used to show up as a
+    // negative figure that read like the shop owed itself money.
+    const outstandingOnOriginal = Math.max(0, Number(orig.remainingAmount ?? 0));
+    const debtReduction = Math.min(returnGrandTotal, outstandingOnOriginal);
+    const refundDue = returnGrandTotal - debtReduction;
 
     const returnRef = doc(collection(db, TRANSFERS_COLLECTION));
     returnId = returnRef.id;
@@ -632,6 +856,7 @@ export async function createReturn(
       originalPrice: i.unitPrice,
       discountPercent: 0,
       lineTotal: i.quantity * i.unitPrice,
+      variant: i.variant ?? null,
     }));
 
     t.set(returnRef, {
@@ -640,16 +865,20 @@ export async function createReturn(
       customerName: orig.customerName,
       type: "RETURN",
       status: "DELIVERED",
-      paymentStatus: "PAID",
+      // No money moves when goods come back; it moves when the refund is paid. The record
+      // used to claim the return was settled in cash the moment it was written.
+      paymentStatus: refundDue > 0 ? "UNPAID" : "PAID",
       paymentMethod: "CASH",
       items,
       subtotal: returnTotal,
       discountAmount: 0,
-      taxRate: 0,
-      taxAmount: 0,
-      totalAmount: returnTotal,
-      paidAmount: returnTotal,
-      remainingAmount: 0,
+      taxRate: returnTaxRate,
+      taxAmount: returnTaxAmount,
+      totalAmount: returnGrandTotal,
+      paidAmount: 0,
+      remainingAmount: refundDue,
+      /** What the customer is owed back in cash, once their debt has been cancelled. */
+      refundDue,
       notes: reason,
       parentTransferId: originalTransferId,
       deliveredAt: serverTimestamp(),
@@ -662,15 +891,13 @@ export async function createReturn(
     // Restore stock
     let cogsAmount = 0;
     for (const item of returnItems) {
-      const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
-      const productSnap = await t.get(productRef);
-      if (!productSnap.exists()) continue;
-      const product = productSnap.data() as CrmProduct;
-      if (product.costPrice > 0) {
-        cogsAmount += product.costPrice * item.quantity;
+      const state = states.get(item.productId);
+      if (!state) continue;
+      if (state.costPrice > 0) {
+        cogsAmount += state.costPrice * item.quantity;
       }
-      const newStock = (product.currentStock ?? 0) + item.quantity;
-      t.update(productRef, { currentStock: newStock });
+      const variant = item.variant ?? null;
+      applyStockMovement(state, { variant, quantity: -item.quantity }, { validate: false });
 
       const movRef = doc(collection(db, STOCK_MOVEMENTS_COLLECTION));
       t.set(movRef, {
@@ -681,7 +908,7 @@ export async function createReturn(
         customerName: orig.customerName,
         type: "RETURN",
         quantity: item.quantity,
-        balanceAfter: newStock,
+        balanceAfter: availableStock(state, variant),
         reason: `Буцаалт: ${transferNumber}`,
         createdBy,
         createdByName,
@@ -689,18 +916,22 @@ export async function createReturn(
       });
     }
 
-    // Update customer
+    states.forEach((state) => writeProductStock(t, state));
+
+    // Update customer: the return cancels what was billed, and cancels debt only as far as
+    // there was debt to cancel.
     const customerRef = doc(db, CUSTOMERS_COLLECTION, orig.customerId);
     t.update(customerRef, {
-      balance: increment(-returnTotal),
-      totalReturns: increment(returnTotal),
+      outstandingBalance: increment(-debtReduction),
+      totalSales: increment(-returnGrandTotal),
+      totalReturns: increment(returnGrandTotal),
     });
 
-    // Post accounting journal entry (sales returns debit, AR credit, reverse COGS if known)
+    // Post accounting journal entry (sales returns debit, VAT debit, AR credit, reverse COGS)
     const entryRef = postJournalEntry(
       t,
       entryNumber,
-      buildTransferReturnEntry({ returnTotal, cogsAmount }),
+      buildTransferReturnEntry({ returnTotal, cogsAmount, taxAmount: returnTaxAmount }),
       {
         sourceType: "transfer",
         sourceId: returnRef.id,
@@ -718,9 +949,11 @@ export async function createReturn(
       customerId: orig.customerId,
       type: "RETURN_CREATED",
       title: `Буцаалт: ${transferNumber}`,
-      description: `${returnItems.length} бараа, ${formatMoney(returnTotal)}`,
+      description:
+        `${returnItems.length} бараа, ${formatMoney(returnGrandTotal)}` +
+        (refundDue > 0 ? ` — буцаах төлбөр: ${formatMoney(refundDue)}` : ""),
       relatedId: returnRef.id,
-      amount: returnTotal,
+      amount: returnGrandTotal,
       createdBy,
       createdByName,
       createdAt: serverTimestamp(),
@@ -753,11 +986,64 @@ export async function addTimelineNote(
 
 // ─── Load products for selector ───────────────────────────────────────────────
 
+/**
+ * The catalogue as the CRM screens consume it.
+ *
+ * This reads the real `products` documents and maps them onto CrmProduct. It used to
+ * filter on `isActive` and read `unitPrice`/`currentStock` — none of which the product
+ * editor writes — so the selector was always empty and every transfer failed its stock
+ * check. Active-ness is `status`, price is `price`, and stock is `totalStock - soldCount`.
+ *
+ * A product with variants yields one row per variant, each carrying that variant's own
+ * price and remaining stock, so a transfer can name exactly what left the shelf.
+ */
 export async function getActiveProducts(): Promise<CrmProduct[]> {
-  const snap = await getDocs(
-    query(collection(db, PRODUCTS_COLLECTION), where("isActive", "==", true), orderBy("name"))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CrmProduct);
+  const snap = await getDocs(query(collection(db, PRODUCTS_COLLECTION), where("status", "==", "active")));
+
+  const rows = snap.docs.flatMap((d) => {
+    const data = d.data() as Record<string, unknown>;
+    const state = readProductStockState(Number(d.id), data);
+    const name = String(data.name ?? "");
+    const listPrice = Number(data.price ?? 0);
+    const base = {
+      id: d.id,
+      sku: String(data.sku ?? d.id),
+      costPrice: state.costPrice,
+      minStockLevel: Number(data.minStockLevel ?? 0),
+      unit: "PIECE" as const,
+      category: String(data.category ?? ""),
+      isActive: true,
+    };
+
+    if (state.variants && state.variants.length > 0) {
+      return state.variants.map((variant): CrmProduct => {
+        const variantPrice = Number(variant.price ?? 0) || listPrice;
+        return {
+          ...base,
+          name: `${name} — ${variant.name}`,
+          unitPrice: variantPrice,
+          wholesalePrice: Number(data.wholesalePrice ?? 0) || variantPrice,
+          currentStock: availableStock(state, variant.name),
+          variant: variant.name,
+        };
+      });
+    }
+
+    return [
+      {
+        ...base,
+        name,
+        unitPrice: listPrice,
+        wholesalePrice: Number(data.wholesalePrice ?? 0) || listPrice,
+        currentStock: availableStock(state, null),
+        variant: null,
+      } satisfies CrmProduct,
+    ];
+  });
+
+  // Sorted here rather than in the query: `orderBy("name")` would need a composite index
+  // alongside the status filter, and the catalogue is small enough to sort in memory.
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -847,12 +1133,47 @@ async function deleteDocs(collectionName: string, field: string, value: string):
   }
 }
 
+/**
+ * Removes a customer and everything hanging off them.
+ *
+ * Only safe while nothing has reached the ledger. A confirmed transfer or a seller
+ * transaction has already recognised revenue, moved stock and posted a journal entry, and
+ * deleting the paperwork underneath does not undo any of that — it used to leave orphaned
+ * revenue and receivables in the accounts, stock permanently deducted, and the seller
+ * transactions themselves untouched, since this only ever looked at transfers.
+ *
+ * Those have to be cancelled or returned on their own terms first. A customer who has
+ * traded is meant to be deactivated, not deleted.
+ */
 export async function deleteCustomerCascade(customerId: string): Promise<void> {
-  await withRetry(async () => {
-    // 1. Find all transfers for this customer to delete related stock movements
-    const transferSnap = await getDocs(
-      query(collection(db, TRANSFERS_COLLECTION), where("customerId", "==", customerId))
+  // Checked once, outside the retry wrapper below: a customer who has traded is a settled
+  // answer, not a transient failure, and retrying it three times only delays the refusal.
+  const transferSnap = await getDocs(
+    query(collection(db, TRANSFERS_COLLECTION), where("customerId", "==", customerId))
+  );
+
+  const settledTransfers = transferSnap.docs.filter((snapshot) => {
+    const status = String((snapshot.data() as Record<string, unknown>).status ?? "");
+    return status !== "DRAFT" && status !== "CANCELLED";
+  });
+
+  if (settledTransfers.length > 0) {
+    throw new Error(
+      `Энэ харилцагчид батлагдсан ${settledTransfers.length} шилжүүлэг байна. Устгахын өмнө тэдгээрийг цуцлах эсвэл буцаах шаардлагатай. Түүхийг хадгалахын тулд харилцагчийг идэвхгүй болгохыг зөвлөж байна.`,
     );
+  }
+
+  const transactionSnap = await getDocs(
+    query(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION), where("customerId", "==", customerId))
+  );
+
+  if (!transactionSnap.empty) {
+    throw new Error(
+      `Энэ харилцагчид ${transactionSnap.size} гүйлгээ бүртгэгдсэн байна. Устгахын өмнө гүйлгээ бүрийг устгах, эсвэл харилцагчийг идэвхгүй болгоно уу.`,
+    );
+  }
+
+  await withRetry(async () => {
     for (const tDoc of transferSnap.docs) {
       await deleteDocs(STOCK_MOVEMENTS_COLLECTION, "transferId", tDoc.id);
     }

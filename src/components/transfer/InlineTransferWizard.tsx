@@ -69,21 +69,28 @@ export function InlineTransferWizard({
   const remainingAmount = totalAmount - paidAmt;
 
   async function addProduct(product: CrmProduct) {
-    if (items.find((i) => i.productId === product.id)) return;
+    // A product with variants contributes one selectable row per variant, so identity is
+    // the product *and* the variant, not the product alone.
+    if (items.find((i) => i.productId === product.id && i.variant === product.variant)) return;
     const priceResult = await getEffectivePrice(customerId, product.id);
+    // getEffectivePrice works at product level; a variant row falls back to its own price
+    // when no customer-specific or wholesale price applies to the product as a whole.
+    const price =
+      priceResult.type === "standard" && product.variant ? product.unitPrice : priceResult.price;
     const quantity = 1;
-    const lineTotal = Math.round(quantity * priceResult.price);
+    const lineTotal = Math.round(quantity * price);
 
     setItems((prev) => [
       ...prev,
       {
         productId: product.id,
         productName: product.name,
+        variant: product.variant,
         sku: product.sku ?? "",
         currentStock: product.currentStock ?? 0,
         minStockLevel: product.minStockLevel ?? 0,
         quantity,
-        unitPrice: priceResult.price,
+        unitPrice: price,
         originalPrice: product.unitPrice,
         discountPercent: 0,
         lineTotal,
@@ -92,10 +99,15 @@ export function InlineTransferWizard({
     ]);
   }
 
-  function updateItem(productId: string, field: keyof TransferFormItem, value: number | string) {
+  /** Rows are keyed by product *and* variant, since one product can contribute several. */
+  function itemKey(item: { productId: string; variant: string | null }): string {
+    return `${item.productId}:${item.variant ?? ""}`;
+  }
+
+  function updateItem(key: string, field: keyof TransferFormItem, value: number | string) {
     setItems((prev) =>
       prev.map((item) => {
-        if (item.productId !== productId) return item;
+        if (itemKey(item) !== key) return item;
         const updated = { ...item, [field]: value };
         if (field === "quantity" || field === "unitPrice" || field === "discountPercent") {
           const qty = field === "quantity" ? Number(value) : updated.quantity;
@@ -118,6 +130,7 @@ export function InlineTransferWizard({
       items: items.map((i) => ({
         productId: i.productId,
         productName: i.productName,
+        variant: i.variant,
         sku: i.sku,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
@@ -151,6 +164,7 @@ export function InlineTransferWizard({
       items: items.map((i) => ({
         productId: i.productId,
         productName: i.productName,
+        variant: i.variant,
         sku: i.sku,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
@@ -260,7 +274,7 @@ export function InlineTransferWizard({
 
                       return (
                         <tr
-                          key={item.productId}
+                          key={itemKey(item)}
                           className={`border-b border-gray-50 last:border-0 ${
                             stockError ? "bg-red-50" : ""
                           }`}
@@ -309,7 +323,7 @@ export function InlineTransferWizard({
                               max={item.currentStock}
                               value={item.quantity}
                               onChange={(e) =>
-                                updateItem(item.productId, "quantity", Number(e.target.value))
+                                updateItem(itemKey(item), "quantity", Number(e.target.value))
                               }
                               className={`w-20 border rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${
                                 stockError ? "border-red-400 bg-red-50" : "border-gray-200"
@@ -322,7 +336,7 @@ export function InlineTransferWizard({
                               min={0}
                               value={item.unitPrice}
                               onChange={(e) =>
-                                updateItem(item.productId, "unitPrice", Number(e.target.value))
+                                updateItem(itemKey(item), "unitPrice", Number(e.target.value))
                               }
                               className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                             />
@@ -334,7 +348,7 @@ export function InlineTransferWizard({
                               max={100}
                               value={item.discountPercent}
                               onChange={(e) =>
-                                updateItem(item.productId, "discountPercent", Number(e.target.value))
+                                updateItem(itemKey(item), "discountPercent", Number(e.target.value))
                               }
                               className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                             />
@@ -347,7 +361,7 @@ export function InlineTransferWizard({
                               type="button"
                               onClick={() =>
                                 setItems((prev) =>
-                                  prev.filter((i) => i.productId !== item.productId)
+                                  prev.filter((i) => itemKey(i) !== itemKey(item))
                                 )
                               }
                               className="text-gray-300 hover:text-red-500 transition-colors"

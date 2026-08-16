@@ -16,6 +16,7 @@ import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/s
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
 import { SHIPPING_FEE } from "../../lib/orders";
 import { calculateSaleVat, saleChannelRequiresAddress } from "../../lib/sales";
+import { calculateVat, normalizeVatMode, type VatMode } from "../../lib/vat";
 import type { CustomerType } from "../../lib/customers";
 import {
   getCrmContactDisplayName,
@@ -1474,6 +1475,62 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           />
         </label>
         <label className="admin-field">
+          <span>{copy.costPrice}</span>
+          <input
+            type="number"
+            step="1"
+            min={0}
+            value={productModal.draft.costPrice ?? 0}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  costPrice: Math.max(0, Number(event.target.value) || 0),
+                },
+              })
+            }
+          />
+          <small>{copy.costPriceHelp}</small>
+        </label>
+        <label className="admin-field">
+          <span>{copy.wholesalePrice}</span>
+          <input
+            type="number"
+            step="1"
+            min={0}
+            value={productModal.draft.wholesalePrice ?? 0}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  wholesalePrice: Math.max(0, Number(event.target.value) || 0),
+                },
+              })
+            }
+          />
+          <small>{copy.wholesalePriceHelp}</small>
+        </label>
+        <label className="admin-field">
+          <span>{copy.minStockLevel}</span>
+          <input
+            type="number"
+            step="1"
+            min={0}
+            value={productModal.draft.minStockLevel ?? 0}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: {
+                  ...productModal.draft,
+                  minStockLevel: Math.max(0, Number(event.target.value) || 0),
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
           <span>{copy.badge}</span>
           <input
             value={productModal.draft.badge ?? ""}
@@ -2192,6 +2249,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             purchasedAt: draft.purchasedAt,
             notes: draft.notes,
             createdByUid: user?.uid ?? "",
+            paymentMethod: draft.paymentMethod ?? "cash",
           });
           setRawMaterialPurchaseModal(null);
         } catch (err) {
@@ -2248,6 +2306,21 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             })
           }
         />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchasePaymentMethod}</span>
+        <select
+          value={rawMaterialPurchaseModal.draft.paymentMethod ?? "cash"}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, paymentMethod: e.target.value },
+            })
+          }
+        >
+          <option value="cash">{language === "MN" ? "Касс" : "Cash"}</option>
+          <option value="bank_transfer">{language === "MN" ? "Банк" : "Bank"}</option>
+        </select>
       </label>
       <label className="admin-field admin-field-wide">
         <span>{copy.rawMaterialPurchaseSupplier}</span>
@@ -3521,21 +3594,28 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               ? Math.round((subtotal * Math.min(100, discountValue)) / 100)
               : discountValue,
           );
-          const grandTotal = Math.max(0, subtotal - discount);
+          const netTotal = Math.max(0, subtotal - discount);
+          // НӨАТ follows the same three modes the Sales module uses: `added` bills the tax
+          // on top, `included` leaves the billed amount alone and only records how much of
+          // it is tax.
+          const vatMode = normalizeVatMode(draft.totals.vatMode);
+          const grandTotal = netTotal + (vatMode === "added" ? calculateVat(netTotal, "added") : 0);
+          // A payment can never exceed what is owed. The ledger entry clamps it too, so
+          // clamping here keeps the stored record and the journal entry in agreement.
+          const paidAmount = Math.min(Math.max(0, draft.payment.paidAmount), grandTotal);
           const paymentStatus: CustomerTransactionRecord["payment"]["status"] =
-            draft.payment.paidAmount <= 0
-              ? "unpaid"
-              : draft.payment.paidAmount >= grandTotal
-                ? "paid"
-                : "partial";
+            paidAmount <= 0 ? "unpaid" : paidAmount >= grandTotal ? "paid" : "partial";
           const input = {
             type: draft.type,
             customerId: draft.customerId,
             customerSnapshot: draft.customerSnapshot,
             items: draft.items,
-            totals: { subtotal, discount, discountType, discountValue, grandTotal },
+            // vatAmount is recomputed inside createCustomerTransaction from the gross
+            // grandTotal, so it can never drift from what the customer is billed.
+            totals: { subtotal, discount, discountType, discountValue, vatMode, grandTotal },
             payment: {
               ...draft.payment,
+              paidAmount,
               status: paymentStatus,
               paidAt:
                 paymentStatus === "unpaid"
@@ -4060,6 +4140,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               type === "percent" ? Math.round((txSubtotal * Math.min(100, value)) / 100) : value,
             );
           const txDiscountAmount = toAmount(txDiscountType, txDiscountValue);
+          const txVatMode = normalizeVatMode(transactionModal.draft.totals.vatMode);
+          const txNetTotal = Math.max(0, txSubtotal - txDiscountAmount);
+          const txVatAmount = calculateVat(txNetTotal, txVatMode);
+          const txGrandTotal = txNetTotal + (txVatMode === "added" ? txVatAmount : 0);
           const applyDiscount = (type: "amount" | "percent", value: number) =>
             setTransactionModal({
               ...transactionModal,
@@ -4112,12 +4196,40 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 )}
               </label>
               <label className="admin-field">
+                <span>{language === "MN" ? "НӨАТ (10%)" : "VAT (10%)"}</span>
+                <select
+                  value={txVatMode}
+                  onChange={(event: any) =>
+                    setTransactionModal({
+                      ...transactionModal,
+                      draft: {
+                        ...transactionModal.draft,
+                        totals: {
+                          ...transactionModal.draft.totals,
+                          vatMode: event.target.value as VatMode,
+                        },
+                      },
+                    })
+                  }
+                >
+                  <option value="none">{language === "MN" ? "НӨАТ-гүй" : "No VAT"}</option>
+                  <option value="included">
+                    {language === "MN" ? "Үнийн дүнд орсон" : "Included in the price"}
+                  </option>
+                  <option value="added">
+                    {language === "MN" ? "Үнийн дүн дээр нэмэх" : "Added on top of the price"}
+                  </option>
+                </select>
+                {txVatMode !== "none" && txVatAmount > 0 && (
+                  <small style={{ color: "#8a8477" }}>
+                    {txVatMode === "added" ? "+" : ""}
+                    {formatStorePrice(txVatAmount)}
+                  </small>
+                )}
+              </label>
+              <label className="admin-field">
                 <span>{copy.txGrandTotal}</span>
-                <input
-                  type="text"
-                  value={formatStorePrice(Math.max(0, txSubtotal - txDiscountAmount))}
-                  disabled
-                />
+                <input type="text" value={formatStorePrice(txGrandTotal)} disabled />
               </label>
             </>
           );

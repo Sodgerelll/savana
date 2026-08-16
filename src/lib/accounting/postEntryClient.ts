@@ -1,19 +1,27 @@
 import {
   collection,
   doc,
-  runTransaction,
   serverTimestamp,
   type DocumentData,
   type DocumentReference,
   type Transaction,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { COUNTERS_COLLECTION } from "../../services/transferService";
+import { reserveDocumentNumber } from "../documentNumbers";
 import type { BuiltEntry, JournalLine } from "./entryBuilders";
 
 export const JOURNAL_ENTRIES_COLLECTION = "journalEntries";
 
-export type SourceType = "order" | "sale" | "transfer" | "payment" | "directSale" | "customerTransaction";
+export type SourceType =
+  | "order"
+  | "sale"
+  | "transfer"
+  | "payment"
+  | "directSale"
+  | "customerTransaction"
+  | "productionBatch"
+  | "rawMaterialPurchase"
+  | "financeEntry";
 
 export interface PostJournalEntryMeta {
   sourceType: SourceType;
@@ -31,29 +39,11 @@ interface Writer {
 }
 
 /**
- * Reserves the next sequential journal entry number via its own standalone transaction,
- * mirroring generateTransferNumber() in transferService.ts. Must be called BEFORE the
- * caller's business transaction starts any t.get() reads, since it runs its own transaction.
+ * Reserves the next sequential journal entry number. Must be called BEFORE the caller's
+ * business transaction starts any t.get() reads, since it runs its own transaction.
  */
 export async function generateJournalEntryNumber(): Promise<string> {
-  const currentYear = new Date().getFullYear();
-  const counterRef = doc(db, COUNTERS_COLLECTION, "journalEntries");
-
-  return runTransaction(db, async (t) => {
-    const snap = await t.get(counterRef);
-    let lastNumber = 0;
-
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.year === currentYear) {
-        lastNumber = data.lastNumber ?? 0;
-      }
-    }
-
-    const newNumber = lastNumber + 1;
-    t.set(counterRef, { lastNumber: newNumber, year: currentYear, prefix: "JE" });
-    return `JE-${currentYear}-${String(newNumber).padStart(6, "0")}`;
-  });
+  return reserveDocumentNumber("journalEntry");
 }
 
 /**

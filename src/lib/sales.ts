@@ -12,12 +12,29 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { buildReversalEntry, buildSaleEntry } from "./accounting/entryBuilders";
+import {
+  buildGoodsWriteOffEntry,
+  buildReversalEntry,
+  buildSaleEntry,
+  isEmptyEntry,
+  type BuiltEntry,
+} from "./accounting/entryBuilders";
 import {
   generateJournalEntryNumber,
   postJournalEntry,
   JOURNAL_ENTRIES_COLLECTION,
 } from "./accounting/postEntryClient";
+import { reserveDocumentNumber } from "./documentNumbers";
+import {
+  applyStockMovement,
+  cogsForMovements,
+  productRef,
+  readProductStockState,
+  writeProductStock,
+  type ProductStockState,
+  type StockMovementRequest,
+} from "./inventory";
+import { calculateVat, VAT_MODE_VALUES, VAT_RATE, type VatMode } from "./vat";
 import type {
   OrderAddressPayload,
   OrderItemPayload,
@@ -68,39 +85,17 @@ export const SALE_CHANNEL_VALUES = [
 export type SaleCustomerType = "individual" | "organization";
 export const SALE_CUSTOMER_TYPE_VALUES = ["individual", "organization"] as const;
 
-/** НӨАТ rate applied to sales — 10%, the single Mongolian VAT rate. */
-export const SALE_VAT_RATE = 0.1;
-
-/**
- * How НӨАТ relates to the item prices that were typed in:
- * - `none` — the sale carries no VAT at all
- * - `included` — the prices already contain VAT, so it is carved out of the total
- * - `added` — the prices are net, so VAT is charged on top of them
- */
-export type SaleVatMode = "none" | "included" | "added";
-export const SALE_VAT_MODE_VALUES = ["none", "included", "added"] as const;
+// НӨАТ now lives in src/lib/vat.ts so every channel shares one definition. These aliases
+// keep the Sales module's original names working for existing callers and tests.
+export const SALE_VAT_RATE = VAT_RATE;
+export type SaleVatMode = VatMode;
+export const SALE_VAT_MODE_VALUES = VAT_MODE_VALUES;
+export const calculateSaleVat = calculateVat;
 
 export interface SaleTotalsPayload extends OrderTotalsPayload {
   vatMode?: SaleVatMode;
   /** НӨАТ in tugriks — carved out of `grandTotal` when included, part of it when added. */
   vatAmount?: number;
-}
-
-/** VAT on `base` for the given mode. Included mode carves it out, added mode charges on top. */
-export function calculateSaleVat(base: number, mode: SaleVatMode): number {
-  if (base <= 0) {
-    return 0;
-  }
-
-  if (mode === "included") {
-    return Math.round(base - base / (1 + SALE_VAT_RATE));
-  }
-
-  if (mode === "added") {
-    return Math.round(base * SALE_VAT_RATE);
-  }
-
-  return 0;
 }
 
 /**
@@ -111,6 +106,17 @@ const OVER_THE_COUNTER_CHANNELS: readonly SaleChannel[] = ["store", "fair", "own
 
 export function saleChannelRequiresAddress(channel: SaleChannel): boolean {
   return !OVER_THE_COUNTER_CHANNELS.includes(channel);
+}
+
+/**
+ * Channels where no money changes hands and nothing is earned — the goods simply leave.
+ * They still move stock, but they are booked as a write-off at cost instead of as revenue,
+ * so a giveaway can never inflate cash or sales.
+ */
+const NON_REVENUE_CHANNELS: readonly SaleChannel[] = ["own_use", "gift"];
+
+export function saleChannelEarnsRevenue(channel: SaleChannel): boolean {
+  return !NON_REVENUE_CHANNELS.includes(channel);
 }
 
 export interface SaleCustomerPayload {
@@ -181,22 +187,8 @@ export function getSalePaymentStatus(sale: Pick<SaleRecord, "status">): SalePaym
   return isSaleSettled(sale.status) ? "paid" : "pending";
 }
 
-function createSaleNumber(): string {
-  const dateParts = new Intl.DateTimeFormat("en", {
-    timeZone: "Asia/Ulaanbaatar",
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const year = dateParts.find((part) => part.type === "year")?.value ?? "00";
-  const month = dateParts.find((part) => part.type === "month")?.value ?? "00";
-  const day = dateParts.find((part) => part.type === "day")?.value ?? "00";
-
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const randomLetter = chars[Math.floor(Math.random() * chars.length)];
-  const randomDigits = String(Math.floor(Math.random() * 100)).padStart(2, "0");
-
-  return `SL-${year}${month}${day}${randomLetter}${randomDigits}`;
+function createSaleNumber(): Promise<string> {
+  return reserveDocumentNumber("sale");
 }
 
 function parseTimestamp(value: unknown): string | null {
@@ -326,26 +318,91 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
   };
 }
 
-/** Best-effort COGS for a sale: sums costPrice × quantity for the products that carry one. */
-async function sumSaleCogs(items: SaleItemPayload[]): Promise<number> {
-  const productIds = Array.from(new Set(items.map((item) => item.productId).filter((id) => id > 0)));
-  const costByProductId = new Map<number, number>();
+/** The stock movements a set of sale items represents — positive quantity leaves stock. */
+function movementsForItems(items: SaleItemPayload[]): StockMovementRequest[] {
+  return items
+    .filter((item) => item.productId > 0 && item.quantity !== 0)
+    .map((item) => ({ productId: item.productId, variant: item.variant, quantity: item.quantity }));
+}
+
+/**
+ * Loads the current stock position of every product touched by the given item lists. Reads
+ * happen up front because a WriteBatch cannot read, so the caller must have the whole
+ * picture before it starts assembling writes.
+ */
+async function loadStockStates(
+  itemLists: (SaleItemPayload[] | undefined)[],
+): Promise<Map<number | string, ProductStockState>> {
+  const productIds = Array.from(
+    new Set(
+      itemLists
+        .flatMap((items) => items ?? [])
+        .map((item) => item.productId)
+        .filter((id) => id > 0),
+    ),
+  );
+  const states = new Map<number | string, ProductStockState>();
 
   await Promise.all(
     productIds.map(async (productId) => {
-      const snapshot = await getDoc(doc(db, "products", String(productId)));
-      if (!snapshot.exists()) {
-        return;
-      }
-
-      const costPrice = Number((snapshot.data() as Record<string, unknown>).costPrice ?? 0);
-      if (costPrice > 0) {
-        costByProductId.set(productId, costPrice);
-      }
+      const snapshot = await getDoc(productRef(productId));
+      states.set(
+        productId,
+        readProductStockState(productId, snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null),
+      );
     }),
   );
 
-  return items.reduce((sum, item) => sum + (costByProductId.get(item.productId) ?? 0) * item.quantity, 0);
+  return states;
+}
+
+/** Names an item's product for the "not enough stock" message. */
+function itemLabel(items: SaleItemPayload[], productId: number | string): string {
+  return items.find((item) => item.productId === productId)?.name ?? String(productId);
+}
+
+/**
+ * Moves stock for the given items. `direction` is +1 when the goods leave (the sale became
+ * settled) and -1 when they come back (it was un-settled, edited or deleted). Only the
+ * outgoing direction is validated — returning stock is always allowed.
+ */
+function applyItemMovements(
+  states: Map<number | string, ProductStockState>,
+  items: SaleItemPayload[] | undefined,
+  direction: 1 | -1,
+): void {
+  if (!items) return;
+
+  for (const movement of movementsForItems(items)) {
+    const state = states.get(movement.productId);
+    if (!state) continue;
+    applyStockMovement(
+      state,
+      { variant: movement.variant, quantity: movement.quantity * direction },
+      { productName: itemLabel(items, movement.productId) },
+    );
+  }
+}
+
+/**
+ * The ledger entry a settled sale produces: revenue for a normal channel, a write-off at
+ * cost for a gift or own use. Returns an empty entry when there is nothing to post (a
+ * giveaway of goods whose cost is unknown).
+ */
+function buildEntryForSale(
+  input: Pick<SaleDraftInput, "channel" | "paymentMethod" | "totals">,
+  cogsAmount: number,
+): BuiltEntry {
+  if (!saleChannelEarnsRevenue(input.channel)) {
+    return buildGoodsWriteOffEntry({ cogsAmount });
+  }
+
+  return buildSaleEntry({
+    grandTotal: input.totals.grandTotal,
+    vatAmount: input.totals.vatAmount ?? 0,
+    cogsAmount,
+    paymentMethod: input.paymentMethod,
+  });
 }
 
 /** Queues a mirror-image reversal of an already posted entry so the ledger nets to zero. */
@@ -375,41 +432,45 @@ async function queueReversal(
 
 /**
  * Registers a sale made outside the storefront. When it is saved as settled
- * (paid/delivering/delivered) the revenue journal entry is posted in the same batch, so
- * offline sales reach Finance the same way Bonum-paid web orders do.
+ * (paid/delivering/delivered) the journal entry AND the stock movement are written in the
+ * same batch, so offline sales reach Finance the same way Bonum-paid web orders do and the
+ * ledger can never disagree with what is on the shelf.
+ *
+ * Throws InsufficientStockError before writing anything when the items exceed what is in
+ * stock, so a settled sale can never oversell.
  */
 export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
   const saleRef = doc(collection(db, SALES_COLLECTION));
-  const saleNumber = createSaleNumber();
   const settled = isSaleSettled(input.status);
 
-  // Both the product reads (costPrice) and the entry-number transaction must complete
-  // before the batch is assembled — writeBatch itself cannot read.
-  const cogsAmount = settled ? await sumSaleCogs(input.items) : 0;
-  const entryNumber = settled ? await generateJournalEntryNumber() : null;
+  // Every read — product stock, entry number, sale number — must complete before the batch
+  // is assembled, since writeBatch itself cannot read.
+  const states = settled ? await loadStockStates([input.items]) : new Map<number | string, ProductStockState>();
+  const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
+
+  if (settled) {
+    // Raises InsufficientStockError before any number is reserved or written.
+    applyItemMovements(states, input.items, 1);
+  }
+
+  const saleNumber = await createSaleNumber();
+  const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
+  const entryNumber = builtEntry && !isEmptyEntry(builtEntry) ? await generateJournalEntryNumber() : null;
 
   const batch = writeBatch(db);
   let journalEntryId: string | null = null;
 
-  if (entryNumber) {
-    const entryRef = postJournalEntry(
-      batch,
-      entryNumber,
-      buildSaleEntry({
-        grandTotal: input.totals.grandTotal,
-        vatAmount: input.totals.vatAmount ?? 0,
-        cogsAmount,
-        paymentMethod: input.paymentMethod,
-      }),
-      {
-        sourceType: "sale",
-        sourceId: saleRef.id,
-        sourceNumber: saleNumber,
-        description: `Борлуулалт: ${saleNumber}`,
-        createdBy: input.createdByUid,
-        createdByName: input.createdByName ?? "",
-      },
-    );
+  if (builtEntry && entryNumber) {
+    const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
+      sourceType: "sale",
+      sourceId: saleRef.id,
+      sourceNumber: saleNumber,
+      description: saleChannelEarnsRevenue(input.channel)
+        ? `Борлуулалт: ${saleNumber}`
+        : `Бэлэг/дотоод хэрэглээ: ${saleNumber}`,
+      createdBy: input.createdByUid,
+      createdByName: input.createdByName ?? "",
+    });
     journalEntryId = entryRef.id;
   }
 
@@ -432,6 +493,8 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
     updatedAt: serverTimestamp(),
   });
 
+  states.forEach((state) => writeProductStock(batch, state));
+
   await batch.commit();
 
   return { id: saleRef.id, saleNumber };
@@ -439,15 +502,31 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
 
 /**
  * Saves an edited sale. Any previously posted entry is reversed and a fresh one posted for
- * the new amounts, so the ledger always nets to what the sale currently says.
+ * the new amounts, and the stock the old version held is released before the new version
+ * reserves what it needs — so an edit that changes both the status and the item list nets
+ * out correctly in one batch.
  */
 export async function updateSale(
   id: string,
-  previous: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "paidAt">,
+  previous: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "paidAt" | "status" | "items">,
   input: SaleDraftInput,
 ): Promise<void> {
+  const wasSettled = isSaleSettled(previous.status);
   const settled = isSaleSettled(input.status);
-  const cogsAmount = settled ? await sumSaleCogs(input.items) : 0;
+
+  const states = await loadStockStates([previous.items, input.items]);
+
+  // Release first, then reserve, so swapping one item for another never trips the stock
+  // check on quantity the sale itself is already holding.
+  if (wasSettled) {
+    applyItemMovements(states, previous.items, -1);
+  }
+  if (settled) {
+    applyItemMovements(states, input.items, 1);
+  }
+
+  const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
+  const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
 
   const batch = writeBatch(db);
 
@@ -463,26 +542,16 @@ export async function updateSale(
 
   let journalEntryId: string | null = null;
 
-  if (settled) {
+  if (builtEntry && !isEmptyEntry(builtEntry)) {
     const entryNumber = await generateJournalEntryNumber();
-    const entryRef = postJournalEntry(
-      batch,
-      entryNumber,
-      buildSaleEntry({
-        grandTotal: input.totals.grandTotal,
-        vatAmount: input.totals.vatAmount ?? 0,
-        cogsAmount,
-        paymentMethod: input.paymentMethod,
-      }),
-      {
-        sourceType: "sale",
-        sourceId: id,
-        sourceNumber: previous.saleNumber,
-        description: `Борлуулалт засварласан: ${previous.saleNumber}`,
-        createdBy: input.createdByUid,
-        createdByName: input.createdByName ?? "",
-      },
-    );
+    const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
+      sourceType: "sale",
+      sourceId: id,
+      sourceNumber: previous.saleNumber,
+      description: `Борлуулалт засварласан: ${previous.saleNumber}`,
+      createdBy: input.createdByUid,
+      createdByName: input.createdByName ?? "",
+    });
     journalEntryId = entryRef.id;
   }
 
@@ -499,13 +568,22 @@ export async function updateSale(
     updatedAt: serverTimestamp(),
   });
 
+  states.forEach((state) => writeProductStock(batch, state));
+
   await batch.commit();
 }
 
 export async function deleteSale(
   id: string,
-  sale: Pick<SaleRecord, "saleNumber" | "journalEntryId">,
+  sale: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "status" | "items">,
 ): Promise<void> {
+  const wasSettled = isSaleSettled(sale.status);
+  const states = wasSettled ? await loadStockStates([sale.items]) : new Map<number | string, ProductStockState>();
+
+  if (wasSettled) {
+    applyItemMovements(states, sale.items, -1);
+  }
+
   const batch = writeBatch(db);
 
   if (sale.journalEntryId) {
@@ -519,6 +597,8 @@ export async function deleteSale(
   }
 
   batch.delete(doc(db, SALES_COLLECTION, id));
+
+  states.forEach((state) => writeProductStock(batch, state));
 
   await batch.commit();
 }

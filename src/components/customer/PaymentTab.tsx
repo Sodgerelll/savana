@@ -31,11 +31,11 @@ export function PaymentTab({ customer, transfers }: Props) {
 
   const creditUsage =
     customer.creditLimit > 0
-      ? Math.min(100, Math.round((customer.balance / customer.creditLimit) * 100))
+      ? Math.min(100, Math.round((customer.outstandingBalance / customer.creditLimit) * 100))
       : 0;
 
-  const isWarning = customer.creditLimit > 0 && customer.balance > customer.creditLimit * 0.8;
-  const isDanger = customer.creditLimit > 0 && customer.balance > customer.creditLimit;
+  const isWarning = customer.creditLimit > 0 && customer.outstandingBalance > customer.creditLimit * 0.8;
+  const isDanger = customer.creditLimit > 0 && customer.outstandingBalance > customer.creditLimit;
 
   return (
     <div className="space-y-6">
@@ -48,9 +48,9 @@ export function PaymentTab({ customer, transfers }: Props) {
         >
           <div className="text-sm text-gray-500 mb-1">Өрийн үлдэгдэл</div>
           <MoneyFormat
-            amount={customer.balance}
+            amount={customer.outstandingBalance}
             className={`text-3xl font-bold ${
-              customer.balance > 0
+              customer.outstandingBalance > 0
                 ? isDanger
                   ? "text-red-600"
                   : "text-gray-900"
@@ -83,7 +83,7 @@ export function PaymentTab({ customer, transfers }: Props) {
         <div className="rounded-2xl p-5 bg-white border border-gray-200">
           <div className="text-sm text-gray-500 mb-1">Нийт борлуулалт</div>
           <MoneyFormat
-            amount={customer.totalRevenue}
+            amount={customer.totalSales}
             className="text-2xl font-bold text-gray-900"
           />
           <div className="text-sm text-gray-500 mt-1">

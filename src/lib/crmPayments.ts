@@ -23,6 +23,12 @@ export interface CrmPaymentRecord {
   /** ISO string (converted from the Firestore timestamp). */
   paidAt: string | null;
   createdBy: string;
+  /**
+   * True for the money handed over when the transfer itself was confirmed. That amount is
+   * already inside the transfer's own journal entry, so this record has none of its own —
+   * reconciliation would otherwise report every one of them as a missing posting.
+   */
+  settledWithTransfer: boolean;
 }
 
 function parseTimestamp(value: unknown): string | null {
@@ -51,6 +57,7 @@ function deserialize(snapshot: QueryDocumentSnapshot<DocumentData>): CrmPaymentR
     notes: String(data.notes ?? ""),
     paidAt: parseTimestamp(data.paidAt) ?? parseTimestamp(data.createdAt),
     createdBy: String(data.createdBy ?? ""),
+    settledWithTransfer: data.settledWithTransfer === true,
   };
 }
 

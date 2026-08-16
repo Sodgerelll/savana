@@ -6,6 +6,7 @@ import {
   type EntityStatus,
   type Product,
 } from "./products";
+import { normalizeVatMode, type VatMode as SaleVatMode } from "../lib/vat";
 
 export type SiteNavigationId = "shop" | "featured" | "location" | "about" | "contact" | "journal";
 export type SiteNavigationGroup = "left" | "right";
@@ -55,6 +56,13 @@ export interface ShopSettings {
   wholesaleHeading: string;
   wholesaleText: string;
   wholesaleEmail: string;
+  /**
+   * НӨАТ policy applied to storefront checkouts. Catalogue prices are quoted to the
+   * shopper as they stand, so "included" carves the tax out of what is charged and "added"
+   * bills it on top. Defaults to "none", which is how every order placed before this
+   * setting existed was treated.
+   */
+  vatMode: SaleVatMode;
   navigationItems: SiteNavigationItem[];
   journalHeadingEn: string;
   journalHeadingMn: string;
@@ -239,6 +247,7 @@ const defaultSettings: ShopSettings = {
   wholesaleText:
     "Байгууллага, хувь хүн, event, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
   wholesaleEmail: "savanaorganica@gmail.com",
+  vatMode: "none",
   navigationItems: defaultNavigationItems,
   journalHeadingEn: "SAVANA Journal",
   journalHeadingMn: "SAVANA сэтгүүл",
@@ -457,6 +466,7 @@ export function normalizeShopSettings(value: Partial<Record<keyof ShopSettings, 
     wholesaleHeading: String(value.wholesaleHeading ?? defaults.wholesaleHeading),
     wholesaleText: String(value.wholesaleText ?? defaults.wholesaleText),
     wholesaleEmail: String(value.wholesaleEmail ?? defaults.wholesaleEmail),
+    vatMode: normalizeVatMode(value.vatMode),
     navigationItems: normalizeNavigationItems(value.navigationItems),
     journalHeadingEn: String(value.journalHeadingEn ?? defaults.journalHeadingEn),
     journalHeadingMn: String(value.journalHeadingMn ?? defaults.journalHeadingMn),

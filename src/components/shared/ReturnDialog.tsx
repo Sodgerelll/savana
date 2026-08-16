@@ -53,6 +53,7 @@ export function ReturnDialog({
       .filter((item) => selectedItems[item.productId]?.checked)
       .map((item) => ({
         productId: item.productId,
+        variant: item.variant ?? null,
         productName: item.productName,
         sku: item.sku,
         quantity: selectedItems[item.productId]?.quantity ?? item.quantity,

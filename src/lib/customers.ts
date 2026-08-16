@@ -1,7 +1,6 @@
 import {
   collection,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -14,6 +13,8 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { reserveDocumentNumber } from "./documentNumbers";
+import { normalizeContactPhone } from "./crmContacts";
 
 export const CUSTOMERS_COLLECTION = "customers";
 export const CUSTOMER_SCHEMA_VERSION = 1;
@@ -157,6 +158,11 @@ function serializeCustomerPayload(input: CustomerDraftInput) {
     registrationNumber: input.registrationNumber ?? null,
     contactPerson: input.contactPerson ?? null,
     phoneNumber: input.phoneNumber,
+    // The join key between this reseller ledger and the buyer directory in /crmContacts.
+    // The two collections describe the same people from different sides — a reseller who
+    // also buys at retail has a row in each — and without a shared key there was no way to
+    // tell that. Digits only, matching how crmContacts stores it.
+    phoneDigits: normalizeContactPhone(input.phoneNumber),
     secondaryPhone: input.secondaryPhone ?? null,
     email: input.email ?? null,
     address: input.address ?? null,
@@ -166,20 +172,8 @@ function serializeCustomerPayload(input: CustomerDraftInput) {
   };
 }
 
-export async function getNextCustomerCode(): Promise<string> {
-  const snapshot = await getDocs(collection(db, CUSTOMERS_COLLECTION));
-  let maxNumber = 0;
-  snapshot.docs.forEach((docSnapshot) => {
-    const code = String(docSnapshot.data().code ?? "");
-    const match = code.match(/CUS-(\d+)/);
-    if (match) {
-      const num = Number(match[1]);
-      if (num > maxNumber) {
-        maxNumber = num;
-      }
-    }
-  });
-  return `CUS-${String(maxNumber + 1).padStart(4, "0")}`;
+export function getNextCustomerCode(): Promise<string> {
+  return reserveDocumentNumber("customer");
 }
 
 export async function createCustomer(input: CustomerDraftInput): Promise<string> {
@@ -190,6 +184,18 @@ export async function createCustomer(input: CustomerDraftInput): Promise<string>
     totalPaid: 0,
     outstandingBalance: 0,
     lastTransactionAt: null,
+    // The wholesale/transfer screens read the same customer document through a wider view
+    // (src/types/crm.ts). Seeding their fields here means a customer created from this side
+    // shows up there fully formed instead of as a row of blanks and zeroes.
+    category: "REGULAR",
+    discountRate: 0,
+    priceTier: "RETAIL",
+    paymentTermDays: 0,
+    creditLimit: 0,
+    totalOrders: 0,
+    totalReturns: 0,
+    lastOrderDate: null,
+    isActive: (input.status ?? "active") === "active",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -199,12 +205,42 @@ export async function createCustomer(input: CustomerDraftInput): Promise<string>
 export async function updateCustomer(id: string, input: CustomerDraftInput): Promise<void> {
   await updateDoc(doc(db, CUSTOMERS_COLLECTION, id), {
     ...serializeCustomerPayload(input),
+    // Kept in step with `status` so the wholesale screens' active filter agrees with this one.
+    isActive: (input.status ?? "active") === "active",
     updatedAt: serverTimestamp(),
   });
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
   await deleteDoc(doc(db, CUSTOMERS_COLLECTION, id));
+}
+
+/**
+ * The buyer-directory contact and the reseller record that describe the same person,
+ * matched on the phone number's digits.
+ *
+ * The two collections are deliberately separate — one carries balances and consignment
+ * stock, the other simply records who bought — but they were also completely unjoinable,
+ * so a reseller who also shopped at retail appeared as two unrelated people and their
+ * total spend could not be answered at all.
+ */
+export function linkCustomersToContacts<C extends { id: string; phoneNumber: string }>(
+  customers: readonly CustomerRecord[],
+  contacts: readonly C[],
+): Map<string, C> {
+  const byDigits = new Map<string, C>();
+  for (const contact of contacts) {
+    const digits = normalizeContactPhone(contact.phoneNumber);
+    if (digits) byDigits.set(digits, contact);
+  }
+
+  const linked = new Map<string, C>();
+  for (const customer of customers) {
+    const match = byDigits.get(normalizeContactPhone(customer.phoneNumber));
+    if (match) linked.set(customer.id, match);
+  }
+
+  return linked;
 }
 
 export function subscribeToCustomers({

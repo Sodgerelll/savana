@@ -15,20 +15,49 @@
 const CONTACTS_COLLECTION = 'crmContacts';
 const CONTACT_SCHEMA_VERSION = 1;
 
-/** Digits only, so "9900-1234" and "99001234" identify the same person. */
+/**
+ * Digits only, so "9900-1234", "+976 99001234" and "99001234" identify the same person.
+ * Must stay identical to normalizeContactPhone() in src/lib/crmContacts.ts — the two write
+ * the same `phoneDigits` field and this file now looks contacts up by it.
+ */
 function phoneDigitsOf(value: unknown): string {
-  return String(value ?? '').replace(/\D/g, '');
+  const digits = String(value ?? '').replace(/\D/g, '');
+  const dialled = digits.replace(/^0+/, '');
+
+  if (dialled.length === 11 && dialled.startsWith('976')) return dialled.slice(3);
+
+  return digits;
 }
 
-function nextContactCode(existingCodes: unknown[]): string {
-  let maxNumber = 0;
-  for (const code of existingCodes) {
-    const match = /HAR-(\d+)/.exec(String(code ?? ''));
-    if (match) {
-      maxNumber = Math.max(maxNumber, Number(match[1]));
-    }
-  }
-  return `HAR-${String(maxNumber + 1).padStart(4, '0')}`;
+/**
+ * Reserves the next HAR- code from the same `counters/crmContacts` document the admin UI
+ * draws from (src/lib/documentNumbers.ts).
+ *
+ * This used to scan every contact for the highest code and add one, without advancing the
+ * counter — so a contact this file created took a number the counter still considered
+ * free, and the next contact an admin registered was handed the very same code.
+ *
+ * Runs in its own transaction, before the caller's, since a Firestore transaction cannot
+ * read after it has written.
+ */
+async function reserveContactCode(db: any): Promise<string> {
+  const counterRef = db.collection('counters').doc('crmContacts');
+
+  return db.runTransaction(async (t: any) => {
+    const snap = await t.get(counterRef);
+    const lastNumber = snap.exists ? Number(snap.data().lastNumber ?? 0) : 0;
+    const nextNumber = lastNumber + 1;
+    // `crmContacts` is a flat series, so no year is involved — the field is written only to
+    // keep the document shape identical to every other counter.
+    t.set(counterRef, {
+      lastNumber: nextNumber,
+      year: Number(
+        new Intl.DateTimeFormat('en', { timeZone: 'Asia/Ulaanbaatar', year: 'numeric' }).format(new Date()),
+      ),
+      prefix: 'HAR',
+    });
+    return `HAR-${String(nextNumber).padStart(4, '0')}`;
+  });
 }
 
 function buildAddress(source: Record<string, unknown>): Record<string, string> | null {
@@ -71,15 +100,20 @@ export async function upsertOrderContact(db: any, orderId: string): Promise<stri
   const address = buildAddress((order.address as Record<string, unknown>) ?? {});
   const { FieldValue } = await import('firebase-admin/firestore');
 
+  // Reserved before the transaction opens, and only when one might be needed. A skipped
+  // number costs nothing; a duplicate one costs an afternoon of untangling.
+  const codePromise = reserveContactCode(db);
+
   return db.runTransaction(async (t: any) => {
-    // The whole directory is read rather than queried by phoneDigits so that contacts
-    // created before that field existed still match — and the codes are needed anyway to
-    // number a new contact.
-    const contactsSnap = await t.get(db.collection(CONTACTS_COLLECTION));
-    const existing = contactsSnap.docs.find((docSnap: any) => {
-      const data = docSnap.data() as Record<string, unknown>;
-      return phoneDigitsOf(data.phoneDigits ?? data.phoneNumber) === digits;
-    });
+    // Matched with an indexed equality query rather than by reading the whole directory:
+    // this runs inside a transaction on the checkout path, and a full-collection read there
+    // both grows without bound and makes concurrent orders contend with each other.
+    // `phoneDigits` is written by every contact this file and the admin UI create, and is
+    // backfilled below on any older contact that is matched some other way.
+    const matches = await t.get(
+      db.collection(CONTACTS_COLLECTION).where('phoneDigits', '==', digits).limit(1),
+    );
+    const existing = matches.docs[0];
 
     if (existing) {
       const data = existing.data() as Record<string, unknown>;
@@ -102,7 +136,7 @@ export async function upsertOrderContact(db: any, orderId: string): Promise<stri
     const contactRef = db.collection(CONTACTS_COLLECTION).doc();
     t.set(contactRef, {
       schemaVersion: CONTACT_SCHEMA_VERSION,
-      code: nextContactCode(contactsSnap.docs.map((docSnap: any) => docSnap.data().code)),
+      code: await codePromise,
       // A storefront checkout is always a person buying for themselves.
       type: 'individual',
       fullName,

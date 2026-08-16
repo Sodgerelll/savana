@@ -3,6 +3,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
@@ -72,15 +73,42 @@ function deserializeEntry(snapshot: QueryDocumentSnapshot<DocumentData>): Journa
   };
 }
 
+/**
+ * How far back the admin shell keeps the ledger live.
+ *
+ * `journalEntries` is the fastest-growing collection in the system — every sale writes one,
+ * and every edit writes two more — and the shell used to hold the entire history open on a
+ * realtime listener. Three years covers the current and two prior financial years, which is
+ * everything the reports and the reconciliation screen work over; anything older is history
+ * that no screen recalculates.
+ */
+export const JOURNAL_WINDOW_YEARS = 3;
+
+/** The oldest entry date the admin shell subscribes to, as a YYYY-MM-DD string. */
+export function journalWindowStart(now: Date = new Date()): string {
+  const start = new Date(now);
+  start.setFullYear(start.getFullYear() - JOURNAL_WINDOW_YEARS);
+  return start.toISOString().slice(0, 10);
+}
+
 export function subscribeToJournalEntries({
   onData,
   onError,
+  since = journalWindowStart(),
 }: {
   onData: (entries: JournalEntryRecord[]) => void;
   onError?: (error: FirestoreError) => void;
+  /** ISO date (YYYY-MM-DD). Pass null to load the whole ledger. */
+  since?: string | null;
 }) {
+  // `date` is the entry's own ISO business date, written by postJournalEntry, so the range
+  // is a plain string comparison and needs no composite index.
+  const constraints = since
+    ? [where("date", ">=", since), orderBy("date", "desc")]
+    : [orderBy("createdAt", "desc")];
+
   return onSnapshot(
-    query(collection(db, JOURNAL_ENTRIES_COLLECTION), orderBy("createdAt", "desc")),
+    query(collection(db, JOURNAL_ENTRIES_COLLECTION), ...constraints),
     (snapshot) => onData(snapshot.docs.map(deserializeEntry)),
     onError,
   );

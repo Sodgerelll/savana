@@ -1,17 +1,17 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   where,
-  writeBatch,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
+  type Transaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { CUSTOMERS_COLLECTION } from "./customers";
@@ -20,7 +20,20 @@ import {
   buildCustomerTransactionReturnEntry,
   buildReversalEntry,
 } from "./accounting/entryBuilders";
-import { generateJournalEntryNumber, postJournalEntry, JOURNAL_ENTRIES_COLLECTION } from "./accounting/postEntryClient";
+import {
+  generateJournalEntryNumber,
+  postJournalEntry,
+  readJournalEntryLines,
+} from "./accounting/postEntryClient";
+import { reserveDocumentNumber } from "./documentNumbers";
+import {
+  applyStockMovement,
+  productRef,
+  readProductStockState,
+  writeProductStock,
+  type ProductStockState,
+} from "./inventory";
+import { normalizeVatMode as normalizeVat, vatCarriedBy, type VatMode } from "./vat";
 
 export const CUSTOMER_TRANSACTIONS_COLLECTION = "customerTransactions";
 export const CUSTOMER_TRANSACTION_SCHEMA_VERSION = 1;
@@ -53,6 +66,10 @@ export interface CustomerTransactionTotals {
   discountType?: CustomerTransactionDiscountType;
   /** Raw entered value — ₮ amount when discountType is "amount", 0-100 when "percent". */
   discountValue?: number;
+  /** How НӨАТ relates to the entered prices — same three modes the Sales module uses. */
+  vatMode?: VatMode;
+  /** НӨАТ in tugriks carried by `grandTotal`. */
+  vatAmount?: number;
   grandTotal: number;
 }
 
@@ -97,6 +114,15 @@ export interface CustomerTransactionRecord {
   createdAt: string | null;
   updatedAt: string | null;
   journalEntryId?: string | null;
+  /**
+   * Cost of the goods as it stood when the transaction was first recorded.
+   *
+   * Every edit — including recording a payment, which goes through the edit path — cancels
+   * the old journal entry and posts a fresh one. Recomputing the cost each time meant a
+   * later production batch that changed `costPrice` silently restated the margin on a sale
+   * that had already happened. Stamped once, reused from then on.
+   */
+  cogsAmount?: number | null;
 }
 
 export interface CreateCustomerTransactionInput {
@@ -146,6 +172,7 @@ export function createEmptyTransactionDraft(): CustomerTransactionRecord {
     createdAt: null,
     updatedAt: null,
     journalEntryId: null,
+    cogsAmount: null,
   };
 }
 
@@ -224,6 +251,8 @@ function deserializeTransaction(
       discount: Number(totals.discount ?? 0),
       discountType: totals.discountType === "percent" ? "percent" : "amount",
       discountValue: Number(totals.discountValue ?? totals.discount ?? 0),
+      vatMode: normalizeVat(totals.vatMode),
+      vatAmount: Number(totals.vatAmount ?? 0),
       grandTotal: Number(totals.grandTotal ?? 0),
     },
     payment: {
@@ -257,23 +286,12 @@ function deserializeTransaction(
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
     journalEntryId: typeof data.journalEntryId === "string" ? data.journalEntryId : null,
+    cogsAmount: typeof data.cogsAmount === "number" ? data.cogsAmount : null,
   };
 }
 
-async function generateTxNumber(): Promise<string> {
-  const snapshot = await getDocs(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION));
-  let maxNumber = 0;
-  snapshot.docs.forEach((docSnapshot) => {
-    const txNumber = String(docSnapshot.data().txNumber ?? "");
-    const match = txNumber.match(/TX-(\d+)/);
-    if (match) {
-      const num = Number(match[1]);
-      if (num > maxNumber) {
-        maxNumber = num;
-      }
-    }
-  });
-  return `TX-${String(maxNumber + 1).padStart(6, "0")}`;
+function generateTxNumber(): Promise<string> {
+  return reserveDocumentNumber("customerTransaction");
 }
 
 function roundAmount(value: number): number {
@@ -307,13 +325,21 @@ function sanitizeTotals(totals: CustomerTransactionTotals): CustomerTransactionT
   const discountType: CustomerTransactionDiscountType =
     totals.discountType === "percent" ? "percent" : "amount";
   const rawValue = Number(totals.discountValue ?? totals.discount) || 0;
+  const vatMode = normalizeVat(totals.vatMode);
+  const grandTotal = roundAmount(totals.grandTotal);
   return {
     subtotal: roundAmount(totals.subtotal),
     discount: roundAmount(totals.discount),
     discountType,
     discountValue:
       discountType === "percent" ? Math.min(100, Math.max(0, rawValue)) : roundAmount(rawValue),
-    grandTotal: roundAmount(totals.grandTotal),
+    vatMode,
+    // Recomputed rather than trusted, so the tax split can never drift from the total the
+    // customer is actually billed. By the time totals reach here grandTotal is always the
+    // gross figure — `added` mode has already put the tax inside it — so both modes carve
+    // the tax back out of the gross the same way.
+    vatAmount: vatCarriedBy(grandTotal, vatMode),
+    grandTotal,
   };
 }
 
@@ -340,10 +366,12 @@ function sanitizeTransactionInput(
   };
 }
 
-function stockSignForType(type: CustomerTransactionType): number {
-  // delivery & sale remove stock; return adds stock back
-  if (type === "return") return 1;
-  return -1;
+/**
+ * Which way the goods travel, in the inventory module's convention where a positive
+ * quantity leaves stock: delivery and sale send goods out, a return brings them back.
+ */
+function stockSignForType(type: CustomerTransactionType): 1 | -1 {
+  return type === "return" ? -1 : 1;
 }
 
 function customerDeltaForTransaction(
@@ -366,91 +394,81 @@ function customerDeltaForTransaction(
   };
 }
 
-interface ProductStockPatch {
-  productId: number;
-  totalStock: number;
-  soldCount: number;
-  costPrice: number;
-  variants: Array<{ name: string; price: number; quantity: number; soldCount?: number }> | null;
-}
-
-async function loadProductPatches(
-  items: CustomerTransactionItem[],
-): Promise<Map<number, ProductStockPatch>> {
-  const uniqueIds = Array.from(new Set(items.map((item) => item.productId)));
-  const patches = new Map<number, ProductStockPatch>();
-
-  await Promise.all(
-    uniqueIds.map(async (productId) => {
-      const ref = doc(db, "products", String(productId));
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        return;
-      }
-      const data = snap.data() as Record<string, unknown>;
-      patches.set(productId, {
-        productId,
-        totalStock: Number(data.totalStock ?? 0),
-        soldCount: Number(data.soldCount ?? 0),
-        costPrice: Number(data.costPrice ?? 0),
-        variants: Array.isArray(data.variants)
-          ? (data.variants as ProductStockPatch["variants"])
-          : null,
-      });
-    }),
+/**
+ * Reads the stock position of every product in the given item lists, inside the caller's
+ * transaction so the read is part of the same consistency window as the write.
+ */
+async function loadStockStates(
+  t: Transaction,
+  itemLists: (CustomerTransactionItem[] | undefined)[],
+): Promise<Map<number | string, ProductStockState>> {
+  const uniqueIds = Array.from(
+    new Set(
+      itemLists
+        .flatMap((items) => items ?? [])
+        .map((item) => item.productId)
+        .filter((id) => id > 0),
+    ),
   );
+  const states = new Map<number | string, ProductStockState>();
 
-  return patches;
+  // Sequential rather than Promise.all: a Firestore transaction serialises its reads and
+  // must finish all of them before the first write.
+  for (const productId of uniqueIds) {
+    const snap = await t.get(productRef(productId));
+    states.set(
+      productId,
+      readProductStockState(productId, snap.exists() ? (snap.data() as Record<string, unknown>) : null),
+    );
+  }
+
+  return states;
 }
 
 /** Best-effort COGS for a set of items — 0 for any product missing a costPrice. */
-function cogsForItems(patches: Map<number, ProductStockPatch>, items: CustomerTransactionItem[]): number {
+function cogsForItems(states: Map<number | string, ProductStockState>, items: CustomerTransactionItem[]): number {
   return items.reduce((sum, item) => {
-    const patch = patches.get(item.productId);
-    return patch && patch.costPrice > 0 ? sum + patch.costPrice * item.quantity : sum;
+    const state = states.get(item.productId);
+    return state && state.costPrice > 0 ? sum + state.costPrice * item.quantity : sum;
   }, 0);
 }
 
-function applyItemsToPatches(
-  patches: Map<number, ProductStockPatch>,
+/** True when two item lists move exactly the same goods, so the cost of them cannot have changed. */
+function sameGoods(a: CustomerTransactionItem[], b: CustomerTransactionItem[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (item: CustomerTransactionItem) => `${item.productId}|${item.variant ?? ""}|${item.quantity}`;
+  const left = a.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((value, index) => value === right[index]);
+}
+
+/**
+ * Moves stock for a transaction's items. `direction` is +1 to apply the transaction's own
+ * effect and -1 to undo it; the type decides which way the goods travel (a return puts
+ * them back). Validation is off for the undo direction, which only ever adds stock back.
+ */
+function applyItemsToStates(
+  states: Map<number | string, ProductStockState>,
   items: CustomerTransactionItem[],
-  sign: number,
+  type: CustomerTransactionType,
+  direction: 1 | -1,
 ) {
+  const sign = stockSignForType(type) * direction;
+
   items.forEach((item) => {
-    const patch = patches.get(item.productId);
-    if (!patch) return;
-    const delta = item.quantity * sign; // negative = deduct for delivery/sale
-    patch.soldCount = Math.max(0, patch.soldCount - delta);
-    if (item.variant && patch.variants) {
-      const idx = patch.variants.findIndex((v) => v.name === item.variant);
-      if (idx >= 0) {
-        const v = patch.variants[idx];
-        patch.variants[idx] = {
-          ...v,
-          soldCount: Math.max(0, Number(v.soldCount ?? 0) - delta),
-        };
-      }
-    }
+    const state = states.get(item.productId);
+    if (!state) return;
+    applyStockMovement(
+      state,
+      { variant: item.variant, quantity: item.quantity * sign },
+      { productName: item.productName },
+    );
   });
 }
 
-function writeProductPatches(
-  batch: ReturnType<typeof writeBatch>,
-  patches: Map<number, ProductStockPatch>,
-) {
-  patches.forEach((patch) => {
-    const ref = doc(db, "products", String(patch.productId));
-    batch.update(ref, {
-      soldCount: patch.soldCount,
-      ...(patch.variants ? { variants: patch.variants } : {}),
-      updatedAt: serverTimestamp(),
-    });
-  });
-}
-
-async function loadCustomerAggregates(customerId: string) {
+async function loadCustomerAggregates(t: Transaction, customerId: string) {
   const ref = doc(db, CUSTOMERS_COLLECTION, customerId);
-  const snap = await getDoc(ref);
+  const snap = await t.get(ref);
   if (!snap.exists()) {
     throw new Error("Customer not found");
   }
@@ -463,69 +481,97 @@ async function loadCustomerAggregates(customerId: string) {
   };
 }
 
+/**
+ * Builds the ledger entry a transaction produces — a wholesale sale, or a return that
+ * credits the receivable back. Both split off any НӨАТ the transaction carries.
+ */
+function buildEntryForTransaction(
+  input: Pick<CreateCustomerTransactionInput, "type" | "totals" | "payment">,
+  cogsAmount: number,
+) {
+  const vatAmount = input.totals.vatAmount ?? 0;
+
+  if (input.type === "return") {
+    return buildCustomerTransactionReturnEntry({
+      grandTotal: input.totals.grandTotal,
+      cogsAmount,
+      vatAmount,
+    });
+  }
+
+  return buildCustomerTransactionSaleEntry({
+    paymentMethod: input.payment.method,
+    paidAmount: input.payment.paidAmount,
+    grandTotal: input.totals.grandTotal,
+    cogsAmount,
+    vatAmount,
+  });
+}
+
+/**
+ * Records a delivery, sale or return against a reseller. Stock, the customer's running
+ * balance, the transaction document and the journal entry are written in one Firestore
+ * transaction, so the three views of the same event can never drift apart — and the stock
+ * read that decides whether there is enough to send is part of that same window.
+ */
 export async function createCustomerTransaction(
   rawInput: CreateCustomerTransactionInput,
 ): Promise<string> {
   const input = sanitizeTransactionInput(rawInput);
+
+  // Both numbers run their own transactions, so they are reserved up front.
   const txNumber = await generateTxNumber();
+  const entryNumber = await generateJournalEntryNumber();
+
   const txRef = doc(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION));
 
-  const productPatches = await loadProductPatches(input.items);
-  const cogsAmount = cogsForItems(productPatches, input.items);
-  applyItemsToPatches(productPatches, input.items, stockSignForType(input.type));
+  await runTransaction(db, async (t) => {
+    const states = await loadStockStates(t, [input.items]);
+    const customer = await loadCustomerAggregates(t, input.customerId);
 
-  const customer = await loadCustomerAggregates(input.customerId);
-  const delta = customerDeltaForTransaction(input.type, input.totals, input.payment);
+    const cogsAmount = cogsForItems(states, input.items);
+    applyItemsToStates(states, input.items, input.type, 1);
 
-  const batch = writeBatch(db);
+    const delta = customerDeltaForTransaction(input.type, input.totals, input.payment);
 
-  const entryNumber = await generateJournalEntryNumber();
-  const builtEntry =
-    input.type === "return"
-      ? buildCustomerTransactionReturnEntry({ grandTotal: input.totals.grandTotal, cogsAmount })
-      : buildCustomerTransactionSaleEntry({
-          paymentMethod: input.payment.method,
-          paidAmount: input.payment.paidAmount,
-          grandTotal: input.totals.grandTotal,
-          cogsAmount,
-        });
-  const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
-    sourceType: "customerTransaction",
-    sourceId: txRef.id,
-    sourceNumber: txNumber,
-    description: `Харилцагчийн гүйлгээ: ${txNumber} — ${input.customerSnapshot.name}`,
-    createdBy: input.createdByUid,
+    const entryRef = postJournalEntry(t, entryNumber, buildEntryForTransaction(input, cogsAmount), {
+      sourceType: "customerTransaction",
+      sourceId: txRef.id,
+      sourceNumber: txNumber,
+      description: `Харилцагчийн гүйлгээ: ${txNumber} — ${input.customerSnapshot.name}`,
+      createdBy: input.createdByUid,
+    });
+
+    t.set(txRef, {
+      schemaVersion: CUSTOMER_TRANSACTION_SCHEMA_VERSION,
+      txNumber,
+      type: input.type,
+      customerId: input.customerId,
+      customerSnapshot: input.customerSnapshot,
+      items: input.items,
+      totals: input.totals,
+      payment: input.payment,
+      relatedTransactionId: input.relatedTransactionId ?? null,
+      transactionDate: input.transactionDate ?? null,
+      note: input.note ?? "",
+      createdByUid: input.createdByUid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      journalEntryId: entryRef.id,
+      cogsAmount,
+    });
+
+    states.forEach((state) => writeProductStock(t, state));
+
+    t.update(customer.ref, {
+      totalSales: customer.totalSales + delta.totalSales,
+      totalPaid: customer.totalPaid + delta.totalPaid,
+      outstandingBalance: customer.outstandingBalance + delta.outstandingBalance,
+      lastTransactionAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   });
 
-  batch.set(txRef, {
-    schemaVersion: CUSTOMER_TRANSACTION_SCHEMA_VERSION,
-    txNumber,
-    type: input.type,
-    customerId: input.customerId,
-    customerSnapshot: input.customerSnapshot,
-    items: input.items,
-    totals: input.totals,
-    payment: input.payment,
-    relatedTransactionId: input.relatedTransactionId ?? null,
-    transactionDate: input.transactionDate ?? null,
-    note: input.note ?? "",
-    createdByUid: input.createdByUid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    journalEntryId: entryRef.id,
-  });
-
-  writeProductPatches(batch, productPatches);
-
-  batch.update(customer.ref, {
-    totalSales: customer.totalSales + delta.totalSales,
-    totalPaid: customer.totalPaid + delta.totalPaid,
-    outstandingBalance: customer.outstandingBalance + delta.outstandingBalance,
-    lastTransactionAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
   return txRef.id;
 }
 
@@ -538,24 +584,36 @@ export async function updateCustomerTransaction(
   const next = sanitizeTransactionInput(rawNext);
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, id);
 
-  // Combine all items (old + new) so we get a consistent stock snapshot
-  const combinedItems = [...previous.items, ...next.items];
-  const productPatches = await loadProductPatches(combinedItems);
+  const reversalEntryNumber = previous.journalEntryId ? await generateJournalEntryNumber() : null;
+  const nextEntryNumber = await generateJournalEntryNumber();
 
-  // Reverse previous effect then apply new effect
-  applyItemsToPatches(productPatches, previous.items, -stockSignForType(previous.type));
-  applyItemsToPatches(productPatches, next.items, stockSignForType(next.type));
+  await runTransaction(db, async (t) => {
+    // ── All reads first: a Firestore transaction cannot read after it has written. ──
+    const states = await loadStockStates(t, [previous.items, next.items]);
+    const movedCustomer = previous.customerId !== next.customerId;
+    const prevCustomer = movedCustomer ? await loadCustomerAggregates(t, previous.customerId) : null;
+    const nextCustomer = await loadCustomerAggregates(t, next.customerId);
+    const oldLines = previous.journalEntryId
+      ? await readJournalEntryLines(t, previous.journalEntryId)
+      : null;
 
-  const batch = writeBatch(db);
+    // Undo the old version's stock effect, then apply the new one, so an edit is checked
+    // against stock that excludes the quantity this very transaction is already holding.
+    applyItemsToStates(states, previous.items, previous.type, -1);
+    applyItemsToStates(states, next.items, next.type, 1);
 
-  // Reverse the previously posted entry (from its stored lines, not recomputed), then post a
-  // fresh one reflecting the updated type/items/payment.
-  if (previous.journalEntryId) {
-    const oldEntrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, previous.journalEntryId));
-    if (oldEntrySnap.exists()) {
-      const oldLines = (oldEntrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-      const reversalEntryNumber = await generateJournalEntryNumber();
-      postJournalEntry(batch, reversalEntryNumber, buildReversalEntry(oldLines), {
+    // The cost of goods already sold does not change because the transaction was edited.
+    // It is only recomputed when the goods themselves changed — recording a payment, which
+    // also runs through here, leaves the original figure exactly where it was.
+    const nextCogsAmount =
+      sameGoods(previous.items, next.items) && typeof previous.cogsAmount === "number"
+        ? previous.cogsAmount
+        : cogsForItems(states, next.items);
+
+    // The old entry is reversed from its stored lines rather than recomputed, so a change
+    // in how entries are built can never leave a half-cancelled pair behind.
+    if (oldLines && reversalEntryNumber) {
+      postJournalEntry(t, reversalEntryNumber, buildReversalEntry(oldLines), {
         sourceType: "customerTransaction",
         sourceId: id,
         sourceNumber: previous.txNumber,
@@ -564,88 +622,67 @@ export async function updateCustomerTransaction(
         createdBy: next.createdByUid,
       });
     }
-  }
 
-  const nextCogsAmount = cogsForItems(productPatches, next.items);
-  const nextEntryNumber = await generateJournalEntryNumber();
-  const nextBuiltEntry =
-    next.type === "return"
-      ? buildCustomerTransactionReturnEntry({ grandTotal: next.totals.grandTotal, cogsAmount: nextCogsAmount })
-      : buildCustomerTransactionSaleEntry({
-          paymentMethod: next.payment.method,
-          paidAmount: next.payment.paidAmount,
-          grandTotal: next.totals.grandTotal,
-          cogsAmount: nextCogsAmount,
-        });
-  const nextEntryRef = postJournalEntry(batch, nextEntryNumber, nextBuiltEntry, {
-    sourceType: "customerTransaction",
-    sourceId: id,
-    sourceNumber: previous.txNumber,
-    description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
-    createdBy: next.createdByUid,
-  });
-
-  batch.update(txRef, {
-    type: next.type,
-    customerId: next.customerId,
-    customerSnapshot: next.customerSnapshot,
-    items: next.items,
-    totals: next.totals,
-    payment: next.payment,
-    relatedTransactionId: next.relatedTransactionId ?? null,
-    transactionDate: next.transactionDate ?? null,
-    note: next.note ?? "",
-    updatedAt: serverTimestamp(),
-    journalEntryId: nextEntryRef.id,
-  });
-
-  writeProductPatches(batch, productPatches);
-
-  // Reverse previous customer delta
-  if (previous.customerId === next.customerId) {
-    const customer = await loadCustomerAggregates(next.customerId);
-    const reverse = customerDeltaForTransaction(
-      previous.type,
-      previous.totals,
-      previous.payment,
-      -1,
+    const nextEntryRef = postJournalEntry(
+      t,
+      nextEntryNumber,
+      buildEntryForTransaction(next, nextCogsAmount),
+      {
+        sourceType: "customerTransaction",
+        sourceId: id,
+        sourceNumber: previous.txNumber,
+        description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
+        createdBy: next.createdByUid,
+      },
     );
-    const forward = customerDeltaForTransaction(next.type, next.totals, next.payment);
-    batch.update(customer.ref, {
-      totalSales: customer.totalSales + reverse.totalSales + forward.totalSales,
-      totalPaid: customer.totalPaid + reverse.totalPaid + forward.totalPaid,
-      outstandingBalance:
-        customer.outstandingBalance + reverse.outstandingBalance + forward.outstandingBalance,
-      lastTransactionAt: serverTimestamp(),
+
+    t.update(txRef, {
+      type: next.type,
+      customerId: next.customerId,
+      customerSnapshot: next.customerSnapshot,
+      items: next.items,
+      totals: next.totals,
+      payment: next.payment,
+      relatedTransactionId: next.relatedTransactionId ?? null,
+      transactionDate: next.transactionDate ?? null,
+      note: next.note ?? "",
       updatedAt: serverTimestamp(),
-    });
-  } else {
-    const prevCustomer = await loadCustomerAggregates(previous.customerId);
-    const reverse = customerDeltaForTransaction(
-      previous.type,
-      previous.totals,
-      previous.payment,
-      -1,
-    );
-    batch.update(prevCustomer.ref, {
-      totalSales: prevCustomer.totalSales + reverse.totalSales,
-      totalPaid: prevCustomer.totalPaid + reverse.totalPaid,
-      outstandingBalance: prevCustomer.outstandingBalance + reverse.outstandingBalance,
-      updatedAt: serverTimestamp(),
+      journalEntryId: nextEntryRef.id,
+      cogsAmount: nextCogsAmount,
     });
 
-    const nextCustomer = await loadCustomerAggregates(next.customerId);
-    const forward = customerDeltaForTransaction(next.type, next.totals, next.payment);
-    batch.update(nextCustomer.ref, {
-      totalSales: nextCustomer.totalSales + forward.totalSales,
-      totalPaid: nextCustomer.totalPaid + forward.totalPaid,
-      outstandingBalance: nextCustomer.outstandingBalance + forward.outstandingBalance,
-      lastTransactionAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  }
+    states.forEach((state) => writeProductStock(t, state));
 
-  await batch.commit();
+    const reverse = customerDeltaForTransaction(previous.type, previous.totals, previous.payment, -1);
+    const forward = customerDeltaForTransaction(next.type, next.totals, next.payment);
+
+    if (prevCustomer) {
+      // The transaction moved to a different customer: the old one gives its figures back
+      // and the new one takes them on.
+      t.update(prevCustomer.ref, {
+        totalSales: prevCustomer.totalSales + reverse.totalSales,
+        totalPaid: prevCustomer.totalPaid + reverse.totalPaid,
+        outstandingBalance: prevCustomer.outstandingBalance + reverse.outstandingBalance,
+        updatedAt: serverTimestamp(),
+      });
+      t.update(nextCustomer.ref, {
+        totalSales: nextCustomer.totalSales + forward.totalSales,
+        totalPaid: nextCustomer.totalPaid + forward.totalPaid,
+        outstandingBalance: nextCustomer.outstandingBalance + forward.outstandingBalance,
+        lastTransactionAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      t.update(nextCustomer.ref, {
+        totalSales: nextCustomer.totalSales + reverse.totalSales + forward.totalSales,
+        totalPaid: nextCustomer.totalPaid + reverse.totalPaid + forward.totalPaid,
+        outstandingBalance:
+          nextCustomer.outstandingBalance + reverse.outstandingBalance + forward.outstandingBalance,
+        lastTransactionAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
 }
 
 export interface RecordTransactionPaymentInput {
@@ -829,20 +866,21 @@ export async function deleteCustomerTransaction(
   previous: CustomerTransactionRecord,
 ): Promise<void> {
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, previous.id);
+  const entryNumber = previous.journalEntryId ? await generateJournalEntryNumber() : null;
 
-  const productPatches = await loadProductPatches(previous.items);
-  applyItemsToPatches(productPatches, previous.items, -stockSignForType(previous.type));
+  await runTransaction(db, async (t) => {
+    const states = await loadStockStates(t, [previous.items]);
+    // The customer may have been deleted since — the transaction still has to go away, so
+    // a missing customer just means there are no aggregates left to correct.
+    const customer = await loadCustomerAggregates(t, previous.customerId).catch(() => null);
+    const lines = previous.journalEntryId
+      ? await readJournalEntryLines(t, previous.journalEntryId)
+      : null;
 
-  const batch = writeBatch(db);
-  batch.delete(txRef);
-  writeProductPatches(batch, productPatches);
+    applyItemsToStates(states, previous.items, previous.type, -1);
 
-  if (previous.journalEntryId) {
-    const entrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, previous.journalEntryId));
-    if (entrySnap.exists()) {
-      const lines = (entrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-      const entryNumber = await generateJournalEntryNumber();
-      postJournalEntry(batch, entryNumber, buildReversalEntry(lines), {
+    if (lines && entryNumber) {
+      postJournalEntry(t, entryNumber, buildReversalEntry(lines), {
         sourceType: "customerTransaction",
         sourceId: previous.id,
         sourceNumber: previous.txNumber,
@@ -851,27 +889,25 @@ export async function deleteCustomerTransaction(
         createdBy: previous.createdByUid,
       });
     }
-  }
 
-  try {
-    const customer = await loadCustomerAggregates(previous.customerId);
-    const reverse = customerDeltaForTransaction(
-      previous.type,
-      previous.totals,
-      previous.payment,
-      -1,
-    );
-    batch.update(customer.ref, {
-      totalSales: customer.totalSales + reverse.totalSales,
-      totalPaid: customer.totalPaid + reverse.totalPaid,
-      outstandingBalance: customer.outstandingBalance + reverse.outstandingBalance,
-      updatedAt: serverTimestamp(),
-    });
-  } catch {
-    // customer may have been deleted; ignore reversal
-  }
+    t.delete(txRef);
+    states.forEach((state) => writeProductStock(t, state));
 
-  await batch.commit();
+    if (customer) {
+      const reverse = customerDeltaForTransaction(
+        previous.type,
+        previous.totals,
+        previous.payment,
+        -1,
+      );
+      t.update(customer.ref, {
+        totalSales: customer.totalSales + reverse.totalSales,
+        totalPaid: customer.totalPaid + reverse.totalPaid,
+        outstandingBalance: customer.outstandingBalance + reverse.outstandingBalance,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
 }
 
 export function subscribeToCustomerTransactions({

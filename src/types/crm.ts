@@ -21,10 +21,17 @@ export interface Customer {
   discountRate: number;
   priceTier: PriceTier;
   paymentTermDays: number;
-  balance: number;
+  /**
+   * What the customer still owes. This is the same field src/lib/customers.ts maintains —
+   * the CRM used to keep a second `balance` field alongside it, so the same debt was
+   * tracked twice on the same document and the two never agreed.
+   */
+  outstandingBalance: number;
+  /** Everything ever billed to the customer, and everything they have paid so far. */
+  totalSales: number;
+  totalPaid: number;
   creditLimit: number;
   totalOrders: number;
-  totalRevenue: number;
   totalReturns: number;
   lastOrderDate: Timestamp | null;
   notes: string;
@@ -49,6 +56,8 @@ export interface TransferItem {
   originalPrice: number;
   discountPercent: number;
   lineTotal: number;
+  /** Which variant of the product is being moved, when the product has any. */
+  variant?: string | null;
 }
 
 export interface Transfer {
@@ -69,6 +78,12 @@ export interface Transfer {
   paidAmount: number;
   remainingAmount: number;
   notes: string;
+  /**
+   * RETURN transfers only: cash owed back to the customer, once the return has cancelled
+   * whatever they still owed on the original. Goods coming back settle debt first; only
+   * what is left over is a refund.
+   */
+  refundDue?: number;
   parentTransferId: string | null;
   deliveredAt: Timestamp | null;
   /** journalEntries doc id posted when this transfer was confirmed — used to reverse on cancel. */
@@ -163,18 +178,29 @@ export interface CustomerTimeline {
 
 export type ProductUnit = "PIECE" | "BOX" | "KG" | "LITER";
 
+/**
+ * A catalogue product as the CRM screens need it. This is a *view* over the real
+ * `products` documents, built by getActiveProducts() — the CRM used to read fields
+ * (`currentStock`, `unitPrice`, `isActive`) that the product editor never wrote, so every
+ * lookup silently returned zero.
+ */
 export interface CrmProduct {
   id: string;
   name: string;
   sku: string;
+  /** The catalogue `price` field. */
   unitPrice: number;
+  /** Falls back to `unitPrice` when the product has no separate wholesale price. */
   wholesalePrice: number;
   costPrice: number;
+  /** Remaining units: `totalStock - soldCount`, or the variant's own remainder. */
   currentStock: number;
   minStockLevel: number;
   unit: ProductUnit;
   category: string;
   isActive: boolean;
+  /** Set when this row represents one variant of a product rather than the whole product. */
+  variant: string | null;
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
@@ -219,6 +245,8 @@ export interface EffectivePriceResult {
 export interface TransferFormItem {
   productId: string;
   productName: string;
+  /** Which variant of the product this row covers; null for products without variants. */
+  variant: string | null;
   sku: string;
   currentStock: number;
   minStockLevel: number;

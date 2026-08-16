@@ -6,15 +6,18 @@ import {
   doc,
   type DocumentData,
   type FirestoreError,
+  getDoc,
   increment,
   onSnapshot,
   type QueryDocumentSnapshot,
   serverTimestamp,
   setDoc,
   type Unsubscribe,
-  updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { buildRawMaterialPurchaseEntry, buildReversalEntry } from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 export const RAW_MATERIALS_COLLECTION = "rawMaterials";
 
@@ -37,6 +40,12 @@ export interface RawMaterialPurchaseEntry {
   notes: string;
   createdByUid: string;
   createdAt: string;
+  /**
+   * Money account the purchase settled from. Stored on the entry itself so removing it
+   * later returns the money to the account it actually came out of — without this every
+   * reversal defaulted to cash, so a bank purchase deleted cash it never spent.
+   */
+  paymentMethod?: string | null;
 }
 
 export interface RawMaterial {
@@ -63,6 +72,9 @@ function deserializePurchaseEntry(raw: unknown): RawMaterialPurchaseEntry | null
     notes: String(r.notes ?? ""),
     createdByUid: String(r.createdByUid ?? ""),
     createdAt: String(r.createdAt ?? ""),
+    // Purchases recorded before the field existed all went to cash, which is what the
+    // reversal will now use for them too — the same account their original entry hit.
+    paymentMethod: typeof r.paymentMethod === "string" ? r.paymentMethod : null,
   };
 }
 
@@ -135,8 +147,41 @@ export interface AddRawMaterialPurchaseInput {
   purchasedAt: string;
   notes: string;
   createdByUid: string;
+  /** Which money account the purchase was settled from; defaults to cash. */
+  paymentMethod?: string | null;
 }
 
+/** What a purchase cost in total — 0 when no unit cost was recorded. */
+function purchaseAmount(entry: Pick<RawMaterialPurchaseEntry, "quantity" | "unitCost">): number {
+  return entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
+}
+
+/**
+ * The material's unit cost after `quantity` units arrive at `unitCost`, blended with what
+ * was already on the shelf.
+ *
+ * Buying used to leave `unitCost` alone, so it stayed at whatever figure was typed in by
+ * hand while the ledger recorded what was really paid — recipes and journal entries then
+ * costed the same material two different ways. Returns null when there is nothing to go
+ * on, which leaves the existing figure untouched.
+ */
+export function blendUnitCost(
+  currentRemaining: number,
+  currentUnitCost: number | null,
+  quantity: number,
+  unitCost: number | null,
+): number | null {
+  if (unitCost === null || unitCost <= 0 || quantity <= 0) return null;
+  const held = Math.max(0, currentRemaining);
+  if (currentUnitCost === null || currentUnitCost <= 0 || held <= 0) return unitCost;
+  return Math.round((held * currentUnitCost + quantity * unitCost) / (held + quantity));
+}
+
+/**
+ * Records a raw-material purchase. The stock of materials grows and the money account it
+ * was paid from shrinks — the ledger side used to be missing entirely, which left the
+ * inventory accounts only ever being credited by COGS and never debited.
+ */
 export async function addRawMaterialPurchase(
   materialId: number,
   input: AddRawMaterialPurchaseInput,
@@ -150,23 +195,85 @@ export async function addRawMaterialPurchase(
     notes: input.notes,
     createdByUid: input.createdByUid,
     createdAt: new Date().toISOString(),
+    paymentMethod: input.paymentMethod ?? null,
   };
+
+  const amount = purchaseAmount(entry);
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
   const materialRef = doc(rawMaterialsRef, String(materialId));
-  await updateDoc(materialRef, {
+
+  // Read before writing so the new unit cost can be blended with what is already held.
+  const currentSnap = await getDoc(materialRef);
+  const currentData = currentSnap.exists() ? (currentSnap.data() as Record<string, unknown>) : {};
+  const nextUnitCost = blendUnitCost(
+    Number(currentData.remaining ?? 0),
+    currentData.unitCost === null || currentData.unitCost === undefined ? null : Number(currentData.unitCost),
+    input.quantity,
+    input.unitCost,
+  );
+
+  const batch = writeBatch(db);
+
+  batch.update(materialRef, {
     remaining: increment(input.quantity),
     purchaseLog: arrayUnion(entry),
+    ...(nextUnitCost !== null ? { unitCost: nextUnitCost } : {}),
     _updatedAt: serverTimestamp(),
   });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildRawMaterialPurchaseEntry({ amount, paymentMethod: input.paymentMethod }),
+      {
+        sourceType: "rawMaterialPurchase",
+        sourceId: `${materialId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Түүхий эд худалдан авалт: ${input.supplier || String(materialId)}`,
+        createdBy: input.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
 }
 
 export async function removeRawMaterialPurchase(
   materialId: number,
   entry: RawMaterialPurchaseEntry,
 ): Promise<void> {
+  const amount = purchaseAmount(entry);
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
   const materialRef = doc(rawMaterialsRef, String(materialId));
-  await updateDoc(materialRef, {
+
+  batch.update(materialRef, {
     remaining: increment(-entry.quantity),
     purchaseLog: arrayRemove(entry),
     _updatedAt: serverTimestamp(),
   });
+
+  if (entryNumber) {
+    // Mirror image of the purchase: the materials leave again and the money goes back to
+    // the account it was actually paid from, not whichever one happens to be the default.
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildReversalEntry(
+        buildRawMaterialPurchaseEntry({ amount, paymentMethod: entry.paymentMethod }).lines,
+      ),
+      {
+        sourceType: "rawMaterialPurchase",
+        sourceId: `${materialId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Түүхий эдийн худалдан авалт устгасан — бичилтийг цуцаллаа`,
+        createdBy: entry.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
 }

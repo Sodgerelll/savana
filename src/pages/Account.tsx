@@ -374,6 +374,8 @@ interface RawMaterialPurchaseModalState {
     supplier: string;
     purchasedAt: string;
     notes: string;
+    /** Money account the purchase settled from — kept so its reversal returns it there. */
+    paymentMethod: string;
   };
 }
 
@@ -525,7 +527,6 @@ export default function Account() {
     deleteCollection,
     saveProductDraft,
     deleteProduct,
-    updateProduct,
     saveHeroBannerDraft,
     deleteHeroBanner,
     saveMarketDraft,
@@ -2687,54 +2688,11 @@ export default function Account() {
     setOrderModalError(null);
   };
 
-  /**
-   * Moves soldCount (and the matching variant's soldCount) by an order's quantities.
-   * sign = +1 when the order enters "delivered" (deduct stock), -1 when it leaves.
-   * Items are aggregated per product so a product appearing in several order lines
-   * (e.g. different variants) is written once.
-   */
-  const applySoldCountAdjustments = (adjustments: { items: OrderItemPayload[]; sign: 1 | -1 }[]) => {
-    // Every adjustment is folded into one write per product. Calling this twice in a row
-    // would not work: both calls read the same `products` snapshot, so the second write
-    // would overwrite the first.
-    const signedItemsByProduct = new Map<number, { item: OrderItemPayload; sign: 1 | -1 }[]>();
-    for (const { items, sign } of adjustments) {
-      for (const item of items) {
-        const list = signedItemsByProduct.get(item.productId) ?? [];
-        list.push({ item, sign });
-        signedItemsByProduct.set(item.productId, list);
-      }
-    }
-
-    signedItemsByProduct.forEach((productItems, productId) => {
-      const currentProduct = products.find((p) => p.id === productId);
-      if (!currentProduct) return;
-
-      let nextSoldCount = currentProduct.soldCount ?? 0;
-      const nextVariants = currentProduct.variants?.map((v) => ({ ...v }));
-
-      for (const { item, sign } of productItems) {
-        nextSoldCount = Math.max(0, nextSoldCount + sign * item.quantity);
-        if (nextVariants && item.variant) {
-          const idx = nextVariants.findIndex((v) => v.name === item.variant);
-          if (idx >= 0) {
-            nextVariants[idx] = {
-              ...nextVariants[idx],
-              soldCount: Math.max(0, (nextVariants[idx].soldCount ?? 0) + sign * item.quantity),
-            };
-          }
-        }
-      }
-
-      updateProduct(productId, {
-        soldCount: nextSoldCount,
-        ...(nextVariants ? { variants: nextVariants } : {}),
-      });
-    });
-  };
-
-  const applyOrderSoldCountDelta = (items: OrderItemPayload[], sign: 1 | -1) =>
-    applySoldCountAdjustments([{ items, sign }]);
+  // Stock is no longer adjusted from here. Every module that moves it — sales, direct
+  // sales, seller transactions, transfers and paid web orders — now writes the movement in
+  // the same batch or transaction as its journal entry, through src/lib/inventory.ts. Doing
+  // it from the UI meant the write could fail after the ledger entry had already landed,
+  // and it wrote the whole product document back from a possibly stale local snapshot.
 
   const createEmptySaleDraft = (): SaleDraft => ({
     id: "",
@@ -2871,23 +2829,12 @@ export default function Account() {
         createdByName: profile?.displayName ?? user?.email ?? "",
       };
 
+      // createSale/updateSale move stock themselves, in the same batch as the journal
+      // entry, and raise before writing anything if the items exceed what is in stock.
       if (saleModal.mode === "edit" && saleModal.previous) {
-        const previous = saleModal.previous;
-        await updateSale(previous.id, previous, input);
-
-        // Stock moves at the "delivered" boundary, the same rule orders follow. Releasing
-        // the old items and reserving the new ones has to happen in one pass so an edit
-        // that changes both the status and the item list nets out correctly.
-        applySoldCountAdjustments([
-          ...(previous.status === "delivered" ? [{ items: previous.items, sign: -1 as const }] : []),
-          ...(draft.status === "delivered" ? [{ items, sign: 1 as const }] : []),
-        ]);
+        await updateSale(saleModal.previous.id, saleModal.previous, input);
       } else {
         await createSale(input);
-
-        if (draft.status === "delivered") {
-          applyOrderSoldCountDelta(items, 1);
-        }
       }
 
       setSaleModal(null);
@@ -3025,10 +2972,8 @@ export default function Account() {
       confirmLabel: copy.delete,
       destructive: true,
       onConfirm: async () => {
+        // deleteSale releases the stock the sale held and reverses its entry in one batch.
         await deleteSale(sale.id, sale);
-        if (sale.status === "delivered") {
-          applyOrderSoldCountDelta(sale.items, -1);
-        }
       },
     });
   };
@@ -3152,10 +3097,8 @@ export default function Account() {
     setOrderModalError(null);
 
     try {
-      const originalOrder = orders.find((o) => o.id === orderModal.draft.id);
-      const wasDelivered = originalOrder?.status === "delivered";
-      const willBeDelivered = orderModal.draft.status === "delivered";
-
+      // Stock follows the order's payment status, not its delivery status, and is moved
+      // inside updateOrderByAdmin's own transaction alongside the ledger entry.
       await updateOrderByAdmin(orderModal.draft.id, {
         status: orderModal.draft.status,
         source: orderModal.draft.source,
@@ -3163,11 +3106,6 @@ export default function Account() {
         address: nextAddress,
         payment: orderModal.draft.payment,
       });
-
-      // Adjust soldCount only when crossing the "delivered" boundary.
-      if (originalOrder && wasDelivered !== willBeDelivered) {
-        applyOrderSoldCountDelta(originalOrder.items, willBeDelivered ? 1 : -1);
-      }
 
       setOrderModal(null);
       setOrderModalError(null);

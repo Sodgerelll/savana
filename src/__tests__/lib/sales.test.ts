@@ -1,41 +1,16 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { firestoreMock } from "../helpers/firestoreMock";
 
 // ─── Mock firebase/firestore ──────────────────────────────────────────────────
-
-const mockBatchSet = vi.fn();
-const mockBatchUpdate = vi.fn();
-const mockBatchDelete = vi.fn();
-const mockBatchCommit = vi.fn().mockResolvedValue(undefined);
-const mockBatch = {
-  set: mockBatchSet,
-  update: mockBatchUpdate,
-  delete: mockBatchDelete,
-  commit: mockBatchCommit,
-};
+//
+// Sales now write the stock movement in the same batch as the journal entry, and read
+// product documents to price the goods, so the mock models a small in-memory Firestore
+// rather than stubbing individual calls. See src/__tests__/helpers/firestoreMock.ts.
 
 vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
-vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(() => ({ id: "sales" })),
-  doc: vi.fn(() => ({ id: "new-sale-id", path: "sales/new-sale-id" })),
-  getDoc: vi.fn(),
-  onSnapshot: vi.fn(),
-  orderBy: vi.fn(),
-  query: vi.fn(),
-  // Used by generateJournalEntryNumber (postEntryClient) — runs the callback against
-  // an empty counter doc so numbering always starts at 1 in tests.
-  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) =>
-    fn({
-      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
-      set: vi.fn(),
-      update: vi.fn(),
-    }),
-  ),
-  serverTimestamp: vi.fn(() => ({ _serverTimestamp: true })),
-  writeBatch: vi.fn(() => mockBatch),
-}));
-
-import { getDoc, onSnapshot } from "firebase/firestore";
+import { onSnapshot } from "firebase/firestore";
 import {
   createSale,
   deleteSale,
@@ -115,7 +90,26 @@ interface WrittenDoc {
 }
 
 function writtenDocs(): WrittenDoc[] {
-  return mockBatchSet.mock.calls.map((args) => args[1] as WrittenDoc);
+  return firestoreMock.writes
+    .filter((write) => write.op === "set")
+    .map((write) => write.data as WrittenDoc);
+}
+
+/** The stock fields last written for a product, or undefined if it was never touched. */
+function stockWrittenFor(productId: number) {
+  return firestoreMock.lastWriteData(`products/${productId}`) as
+    | { soldCount?: number; totalStock?: number }
+    | undefined;
+}
+
+/** Seeds a product with the given remaining stock and optional unit cost. */
+function seedProduct(productId: number, { totalStock = 100, soldCount = 0, costPrice = 0 } = {}) {
+  firestoreMock.seed(`products/${productId}`, { totalStock, soldCount, costPrice });
+}
+
+/** Seeds a previously posted journal entry so a reversal has lines to mirror. */
+function seedJournalEntry(id: string, lines: WrittenJournalLine[]) {
+  firestoreMock.seed(`journalEntries/${id}`, { lines });
 }
 
 function writtenSale(): WrittenDoc {
@@ -128,7 +122,8 @@ function writtenJournalEntries(): WrittenDoc[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (getDoc as Mock).mockResolvedValue({ exists: () => false, data: () => ({}) });
+  firestoreMock.reset();
+  seedProduct(10);
 });
 
 // ─── saleChannelRequiresAddress ───────────────────────────────────────────────
@@ -160,7 +155,7 @@ describe("createSale", () => {
     expect(sale.currency).toBe("MNT");
     expect(sale.createdByUid).toBe("uid-admin");
     expect(result.saleNumber).toMatch(/^SL-/);
-    expect(mockBatchCommit).toHaveBeenCalledOnce();
+    expect(firestoreMock.writes.length).toBeGreaterThan(0);
   });
 
   it("keeps organization details on an organization sale", async () => {
@@ -243,7 +238,7 @@ describe("createSale", () => {
   });
 
   it("adds COGS lines from the product cost price", async () => {
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ costPrice: 3000 }) });
+    seedProduct(10, { costPrice: 3000 });
 
     await createSale(makeSaleInput({ status: "paid" }));
 
@@ -262,18 +257,21 @@ describe("createSale", () => {
 // ─── updateSale ───────────────────────────────────────────────────────────────
 
 describe("updateSale", () => {
-  const previous = { saleNumber: "SL-260812A01", journalEntryId: "entry-1", paidAt: "2026-08-12T00:00:00.000Z" };
+  // The previous status and items are needed so the edit can release the stock the sale
+  // was holding before it reserves what the new version needs.
+  const previous = {
+    saleNumber: "SL-2026-00001",
+    journalEntryId: "entry-1",
+    paidAt: "2026-08-12T00:00:00.000Z",
+    status: "delivered" as const,
+    items: makeSaleInput().items,
+  };
 
   it("reverses the old entry and posts a fresh one for the new amount", async () => {
-    (getDoc as Mock).mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        lines: [
-          { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
-          { accountCode: "4300", accountName: "Direct", debit: 0, credit: 18000 },
-        ],
-      }),
-    });
+    seedJournalEntry("entry-1", [
+      { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
+      { accountCode: "4300", accountName: "Direct", debit: 0, credit: 18000 },
+    ]);
 
     await updateSale(
       "sale-1",
@@ -295,45 +293,66 @@ describe("updateSale", () => {
       expect.objectContaining({ accountCode: "4300", credit: 20000 }),
     ]);
 
-    expect(mockBatchUpdate.mock.calls[0][1]).toMatchObject({
+    expect(firestoreMock.lastWriteData("sales/sale-1")).toMatchObject({
       status: "delivered",
       channel: "store",
       totals: expect.objectContaining({ grandTotal: 20000 }),
     });
   });
 
-  it("clears the journal entry and the paid date when a sale is moved back to new", async () => {
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ lines: [] }) });
+  it("releases the old items before reserving the new ones, netting to no change", async () => {
+    seedProduct(10, { totalStock: 100, soldCount: 2 });
+    seedJournalEntry("entry-1", []);
+
+    await updateSale("sale-1", previous, makeSaleInput({ status: "delivered" }));
+
+    // 2 units released, the same 2 reserved again.
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 2 });
+  });
+
+  it("returns the stock to the shelf when a settled sale is moved back to new", async () => {
+    seedProduct(10, { totalStock: 100, soldCount: 2 });
+    seedJournalEntry("entry-1", []);
 
     await updateSale("sale-1", previous, makeSaleInput({ status: "new" }));
 
-    expect(mockBatchUpdate.mock.calls[0][1]).toMatchObject({ journalEntryId: null, paidAt: null });
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 0 });
+  });
+
+  it("clears the journal entry and the paid date when a sale is moved back to new", async () => {
+    seedJournalEntry("entry-1", []);
+
+    await updateSale("sale-1", previous, makeSaleInput({ status: "new" }));
+
+    expect(firestoreMock.lastWriteData("sales/sale-1")).toMatchObject({ journalEntryId: null, paidAt: null });
   });
 
   it("keeps the original paid date when a settled sale is edited", async () => {
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ lines: [] }) });
+    seedJournalEntry("entry-1", []);
 
     await updateSale("sale-1", previous, makeSaleInput({ status: "paid" }));
 
-    expect(mockBatchUpdate.mock.calls[0][1]).toMatchObject({ paidAt: previous.paidAt });
+    expect(firestoreMock.lastWriteData("sales/sale-1")).toMatchObject({ paidAt: previous.paidAt });
   });
 });
 
 // ─── deleteSale ───────────────────────────────────────────────────────────────
 
 describe("deleteSale", () => {
-  it("reverses the posted entry and deletes the document", async () => {
-    (getDoc as Mock).mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        lines: [
-          { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
-          { accountCode: "4300", accountName: "Direct", debit: 0, credit: 18000 },
-        ],
-      }),
-    });
+  const settledSale = {
+    saleNumber: "SL-2026-00001",
+    journalEntryId: "entry-1",
+    status: "delivered" as const,
+    items: makeSaleInput().items,
+  };
 
-    await deleteSale("sale-1", { saleNumber: "SL-260812A01", journalEntryId: "entry-1" });
+  it("reverses the posted entry and deletes the document", async () => {
+    seedJournalEntry("entry-1", [
+      { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
+      { accountCode: "4300", accountName: "Direct", debit: 0, credit: 18000 },
+    ]);
+
+    await deleteSale("sale-1", settledSale);
 
     const [reversal] = writtenJournalEntries();
     expect(reversal.reversalOf).toBe("entry-1");
@@ -341,14 +360,31 @@ describe("deleteSale", () => {
       { accountCode: "1010", accountName: "Cash", debit: 0, credit: 18000 },
       { accountCode: "4300", accountName: "Direct", debit: 18000, credit: 0 },
     ]);
-    expect(mockBatchDelete).toHaveBeenCalledOnce();
+    expect(firestoreMock.writesFor("sales/sale-1").some((w) => w.op === "delete")).toBe(true);
+  });
+
+  it("puts the stock a settled sale was holding back on the shelf", async () => {
+    seedProduct(10, { totalStock: 100, soldCount: 2 });
+    seedJournalEntry("entry-1", []);
+
+    await deleteSale("sale-1", settledSale);
+
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 0 });
+  });
+
+  it("leaves stock alone when deleting a sale that was never settled", async () => {
+    seedProduct(10, { totalStock: 100, soldCount: 2 });
+
+    await deleteSale("sale-1", { ...settledSale, status: "new", journalEntryId: null });
+
+    expect(stockWrittenFor(10)).toBeUndefined();
   });
 
   it("still deletes a sale that never posted an entry", async () => {
-    await deleteSale("sale-1", { saleNumber: "SL-260812A01", journalEntryId: null });
+    await deleteSale("sale-1", { ...settledSale, journalEntryId: null });
 
     expect(writtenJournalEntries()).toHaveLength(0);
-    expect(mockBatchDelete).toHaveBeenCalledOnce();
+    expect(firestoreMock.writesFor("sales/sale-1").some((w) => w.op === "delete")).toBe(true);
   });
 });
 

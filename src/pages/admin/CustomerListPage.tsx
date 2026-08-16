@@ -63,7 +63,7 @@ export default function CustomerListPage() {
     if (filterActive && c.isActive === false) return false;
     if (filterType && c.type !== filterType) return false;
     if (filterCategory && c.category !== filterCategory) return false;
-    if (filterHasDebt && c.balance <= 0) return false;
+    if (filterHasDebt && c.outstandingBalance <= 0) return false;
     if (search) {
       const s = search.toLowerCase();
       if (
@@ -224,7 +224,7 @@ export default function CustomerListPage() {
                 {filtered.map((customer) => {
                   const typeConf = TYPE_CONFIG[customer.type];
                   const creditExceeded =
-                    customer.creditLimit > 0 && customer.balance > customer.creditLimit;
+                    customer.creditLimit > 0 && customer.outstandingBalance > customer.creditLimit;
                   return (
                     <tr
                       key={customer.id}
@@ -262,13 +262,13 @@ export default function CustomerListPage() {
                       </td>
                       <td className="px-4 py-3.5 text-gray-600">{customer.phone || "—"}</td>
                       <td className="px-4 py-3.5 text-right">
-                        {customer.balance > 0 ? (
+                        {customer.outstandingBalance > 0 ? (
                           <div className="flex items-center justify-end gap-1">
                             {creditExceeded && (
                               <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
                             )}
                             <MoneyFormat
-                              amount={customer.balance}
+                              amount={customer.outstandingBalance}
                               className={`font-semibold ${creditExceeded ? "text-red-600" : "text-red-500"}`}
                             />
                           </div>

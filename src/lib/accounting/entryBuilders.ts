@@ -42,6 +42,28 @@ function cogsLines(cogsAmount: number): JournalLine[] {
   return [debit, credit].filter((l): l is JournalLine => l !== null);
 }
 
+/**
+ * НӨАТ carried by a gross amount, clamped so it can never exceed the amount itself or
+ * turn negative — every builder that splits VAT out of a total funnels through this.
+ */
+function clampVat(grossAmount: number, vatAmount: number | undefined): number {
+  return Math.max(0, Math.min(round(vatAmount ?? 0), round(grossAmount)));
+}
+
+/**
+ * Delivery charged on top of the goods, clamped so it can never exceed what is left of a
+ * total once НӨАТ has been carved out. Booked to its own revenue account: folding it into
+ * goods revenue overstates what the products earned, since delivery is billed at cost.
+ */
+function clampShipping(grossAmount: number, vatAmount: number, shippingAmount: number | undefined): number {
+  return Math.max(0, Math.min(round(shippingAmount ?? 0), round(grossAmount) - vatAmount));
+}
+
+/** True when a built entry carries no lines at all, so the caller can skip posting it. */
+export function isEmptyEntry(entry: BuiltEntry): boolean {
+  return entry.lines.length === 0;
+}
+
 // ─── Wholesale Transfer (confirmTransfer) ─────────────────────────────────────
 
 export function buildTransferConfirmedEntry(params: {
@@ -74,10 +96,21 @@ export function buildReversalEntry(originalLines: JournalLine[]): BuiltEntry {
   return assertBalanced(lines);
 }
 
-export function buildTransferReturnEntry(params: { returnTotal: number; cogsAmount: number }): BuiltEntry {
+/**
+ * A wholesale return. `returnTotal` is the net value of the goods coming back and
+ * `taxAmount` the НӨАТ that was charged on them — the tax has to be debited back out of
+ * the VAT payable account, otherwise the shop keeps owing tax on a sale it un-made.
+ */
+export function buildTransferReturnEntry(params: {
+  returnTotal: number;
+  cogsAmount: number;
+  taxAmount?: number;
+}): BuiltEntry {
+  const taxAmount = Math.max(0, round(params.taxAmount ?? 0));
   const lines = [
     line(ACCOUNT_CODES.SALES_RETURNS, params.returnTotal, 0),
-    line(ACCOUNT_CODES.AR, 0, params.returnTotal),
+    line(ACCOUNT_CODES.VAT_PAYABLE, taxAmount, 0),
+    line(ACCOUNT_CODES.AR, 0, round(params.returnTotal) + taxAmount),
     ...cogsLines(params.cogsAmount).reverse().map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
@@ -93,10 +126,16 @@ export function buildPaymentReceivedEntry(params: { amount: number; method: stri
 
 // ─── Direct sale (POS) ────────────────────────────────────────────────────────
 
-export function buildDirectSaleEntry(params: { lineTotal: number; cogsAmount: number }): BuiltEntry {
+export function buildDirectSaleEntry(params: {
+  lineTotal: number;
+  cogsAmount: number;
+  vatAmount?: number;
+}): BuiltEntry {
+  const vatAmount = clampVat(params.lineTotal, params.vatAmount);
   const lines = [
     line(ACCOUNT_CODES.CASH, params.lineTotal, 0),
-    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, params.lineTotal),
+    line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
+    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, round(params.lineTotal) - vatAmount),
     ...cogsLines(params.cogsAmount),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
@@ -117,15 +156,104 @@ export function buildSaleEntry(params: {
   cogsAmount: number;
   paymentMethod: string;
   vatAmount?: number;
+  shippingAmount?: number;
 }): BuiltEntry {
   const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
-  const vatAmount = Math.max(0, Math.min(round(params.vatAmount ?? 0), round(params.grandTotal)));
+  const vatAmount = clampVat(params.grandTotal, params.vatAmount);
+  const shippingAmount = clampShipping(params.grandTotal, vatAmount, params.shippingAmount);
   const lines = [
     line(moneyAccount, params.grandTotal, 0),
     line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
-    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, round(params.grandTotal) - vatAmount),
+    line(ACCOUNT_CODES.REVENUE_SHIPPING, 0, shippingAmount),
+    line(ACCOUNT_CODES.REVENUE_DIRECT, 0, round(params.grandTotal) - vatAmount - shippingAmount),
     ...cogsLines(params.cogsAmount),
   ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/**
+ * Goods that left stock without a sale — gifts and own use. No money changes hands and
+ * no revenue is earned, so the only movement is inventory turning into an expense at cost.
+ * Returns an empty entry when the cost is unknown, which the caller skips posting.
+ */
+export function buildGoodsWriteOffEntry(params: { cogsAmount: number }): BuiltEntry {
+  const lines = [
+    line(ACCOUNT_CODES.GOODS_WRITE_OFF, params.cogsAmount, 0),
+    line(ACCOUNT_CODES.INVENTORY, 0, params.cogsAmount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+// ─── Online order (storefront checkout settled through Bonum) ──────────────────
+
+/**
+ * Browser-side counterpart of api/_lib/postOrderPaidEntry.ts — kept here so the online
+ * channel splits НӨАТ the same way every other channel does. The two must stay in step.
+ */
+export function buildOrderPaidEntry(params: {
+  grandTotal: number;
+  cogsAmount: number;
+  vatAmount?: number;
+  shippingAmount?: number;
+}): BuiltEntry {
+  const vatAmount = clampVat(params.grandTotal, params.vatAmount);
+  const shippingAmount = clampShipping(params.grandTotal, vatAmount, params.shippingAmount);
+  const lines = [
+    line(ACCOUNT_CODES.CLEARING, params.grandTotal, 0),
+    line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
+    line(ACCOUNT_CODES.REVENUE_SHIPPING, 0, shippingAmount),
+    line(ACCOUNT_CODES.REVENUE_ONLINE, 0, round(params.grandTotal) - vatAmount - shippingAmount),
+    ...cogsLines(params.cogsAmount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+// ─── Production & purchasing ──────────────────────────────────────────────────
+
+/**
+ * A batch reaching "ready": the raw materials it consumed become finished goods, so their
+ * cost moves from the raw-materials account into finished-goods inventory. This is the
+ * debit side that COGS later credits back out — without it the inventory account only ever
+ * shrinks.
+ */
+export function buildProductionCompletedEntry(params: { producedCost: number }): BuiltEntry {
+  const lines = [
+    line(ACCOUNT_CODES.INVENTORY, params.producedCost, 0),
+    line(ACCOUNT_CODES.RAW_MATERIALS, 0, params.producedCost),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/** Buying raw materials: stock of materials grows, the money account it was paid from shrinks. */
+export function buildRawMaterialPurchaseEntry(params: {
+  amount: number;
+  paymentMethod?: string | null;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const lines = [
+    line(ACCOUNT_CODES.RAW_MATERIALS, params.amount, 0),
+    line(moneyAccount, 0, params.amount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+// ─── Manually recorded income / expense (the Finance ledger) ───────────────────
+
+/**
+ * A hand-entered ledger row — rent, salaries, marketing, or income that is not a product
+ * sale. Without this the trial balance shows revenue with no costs against it.
+ */
+export function buildFinanceLedgerEntry(params: {
+  type: "income" | "expense";
+  amount: number;
+  paymentMethod?: string | null;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const lines = (
+    params.type === "expense"
+      ? [line(ACCOUNT_CODES.OPERATING_EXPENSE, params.amount, 0), line(moneyAccount, 0, params.amount)]
+      : [line(moneyAccount, params.amount, 0), line(ACCOUNT_CODES.OTHER_INCOME, 0, params.amount)]
+  ).filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
 
@@ -136,21 +264,33 @@ export function buildCustomerTransactionSaleEntry(params: {
   paidAmount: number;
   grandTotal: number;
   cogsAmount: number;
+  vatAmount?: number;
 }): BuiltEntry {
-  const remaining = params.grandTotal - params.paidAmount;
+  // A payment can never exceed what is owed, so the receivable side is floored at zero
+  // rather than turning into a negative debit that would misstate the AR balance.
+  const paidAmount = Math.min(round(params.paidAmount), round(params.grandTotal));
+  const remaining = round(params.grandTotal) - paidAmount;
   const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const vatAmount = clampVat(params.grandTotal, params.vatAmount);
   const lines = [
-    line(moneyAccount, params.paidAmount, 0),
+    line(moneyAccount, paidAmount, 0),
     line(ACCOUNT_CODES.AR, remaining, 0),
-    line(ACCOUNT_CODES.REVENUE_WHOLESALE, 0, params.grandTotal),
+    line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
+    line(ACCOUNT_CODES.REVENUE_WHOLESALE, 0, round(params.grandTotal) - vatAmount),
     ...cogsLines(params.cogsAmount),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
 
-export function buildCustomerTransactionReturnEntry(params: { grandTotal: number; cogsAmount: number }): BuiltEntry {
+export function buildCustomerTransactionReturnEntry(params: {
+  grandTotal: number;
+  cogsAmount: number;
+  vatAmount?: number;
+}): BuiltEntry {
+  const vatAmount = clampVat(params.grandTotal, params.vatAmount);
   const lines = [
-    line(ACCOUNT_CODES.SALES_RETURNS, params.grandTotal, 0),
+    line(ACCOUNT_CODES.SALES_RETURNS, round(params.grandTotal) - vatAmount, 0),
+    line(ACCOUNT_CODES.VAT_PAYABLE, vatAmount, 0),
     line(ACCOUNT_CODES.AR, 0, params.grandTotal),
     ...cogsLines(params.cogsAmount).reverse().map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
   ].filter((l): l is JournalLine => l !== null);

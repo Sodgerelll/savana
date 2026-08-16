@@ -1,19 +1,24 @@
 import {
   collection,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  writeBatch,
+  runTransaction,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { buildDirectSaleEntry, buildReversalEntry } from "./accounting/entryBuilders";
-import { generateJournalEntryNumber, postJournalEntry, JOURNAL_ENTRIES_COLLECTION } from "./accounting/postEntryClient";
+import {
+  generateJournalEntryNumber,
+  postJournalEntry,
+  readJournalEntryLines,
+} from "./accounting/postEntryClient";
+import { reserveDocumentNumber } from "./documentNumbers";
+import { applyStockMovement, productRef, readProductStockState, writeProductStock } from "./inventory";
+import { calculateVat, normalizeVatMode as normalizeVat, type VatMode } from "./vat";
 
 export const DIRECT_SALES_COLLECTION = "directSales";
 
@@ -31,6 +36,10 @@ export interface DirectSaleRecord {
   originalUnitPrice?: number;
   lineTotal: number;
   note: string;
+  /** How НӨАТ relates to the entered unit price — matches the Sales module's modes. */
+  vatMode: VatMode;
+  /** НӨАТ in tugriks carried by `lineTotal`. */
+  vatAmount: number;
   createdByUid: string;
   createdAt: string | null;
   journalEntryId?: string | null;
@@ -46,23 +55,21 @@ export interface CreateDirectSaleInput {
   unitPrice: number;
   originalUnitPrice?: number;
   note: string;
+  vatMode?: VatMode;
   createdByUid: string;
 }
 
-function createSaleNumber(): string {
-  const dateParts = new Intl.DateTimeFormat("en", {
-    timeZone: "Asia/Ulaanbaatar",
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const year = dateParts.find((p) => p.type === "year")?.value ?? "00";
-  const month = dateParts.find((p) => p.type === "month")?.value ?? "00";
-  const day = dateParts.find((p) => p.type === "day")?.value ?? "00";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const randomLetter = chars[Math.floor(Math.random() * chars.length)];
-  const randomDigits = String(Math.floor(Math.random() * 100)).padStart(2, "0");
-  return `DS-${year}${month}${day}${randomLetter}${randomDigits}`;
+function createSaleNumber(): Promise<string> {
+  return reserveDocumentNumber("directSale");
+}
+
+/**
+ * What the customer pays and how much of it is НӨАТ, for a given net line. `included`
+ * carves the tax out of the entered price; `added` charges it on top.
+ */
+function priceWithVat(baseTotal: number, vatMode: VatMode) {
+  const vatAmount = calculateVat(baseTotal, vatMode);
+  return { lineTotal: vatMode === "added" ? baseTotal + vatAmount : baseTotal, vatAmount };
 }
 
 function parseTimestamp(value: unknown): string | null {
@@ -93,239 +100,190 @@ function deserializeDirectSale(snapshot: QueryDocumentSnapshot<DocumentData>): D
     originalUnitPrice: Number(data.originalUnitPrice ?? data.unitPrice ?? 0),
     lineTotal: Number(data.lineTotal ?? 0),
     note: String(data.note ?? ""),
+    vatMode: normalizeVat(data.vatMode),
+    vatAmount: Number(data.vatAmount ?? 0),
     createdByUid: String(data.createdByUid ?? ""),
     createdAt: parseTimestamp(data.createdAt),
     journalEntryId: typeof data.journalEntryId === "string" ? data.journalEntryId : null,
   };
 }
 
+/**
+ * Registers a POS sale. Stock check, stock movement, sale document and journal entry all
+ * happen inside one Firestore transaction, so two tills selling the last unit at the same
+ * moment cannot both succeed — the loser retries against the updated stock and is rejected.
+ */
 export async function createDirectSale(input: CreateDirectSaleInput): Promise<string> {
-  const saleNumber = createSaleNumber();
-  const saleRef = doc(collection(db, DIRECT_SALES_COLLECTION));
-  const lineTotal = input.quantity * input.unitPrice;
+  const vatMode = normalizeVat(input.vatMode);
+  const { lineTotal, vatAmount } = priceWithVat(input.quantity * input.unitPrice, vatMode);
   const now = new Date().toISOString();
 
-  // Read the product first (for stock validation, soldCount update, and best-effort COGS)
-  // so the journal entry id is known before the sale doc itself is written.
-  const productRef = doc(db, "products", String(input.productId));
-  const productSnap = await getDoc(productRef);
-
-  const batch = writeBatch(db);
-  let cogsAmount = 0;
-
-  if (productSnap.exists()) {
-    const data = productSnap.data() as Record<string, unknown>;
-    const currentSoldCount = Number(data.soldCount ?? 0);
-    const variants = Array.isArray(data.variants) ? data.variants as Array<Record<string, unknown>> : null;
-    const costPrice = Number(data.costPrice ?? 0);
-    if (costPrice > 0) {
-      cogsAmount = costPrice * input.quantity;
-    }
-
-    // Block overselling: quantity must not exceed available remaining stock.
-    let available: number;
-    if (input.variant && variants) {
-      const v = variants.find((vv) => vv.name === input.variant);
-      available = Number(v?.quantity ?? 0) - Number(v?.soldCount ?? 0);
-    } else {
-      available = Number(data.totalStock ?? 0) - currentSoldCount;
-    }
-    if (input.quantity > available) {
-      throw new Error(`INSUFFICIENT_STOCK:${Math.max(0, available)}`);
-    }
-
-    const update: Record<string, unknown> = {
-      soldCount: currentSoldCount + input.quantity,
-      updatedAt: serverTimestamp(),
-    };
-
-    if (input.variant && variants) {
-      const idx = variants.findIndex((v) => v.name === input.variant);
-      if (idx >= 0) {
-        const updated = variants.map((v, i) =>
-          i === idx ? { ...v, soldCount: Number(v.soldCount ?? 0) + input.quantity } : v
-        );
-        update.variants = updated;
-      }
-    }
-
-    batch.update(productRef, update);
-  }
-
+  // Both numbers run their own transactions, so they must be reserved before the business
+  // transaction opens.
+  const saleNumber = await createSaleNumber();
   const entryNumber = await generateJournalEntryNumber();
-  const entryRef = postJournalEntry(batch, entryNumber, buildDirectSaleEntry({ lineTotal, cogsAmount }), {
-    sourceType: "directSale",
-    sourceId: saleRef.id,
-    sourceNumber: saleNumber,
-    description: `Шууд борлуулалт: ${input.productName}`,
-    createdBy: input.createdByUid,
+
+  const saleRef = doc(collection(db, DIRECT_SALES_COLLECTION));
+
+  await runTransaction(db, async (t) => {
+    const ref = productRef(input.productId);
+    const snap = await t.get(ref);
+    const state = readProductStockState(
+      input.productId,
+      snap.exists() ? (snap.data() as Record<string, unknown>) : null,
+    );
+
+    // Raises InsufficientStockError, aborting the transaction before anything is written.
+    applyStockMovement(state, { variant: input.variant, quantity: input.quantity }, {
+      productName: input.productName,
+    });
+
+    const cogsAmount = state.costPrice > 0 ? state.costPrice * input.quantity : 0;
+
+    const entryRef = postJournalEntry(
+      t,
+      entryNumber,
+      buildDirectSaleEntry({ lineTotal, cogsAmount, vatAmount }),
+      {
+        sourceType: "directSale",
+        sourceId: saleRef.id,
+        sourceNumber: saleNumber,
+        description: `Шууд борлуулалт: ${input.productName}`,
+        createdBy: input.createdByUid,
+      },
+    );
+
+    t.set(saleRef, {
+      saleNumber,
+      productId: input.productId,
+      productName: input.productName,
+      productImage: input.productImage ?? null,
+      category: input.category,
+      variant: input.variant ?? null,
+      quantity: input.quantity,
+      unitPrice: input.unitPrice,
+      originalUnitPrice: input.originalUnitPrice ?? input.unitPrice,
+      lineTotal,
+      note: input.note,
+      vatMode,
+      vatAmount,
+      createdByUid: input.createdByUid,
+      createdAt: now,
+      journalEntryId: entryRef.id,
+    });
+
+    writeProductStock(t, state);
   });
 
-  batch.set(saleRef, {
-    saleNumber,
-    productId: input.productId,
-    productName: input.productName,
-    productImage: input.productImage ?? null,
-    category: input.category,
-    variant: input.variant ?? null,
-    quantity: input.quantity,
-    unitPrice: input.unitPrice,
-    originalUnitPrice: input.originalUnitPrice ?? input.unitPrice,
-    lineTotal,
-    note: input.note,
-    createdByUid: input.createdByUid,
-    createdAt: now,
-    journalEntryId: entryRef.id,
-  });
-
-  await batch.commit();
   return saleRef.id;
 }
 
 export async function updateDirectSale(
   id: string,
-  oldSale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity" | "journalEntryId">,
-  updates: { quantity: number; unitPrice: number; note: string },
+  oldSale: Pick<DirectSaleRecord, "saleNumber" | "productId" | "variant" | "quantity" | "journalEntryId" | "vatMode">,
+  updates: { quantity: number; unitPrice: number; note: string; vatMode?: VatMode },
 ): Promise<void> {
-  const batch = writeBatch(db);
-  const saleRef = doc(db, DIRECT_SALES_COLLECTION, id);
-  const newLineTotal = updates.quantity * updates.unitPrice;
+  const vatMode = normalizeVat(updates.vatMode ?? oldSale.vatMode);
+  const { lineTotal, vatAmount } = priceWithVat(updates.quantity * updates.unitPrice, vatMode);
 
-  batch.update(saleRef, {
-    quantity: updates.quantity,
-    unitPrice: updates.unitPrice,
-    lineTotal: newLineTotal,
-    note: updates.note,
-  });
+  const reversalEntryNumber = oldSale.journalEntryId ? await generateJournalEntryNumber() : null;
+  const newEntryNumber = await generateJournalEntryNumber();
 
-  const diff = updates.quantity - oldSale.quantity;
-  let costPrice = 0;
-  const productRef = doc(db, "products", String(oldSale.productId));
-  const productSnap = await getDoc(productRef);
-  if (productSnap.exists()) {
-    const data = productSnap.data() as Record<string, unknown>;
-    costPrice = Number(data.costPrice ?? 0);
+  await runTransaction(db, async (t) => {
+    const saleRef = doc(db, DIRECT_SALES_COLLECTION, id);
+    const ref = productRef(oldSale.productId);
 
-    if (diff !== 0) {
-      const currentSoldCount = Number(data.soldCount ?? 0);
-      const variants = Array.isArray(data.variants) ? (data.variants as Array<Record<string, unknown>>) : null;
+    // Every read must happen before the first write in a Firestore transaction.
+    const snap = await t.get(ref);
+    const oldLines =
+      oldSale.journalEntryId !== null && oldSale.journalEntryId !== undefined
+        ? await readJournalEntryLines(t, oldSale.journalEntryId)
+        : null;
 
-      // Block overselling when increasing the quantity. The old quantity is
-      // already counted in soldCount, so the extra "diff" must fit in remaining.
-      if (diff > 0) {
-        let available: number;
-        if (oldSale.variant && variants) {
-          const v = variants.find((vv) => vv.name === oldSale.variant);
-          available = Number(v?.quantity ?? 0) - Number(v?.soldCount ?? 0);
-        } else {
-          available = Number(data.totalStock ?? 0) - currentSoldCount;
-        }
-        if (diff > available) {
-          throw new Error(`INSUFFICIENT_STOCK:${Math.max(0, available) + oldSale.quantity}`);
-        }
-      }
+    const state = readProductStockState(
+      oldSale.productId,
+      snap.exists() ? (snap.data() as Record<string, unknown>) : null,
+    );
 
-      const update: Record<string, unknown> = {
-        soldCount: Math.max(0, currentSoldCount + diff),
-        updatedAt: serverTimestamp(),
-      };
+    // Release the quantity the sale currently holds, then take the new one, so an edit is
+    // checked against stock that excludes the sale's own units.
+    applyStockMovement(state, { variant: oldSale.variant, quantity: -oldSale.quantity }, { validate: false });
+    applyStockMovement(state, { variant: oldSale.variant, quantity: updates.quantity });
 
-      if (oldSale.variant && variants) {
-        const idx = variants.findIndex((v) => v.name === oldSale.variant);
-        if (idx >= 0) {
-          update.variants = variants.map((v, i) =>
-            i === idx ? { ...v, soldCount: Math.max(0, Number(v.soldCount ?? 0) + diff) } : v,
-          );
-        }
-      }
+    const cogsAmount = state.costPrice > 0 ? state.costPrice * updates.quantity : 0;
 
-      batch.update(productRef, update);
-    }
-  }
-
-  // Reverse the previously posted entry, then post a fresh one for the updated amounts.
-  if (oldSale.journalEntryId) {
-    const oldEntrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, oldSale.journalEntryId));
-    if (oldEntrySnap.exists()) {
-      const oldLines = (oldEntrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-      const reversalEntryNumber = await generateJournalEntryNumber();
-      postJournalEntry(batch, reversalEntryNumber, buildReversalEntry(oldLines), {
+    if (oldLines && reversalEntryNumber) {
+      postJournalEntry(t, reversalEntryNumber, buildReversalEntry(oldLines), {
         sourceType: "directSale",
         sourceId: id,
-        sourceNumber: id,
+        sourceNumber: oldSale.saleNumber,
         description: "Шууд борлуулалт засварласан — хуучин бичилтийг цуцаллаа",
         reversalOf: oldSale.journalEntryId,
         createdBy: "system",
       });
     }
-  }
 
-  const newEntryNumber = await generateJournalEntryNumber();
-  const newEntryRef = postJournalEntry(
-    batch,
-    newEntryNumber,
-    buildDirectSaleEntry({ lineTotal: newLineTotal, cogsAmount: costPrice > 0 ? costPrice * updates.quantity : 0 }),
-    {
-      sourceType: "directSale",
-      sourceId: id,
-      sourceNumber: id,
-      description: "Шууд борлуулалт засварласан",
-      createdBy: "system",
-    },
-  );
-  batch.update(saleRef, { journalEntryId: newEntryRef.id });
+    const newEntryRef = postJournalEntry(
+      t,
+      newEntryNumber,
+      buildDirectSaleEntry({ lineTotal, cogsAmount, vatAmount }),
+      {
+        sourceType: "directSale",
+        sourceId: id,
+        sourceNumber: oldSale.saleNumber,
+        description: "Шууд борлуулалт засварласан",
+        createdBy: "system",
+      },
+    );
 
-  await batch.commit();
+    t.update(saleRef, {
+      quantity: updates.quantity,
+      unitPrice: updates.unitPrice,
+      lineTotal,
+      note: updates.note,
+      vatMode,
+      vatAmount,
+      journalEntryId: newEntryRef.id,
+    });
+
+    writeProductStock(t, state);
+  });
 }
 
 export async function deleteDirectSale(
   id: string,
-  sale: Pick<DirectSaleRecord, "productId" | "variant" | "quantity" | "journalEntryId">,
+  sale: Pick<DirectSaleRecord, "saleNumber" | "productId" | "variant" | "quantity" | "journalEntryId">,
 ): Promise<void> {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, DIRECT_SALES_COLLECTION, id));
+  const entryNumber = sale.journalEntryId ? await generateJournalEntryNumber() : null;
 
-  const productRef = doc(db, "products", String(sale.productId));
-  const productSnap = await getDoc(productRef);
-  if (productSnap.exists()) {
-    const data = productSnap.data() as Record<string, unknown>;
-    const currentSoldCount = Number(data.soldCount ?? 0);
-    const variants = Array.isArray(data.variants) ? (data.variants as Array<Record<string, unknown>>) : null;
+  await runTransaction(db, async (t) => {
+    const ref = productRef(sale.productId);
+    const snap = await t.get(ref);
+    const lines =
+      sale.journalEntryId !== null && sale.journalEntryId !== undefined
+        ? await readJournalEntryLines(t, sale.journalEntryId)
+        : null;
 
-    const update: Record<string, unknown> = {
-      soldCount: Math.max(0, currentSoldCount - sale.quantity),
-      updatedAt: serverTimestamp(),
-    };
+    const state = readProductStockState(
+      sale.productId,
+      snap.exists() ? (snap.data() as Record<string, unknown>) : null,
+    );
+    applyStockMovement(state, { variant: sale.variant, quantity: -sale.quantity }, { validate: false });
 
-    if (sale.variant && variants) {
-      const idx = variants.findIndex((v) => v.name === sale.variant);
-      if (idx >= 0) {
-        update.variants = variants.map((v, i) =>
-          i === idx ? { ...v, soldCount: Math.max(0, Number(v.soldCount ?? 0) - sale.quantity) } : v,
-        );
-      }
-    }
-
-    batch.update(productRef, update);
-  }
-
-  if (sale.journalEntryId) {
-    const entrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, sale.journalEntryId));
-    if (entrySnap.exists()) {
-      const lines = (entrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-      const entryNumber = await generateJournalEntryNumber();
-      postJournalEntry(batch, entryNumber, buildReversalEntry(lines), {
+    if (lines && entryNumber) {
+      postJournalEntry(t, entryNumber, buildReversalEntry(lines), {
         sourceType: "directSale",
         sourceId: id,
-        sourceNumber: id,
+        sourceNumber: sale.saleNumber,
         description: "Шууд борлуулалт устгасан — бичилтийг цуцаллаа",
         reversalOf: sale.journalEntryId,
         createdBy: "system",
       });
     }
-  }
 
-  await batch.commit();
+    t.delete(doc(db, DIRECT_SALES_COLLECTION, id));
+    writeProductStock(t, state);
+  });
 }
 
 export function subscribeToDirectSales({

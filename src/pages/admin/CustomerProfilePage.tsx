@@ -89,7 +89,7 @@ export default function CustomerProfilePage() {
         <InlineTransferWizard
           customerId={customer.id}
           customerName={customer.name}
-          customerBalance={customer.balance}
+          customerBalance={customer.outstandingBalance}
           customerCreditLimit={customer.creditLimit}
           onClose={() => setShowWizard(false)}
           onSuccess={() => setActiveTab("transfers")}

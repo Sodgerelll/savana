@@ -4,12 +4,14 @@ import { useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
 import { AdminModal } from "./AdminModal";
+import type { VatMode } from "../../lib/vat";
 
 interface EditSaleModal {
   sale: any;
   quantity: number;
   unitPrice: number;
   note: string;
+  vatMode: VatMode;
 }
 
 export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
@@ -79,7 +81,13 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
   const todayRevenue = useMemo(() => todaySales.reduce((s: number, r: any) => s + r.lineTotal, 0), [todaySales]);
 
   const openEdit = (sale: any) => {
-    setEditModal({ sale, quantity: sale.quantity, unitPrice: sale.unitPrice, note: sale.note ?? "" });
+    setEditModal({
+      sale,
+      quantity: sale.quantity,
+      unitPrice: sale.unitPrice,
+      note: sale.note ?? "",
+      vatMode: sale.vatMode ?? "none",
+    });
     setEditError(null);
   };
 
@@ -96,16 +104,12 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
     setEditSaving(true);
     setEditError(null);
     try {
-      await updateDirectSale(
-        editModal.sale.id,
-        {
-          productId: editModal.sale.productId,
-          variant: editModal.sale.variant,
-          quantity: editModal.sale.quantity,
-          journalEntryId: editModal.sale.journalEntryId,
-        },
-        { quantity: editModal.quantity, unitPrice: editModal.unitPrice, note: editModal.note },
-      );
+      await updateDirectSale(editModal.sale.id, editModal.sale, {
+        quantity: editModal.quantity,
+        unitPrice: editModal.unitPrice,
+        note: editModal.note,
+        vatMode: editModal.vatMode,
+      });
       setEditModal(null);
     } catch (err: any) {
       setEditError(err?.message ?? (language === "MN" ? "Алдаа гарлаа." : "An error occurred."));
@@ -122,13 +126,7 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
         : `Delete sale record for "${getProductLabel(sale.productId, sale.productName)}"? Product sold count will be adjusted.`,
       confirmLabel: copy.delete ?? (language === "MN" ? "Устгах" : "Delete"),
       destructive: true,
-      onConfirm: () =>
-        deleteDirectSale(sale.id, {
-          productId: sale.productId,
-          variant: sale.variant,
-          quantity: sale.quantity,
-          journalEntryId: sale.journalEntryId,
-        }),
+      onConfirm: () => deleteDirectSale(sale.id, sale),
     });
   };
 
@@ -378,6 +376,22 @@ export default function DirectSalesPage({ ctx }: { ctx: AdminCtx }) {
                   required
                   disabled={editSaving}
                 />
+              </label>
+              <label className="admin-field">
+                <span>{language === "MN" ? "НӨАТ (10%)" : "VAT (10%)"}</span>
+                <select
+                  value={editModal.vatMode}
+                  onChange={(e) => setEditModal({ ...editModal, vatMode: e.target.value as VatMode })}
+                  disabled={editSaving}
+                >
+                  <option value="none">{language === "MN" ? "НӨАТ-гүй" : "No VAT"}</option>
+                  <option value="included">
+                    {language === "MN" ? "Үнийн дүнд орсон" : "Included in the price"}
+                  </option>
+                  <option value="added">
+                    {language === "MN" ? "Үнийн дүн дээр нэмэх" : "Added on top of the price"}
+                  </option>
+                </select>
               </label>
               <label className="admin-field">
                 <span>{language === "MN" ? "Зарсан үнэ (нэгж)" : "Sale price (unit)"}</span>

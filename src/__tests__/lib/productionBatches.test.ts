@@ -8,6 +8,10 @@ const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn().mockResolvedValue(undefined);
 const mockBatch = { set: mockBatchSet, update: mockBatchUpdate, delete: mockBatchDelete, commit: mockBatchCommit };
 
+// Batch codes and journal entry numbers both come from `counters/` documents reserved in
+// their own transaction, so the mock keeps one shared counter value per series.
+const counters: Record<string, number> = {};
+
 vi.mock("../../lib/firebase", () => ({ db: {} }));
 vi.mock("firebase/firestore", () => ({
   collection: vi.fn(() => ({ id: "productionBatches" })),
@@ -22,9 +26,25 @@ vi.mock("firebase/firestore", () => ({
   query: vi.fn(),
   serverTimestamp: vi.fn(() => ({ _ts: true })),
   writeBatch: vi.fn(() => mockBatch),
+  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) => {
+    let counterId = "";
+    return fn({
+      get: vi.fn(async (ref: { path?: string }) => {
+        counterId = String(ref?.path ?? "").split("/").pop() ?? "";
+        const lastNumber = counters[counterId];
+        return {
+          exists: () => lastNumber !== undefined,
+          data: () => ({ lastNumber, year: new Date().getFullYear() }),
+        };
+      }),
+      set: vi.fn((_ref: unknown, data: { lastNumber: number }) => {
+        counters[counterId] = data.lastNumber;
+      }),
+    });
+  }),
 }));
 
-import { getDocs, getDoc } from "firebase/firestore";
+import { getDoc } from "firebase/firestore";
 import {
   createProductionBatch,
   updateProductionBatch,
@@ -35,6 +55,11 @@ import {
 } from "../../lib/productionBatches";
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
+
+/** Puts a number series' counter at a given last-issued value. */
+function seedBatchCounter(lastNumber: number) {
+  counters.productionBatches = lastNumber;
+}
 
 function makeCreateInput(overrides: Partial<CreateProductionBatchInput> = {}): CreateProductionBatchInput {
   return {
@@ -55,6 +80,7 @@ function makeBatch(overrides: Partial<ProductionBatch> = {}): ProductionBatch {
   return {
     id: "batch-1",
     batchCode: "BATCH-2024-0001",
+    journalEntryId: null,
     productId: 1,
     productName: "Organic Soap",
     status: "planning",
@@ -83,8 +109,7 @@ describe("createProductionBatch", () => {
     mockBatchCommit.mockResolvedValue(undefined);
   });
 
-  it("generates batch code starting at 0001 when none exist", async () => {
-    (getDocs as Mock).mockResolvedValue({ docs: [] });
+  it("generates batch code starting at 0001 when the counter has never been used", async () => {
 
     const id = await createProductionBatch(makeCreateInput());
     expect(id).toBe("new-batch-id");
@@ -96,14 +121,9 @@ describe("createProductionBatch", () => {
     );
   });
 
-  it("increments batch code based on existing max", async () => {
+  it("continues the batch code series from the shared counter", async () => {
     const year = new Date().getFullYear();
-    (getDocs as Mock).mockResolvedValue({
-      docs: [
-        { data: () => ({ batchCode: `BATCH-${year}-0003` }) },
-        { data: () => ({ batchCode: `BATCH-${year}-0001` }) },
-      ],
-    });
+    seedBatchCounter(3);
 
     await createProductionBatch(makeCreateInput());
 
@@ -114,7 +134,6 @@ describe("createProductionBatch", () => {
   });
 
   it("sets status to planning", async () => {
-    (getDocs as Mock).mockResolvedValue({ docs: [] });
     await createProductionBatch(makeCreateInput());
 
     expect(mockBatchSet).toHaveBeenCalledWith(
@@ -124,7 +143,6 @@ describe("createProductionBatch", () => {
   });
 
   it("stores all supplies in the document", async () => {
-    (getDocs as Mock).mockResolvedValue({ docs: [] });
     await createProductionBatch(makeCreateInput());
 
     expect(mockBatchSet).toHaveBeenCalledWith(
@@ -357,15 +375,35 @@ describe("deleteProductionBatch", () => {
     );
   });
 
-  it("clamps product stock to 0 when removing more than available", async () => {
+  it("shows the shortfall rather than clamping when removing more than is on the shelf", async () => {
     const batch = makeBatch({ status: "ready", actualQuantity: 200 });
     (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ totalStock: 50 }), id: "1" });
 
     await deleteProductionBatch(batch);
 
+    // Clamping at zero used to invent 150 units out of nothing: the batch's output had
+    // already been sold, so undoing it has to leave the shelf showing what it really owes.
     expect(mockBatchUpdate).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ totalStock: 0 }), // clamped
+      expect.objectContaining({ totalStock: -150 }),
+    );
+  });
+
+  it("puts the consumed raw materials back when deleting a READY batch", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
+    (getDoc as Mock).mockResolvedValue({
+      exists: () => true,
+      data: () => ({ totalStock: 150, remaining: 0 }),
+      id: "1",
+    });
+
+    await deleteProductionBatch(batch);
+
+    // The reversal moves the batch's cost back into the raw-material account, so the
+    // materials themselves have to come back with it.
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ path: expect.stringContaining("rawMaterials") }),
+      expect.objectContaining({ remaining: 5 }),
     );
   });
 });

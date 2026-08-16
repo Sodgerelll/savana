@@ -4,13 +4,16 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 vi.mock("../../lib/firebase", () => ({ db: {} }));
 
+// Contact codes now come from a `counters/crmContacts` document reserved in a
+// transaction, so the mock models that document rather than a collection scan.
+const counterState: { lastNumber: number | null } = { lastNumber: null };
+
 vi.mock("firebase/firestore", () => ({
   collection: vi.fn(() => ({ id: "crmContacts" })),
   doc: vi.fn((_db: unknown, _col?: string, id?: string) => ({
     id: id ?? "new-contact-id",
     path: `crmContacts/${id ?? "new-contact-id"}`,
   })),
-  getDocs: vi.fn(),
   setDoc: vi.fn().mockResolvedValue(undefined),
   updateDoc: vi.fn().mockResolvedValue(undefined),
   deleteDoc: vi.fn().mockResolvedValue(undefined),
@@ -18,9 +21,20 @@ vi.mock("firebase/firestore", () => ({
   orderBy: vi.fn(),
   query: vi.fn(),
   serverTimestamp: vi.fn(() => ({ _ts: true })),
+  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) =>
+    fn({
+      get: vi.fn().mockResolvedValue({
+        exists: () => counterState.lastNumber !== null,
+        data: () => ({ lastNumber: counterState.lastNumber, year: new Date().getFullYear() }),
+      }),
+      set: vi.fn((_ref: unknown, data: { lastNumber: number }) => {
+        counterState.lastNumber = data.lastNumber;
+      }),
+    }),
+  ),
 }));
 
-import { getDocs, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import {
   createCrmContact,
   createEmptyCrmContactDraft,
@@ -51,10 +65,9 @@ function makeContact(overrides: Partial<CrmContactRecord> = {}): CrmContactRecor
   return { ...createEmptyCrmContactDraft(), id: "c1", code: "HAR-0001", fullName: "Bat", ...overrides };
 }
 
-function mockGetDocsWithCodes(codes: string[]) {
-  (getDocs as Mock).mockResolvedValue({
-    docs: codes.map((code) => ({ data: () => ({ code }) })),
-  });
+/** Puts the shared counter at a given last-issued number (null = never used). */
+function setCounterTo(lastNumber: number | null) {
+  counterState.lastNumber = lastNumber;
 }
 
 // ─── createEmptyCrmContactDraft ───────────────────────────────────────────────
@@ -108,8 +121,20 @@ describe("getCrmContactDisplayName", () => {
 describe("normalizeContactPhone", () => {
   it("reduces a phone to its digits so formatting never splits one person in two", () => {
     expect(normalizeContactPhone("9900-1234")).toBe("99001234");
-    expect(normalizeContactPhone("+976 99 00 12 34")).toBe("97699001234");
     expect(normalizeContactPhone("(99) 001234")).toBe("99001234");
+  });
+
+  it("drops the country code, which used to make one person two contacts", () => {
+    // This test previously asserted "97699001234" — the digits, but not the person. A
+    // buyer who typed +976 at checkout matched nothing and got a duplicate directory entry.
+    expect(normalizeContactPhone("+976 99 00 12 34")).toBe("99001234");
+    expect(normalizeContactPhone("97699001234")).toBe("99001234");
+    expect(normalizeContactPhone("0097699001234")).toBe("99001234");
+  });
+
+  it("leaves a number that only looks like it carries a country code alone", () => {
+    // Eight digits is a whole Mongolian number; nothing may be taken off the front of one.
+    expect(normalizeContactPhone("97655443")).toBe("97655443");
   });
 
   it("returns an empty string when there is nothing to match on", () => {
@@ -165,28 +190,34 @@ describe("searchCrmContacts", () => {
 // ─── getNextCrmContactCode ────────────────────────────────────────────────────
 
 describe("getNextCrmContactCode", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setCounterTo(null);
+  });
 
-  it("starts at HAR-0001 when the directory is empty", async () => {
-    mockGetDocsWithCodes([]);
+  it("starts at HAR-0001 when the counter has never been used", async () => {
     expect(await getNextCrmContactCode()).toBe("HAR-0001");
   });
 
-  it("increments from the highest existing code", async () => {
-    mockGetDocsWithCodes(["HAR-0001", "HAR-0005", "HAR-0003"]);
+  it("continues from the last issued number", async () => {
+    setCounterTo(5);
     expect(await getNextCrmContactCode()).toBe("HAR-0006");
   });
 
-  it("ignores codes belonging to other registries", async () => {
-    mockGetDocsWithCodes(["CUS-0100", "", "HAR-0002"]);
-    expect(await getNextCrmContactCode()).toBe("HAR-0003");
+  it("pads to 4 digits and grows past them", async () => {
+    setCounterTo(9);
+    expect(await getNextCrmContactCode()).toBe("HAR-0010");
+    setCounterTo(9999);
+    expect(await getNextCrmContactCode()).toBe("HAR-10000");
   });
 
-  it("pads to 4 digits and grows past them", async () => {
-    mockGetDocsWithCodes(["HAR-0009"]);
-    expect(await getNextCrmContactCode()).toBe("HAR-0010");
-    mockGetDocsWithCodes(["HAR-9999"]);
-    expect(await getNextCrmContactCode()).toBe("HAR-10000");
+  it("hands out consecutive codes, so two concurrent callers cannot collide", async () => {
+    const [first, second, third] = [
+      await getNextCrmContactCode(),
+      await getNextCrmContactCode(),
+      await getNextCrmContactCode(),
+    ];
+    expect([first, second, third]).toEqual(["HAR-0001", "HAR-0002", "HAR-0003"]);
   });
 });
 

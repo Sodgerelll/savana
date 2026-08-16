@@ -4,10 +4,13 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 vi.mock("../../lib/firebase", () => ({ db: {} }));
 
+// Customer codes now come from a `counters/customers` document reserved in a transaction,
+// so the mock models that document rather than a scan over the whole collection.
+const counterState: { lastNumber: number | null } = { lastNumber: null };
+
 vi.mock("firebase/firestore", () => ({
   collection: vi.fn(() => ({ id: "customers" })),
   doc: vi.fn((_db: unknown, _col?: string, id?: string) => ({ id: id ?? "new-cust-id", path: `customers/${id ?? "new-cust-id"}` })),
-  getDocs: vi.fn(),
   setDoc: vi.fn().mockResolvedValue(undefined),
   updateDoc: vi.fn().mockResolvedValue(undefined),
   deleteDoc: vi.fn().mockResolvedValue(undefined),
@@ -15,9 +18,20 @@ vi.mock("firebase/firestore", () => ({
   orderBy: vi.fn(),
   query: vi.fn(),
   serverTimestamp: vi.fn(() => ({ _ts: true })),
+  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) =>
+    fn({
+      get: vi.fn().mockResolvedValue({
+        exists: () => counterState.lastNumber !== null,
+        data: () => ({ lastNumber: counterState.lastNumber, year: new Date().getFullYear() }),
+      }),
+      set: vi.fn((_ref: unknown, data: { lastNumber: number }) => {
+        counterState.lastNumber = data.lastNumber;
+      }),
+    }),
+  ),
 }));
 
-import { getDocs, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import {
   createEmptyCustomerDraft,
   createCustomer,
@@ -39,10 +53,9 @@ function makeDraftInput(overrides: Partial<CustomerDraftInput> = {}): CustomerDr
   };
 }
 
-function mockGetDocsWithCodes(codes: string[]) {
-  (getDocs as Mock).mockResolvedValue({
-    docs: codes.map((code) => ({ data: () => ({ code }) })),
-  });
+/** Puts the shared counter at a given last-issued number (null = never used). */
+function setCounterTo(lastNumber: number | null) {
+  counterState.lastNumber = lastNumber;
 }
 
 // ─── createEmptyCustomerDraft ─────────────────────────────────────────────────
@@ -75,30 +88,34 @@ describe("createEmptyCustomerDraft", () => {
 // ─── getNextCustomerCode ──────────────────────────────────────────────────────
 
 describe("getNextCustomerCode", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setCounterTo(null);
+  });
 
-  it("starts at CUS-0001 when no customers exist", async () => {
-    mockGetDocsWithCodes([]);
+  it("starts at CUS-0001 when the counter has never been used", async () => {
     expect(await getNextCustomerCode()).toBe("CUS-0001");
   });
 
-  it("increments from the highest existing code", async () => {
-    mockGetDocsWithCodes(["CUS-0001", "CUS-0005", "CUS-0003"]);
+  it("continues from the last issued number", async () => {
+    setCounterTo(5);
     expect(await getNextCustomerCode()).toBe("CUS-0006");
   });
 
-  it("ignores non-matching code formats", async () => {
-    mockGetDocsWithCodes(["INVALID", "", "CUS-0002"]);
-    expect(await getNextCustomerCode()).toBe("CUS-0003");
+  it("hands out consecutive codes, so two concurrent callers cannot collide", async () => {
+    expect([await getNextCustomerCode(), await getNextCustomerCode()]).toEqual([
+      "CUS-0001",
+      "CUS-0002",
+    ]);
   });
 
   it("pads to 4 digits", async () => {
-    mockGetDocsWithCodes(["CUS-0009"]);
+    setCounterTo(9);
     expect(await getNextCustomerCode()).toBe("CUS-0010");
   });
 
   it("handles codes beyond 4 digits", async () => {
-    mockGetDocsWithCodes(["CUS-9999"]);
+    setCounterTo(9999);
     expect(await getNextCustomerCode()).toBe("CUS-10000");
   });
 });

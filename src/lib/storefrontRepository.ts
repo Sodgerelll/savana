@@ -12,6 +12,7 @@ import {
   orderBy,
   query,
   type QueryDocumentSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   type Unsubscribe,
@@ -141,6 +142,9 @@ function serializeProduct(product: Product) {
     caution: product.caution ?? null,
     shelfLife: product.shelfLife ?? null,
     sizeLabel: product.sizeLabel ?? null,
+    costPrice: product.costPrice ?? 0,
+    wholesalePrice: product.wholesalePrice ?? 0,
+    minStockLevel: product.minStockLevel ?? 0,
     totalStock: product.totalStock ?? 0,
     soldCount: product.soldCount ?? 0,
     bestSeller: Boolean(product.bestSeller),
@@ -225,6 +229,9 @@ function deserializeProduct(snapshot: QueryDocumentSnapshot<DocumentData>): Prod
           })
           .filter((variant): variant is NonNullable<typeof variant> => variant !== null)
       : undefined,
+    costPrice: typeof data.costPrice === "number" ? Math.round(data.costPrice) : undefined,
+    wholesalePrice: typeof data.wholesalePrice === "number" ? Math.round(data.wholesalePrice) : undefined,
+    minStockLevel: typeof data.minStockLevel === "number" ? data.minStockLevel : undefined,
     totalStock: typeof data.totalStock === "number" ? data.totalStock : undefined,
     soldCount: typeof data.soldCount === "number" ? data.soldCount : undefined,
     badge: typeof data.badge === "string" ? data.badge : undefined,
@@ -562,6 +569,68 @@ export async function deleteCollection(collectionId: number) {
 
 export async function saveProduct(product: Product) {
   await setDoc(doc(productsRef, String(product.id)), serializeProduct(product), { merge: true });
+}
+
+/**
+ * Saves an edited product without disturbing what has been sold.
+ *
+ * The product editor owns names, prices, images and stock *levels* — an admin counting the
+ * shelf is entitled to set `totalStock` and a variant's `quantity`. It does not own
+ * `soldCount`, which only a sale may move. saveProduct() sent the whole document back from
+ * whatever the browser last saw, so saving a renamed product also rewound every sale that
+ * had landed since the modal was opened.
+ *
+ * The current document is read inside a transaction and the sold counters are carried
+ * across, product-level and per variant, so an edit can never undo a sale.
+ */
+export async function saveProductEdit(product: Product) {
+  const ref = doc(productsRef, String(product.id));
+
+  await runTransaction(db, async (t) => {
+    const snapshot = await t.get(ref);
+    const current = snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : {};
+
+    const currentVariants = Array.isArray(current.variants)
+      ? (current.variants as Array<Record<string, unknown>>)
+      : [];
+    const soldByVariant = new Map<string, number>(
+      currentVariants.map((variant) => [String(variant.name ?? ""), Number(variant.soldCount ?? 0)]),
+    );
+
+    const payload = serializeProduct(product);
+    const variants = product.variants?.map((variant) => ({
+      ...variant,
+      soldCount: soldByVariant.get(variant.name) ?? Number(variant.soldCount ?? 0),
+    })) ?? null;
+
+    t.set(
+      ref,
+      {
+        ...payload,
+        variants,
+        // Never written from the editor — this is the sales counter.
+        soldCount: Number(current.soldCount ?? product.soldCount ?? 0),
+      },
+      { merge: true },
+    );
+  });
+}
+
+/**
+ * Writes only the named fields of a product, leaving everything else on the document
+ * untouched.
+ *
+ * saveProduct() sends the whole product back from an in-memory snapshot, so using it for a
+ * small edit would overwrite `totalStock`, `soldCount` and `variants` with whatever the
+ * browser last saw — silently undoing a production intake or a sale that landed in between.
+ * Anything that changes one part of a product goes through here instead.
+ */
+export async function patchProduct(productId: number, updates: Partial<Product>) {
+  await setDoc(
+    doc(productsRef, String(productId)),
+    { ...updates, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
 }
 
 export async function deleteProduct(productId: number) {

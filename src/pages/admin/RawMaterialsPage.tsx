@@ -267,6 +267,7 @@ export default function RawMaterialsPage({ ctx }: { ctx: AdminCtx }) {
                                   supplier: "",
                                   purchasedAt: new Date().toISOString().slice(0, 10),
                                   notes: "",
+                                  paymentMethod: "cash",
                                 },
                               })
                             }

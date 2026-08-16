@@ -2,7 +2,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -14,6 +13,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { reserveDocumentNumber } from "./documentNumbers";
 
 /**
  * The customer (харилцагч) directory: everyone the shop sells to, whether a walk-in
@@ -71,9 +71,19 @@ export interface CrmContactDraftInput {
  * Digits only, so "9900-1234", "+976 99001234" and "99001234" all identify the same
  * person. Stored alongside the typed phone as `phoneDigits` and used to match a
  * storefront buyer to the contact they already have here.
+ *
+ * Mongolian numbers are eight digits, and a +976 in front of one is the same number. This
+ * used to strip punctuation only, so a buyer who typed the country code at checkout did
+ * not match the contact they already had and got a second directory entry.
  */
 export function normalizeContactPhone(value: string): string {
-  return value.replace(/\D/g, "");
+  const digits = value.replace(/\D/g, "");
+  // "00" and "0" are dialling prefixes, never part of a Mongolian number.
+  const dialled = digits.replace(/^0+/, "");
+
+  if (dialled.length === 11 && dialled.startsWith("976")) return dialled.slice(3);
+
+  return digits;
 }
 
 function parseTimestamp(value: unknown): string | null {
@@ -203,21 +213,8 @@ function serializeCrmContactPayload(input: CrmContactDraftInput) {
   };
 }
 
-export async function getNextCrmContactCode(): Promise<string> {
-  const snapshot = await getDocs(collection(db, CRM_CONTACTS_COLLECTION));
-  let maxNumber = 0;
-
-  snapshot.docs.forEach((docSnapshot) => {
-    const match = String(docSnapshot.data().code ?? "").match(/HAR-(\d+)/);
-    if (match) {
-      const value = Number(match[1]);
-      if (value > maxNumber) {
-        maxNumber = value;
-      }
-    }
-  });
-
-  return `HAR-${String(maxNumber + 1).padStart(4, "0")}`;
+export function getNextCrmContactCode(): Promise<string> {
+  return reserveDocumentNumber("crmContact");
 }
 
 export async function createCrmContact(input: CrmContactDraftInput): Promise<string> {

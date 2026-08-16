@@ -18,13 +18,28 @@ service cloud.firestore {
       return isRegisteredUser() && request.auth.uid == userId;
     }
 
-    function hasPrivilegedProfileRole() {
+    function profileRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function hasProfile() {
       return isRegisteredUser()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "sysadmin"
-        );
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasPrivilegedProfileRole() {
+      return hasProfile()
+        && (profileRole() == "admin" || profileRole() == "sysadmin");
+    }
+
+    /**
+     * Everyone who works here — the shop floor included. "worker" used to be a role the
+     * rules never recognised, so a worker saw every factory screen fail with a permission
+     * error. Factory data is theirs to read and write; money and customer data are not.
+     */
+    function hasStaffProfileRole() {
+      return hasProfile()
+        && (profileRole() == "worker" || profileRole() == "admin" || profileRole() == "sysadmin");
     }
 
     function isValidUserRole(role) {
@@ -107,46 +122,46 @@ service cloud.firestore {
 
     match /sites/{siteId} {
       allow read: if true;
-      allow create, update, delete: if canWriteStorefront();
+      allow create, update, delete: if hasPrivilegedProfileRole();
 
       match /settings/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /navigationItems/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /heroBanners/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /collections/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /products/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /markets/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /testimonials/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /discounts/{documentId} {
         allow read: if true;
-        allow create, update, delete: if canWriteStorefront();
+        allow create, update, delete: if hasPrivilegedProfileRole();
       }
 
       match /contactMessages/{documentId} {
@@ -155,47 +170,65 @@ service cloud.firestore {
       }
     }
 
+    // The catalogue. Readable by anyone (the storefront needs it), but writable only by
+    // people who work here — it used to be writable by any signed-in shopper, which put
+    // price, cost and stock in reach of every registered customer.
     match /products/{documentId} {
       allow read: if true;
-      allow create, update, delete: if canWriteStorefront();
+      allow create, delete: if hasPrivilegedProfileRole();
+      allow update: if hasPrivilegedProfileRole();
+      // Staff move stock and record production cost; they never reprice the catalogue.
+      allow update: if hasStaffProfileRole()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "totalStock",
+          "soldCount",
+          "variants",
+          "costPrice",
+          "updatedAt",
+        ]);
     }
 
     match /collections/{documentId} {
       allow read: if true;
-      allow create, update, delete: if canWriteStorefront();
+      allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
     match /packaging/{documentId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if canWriteStorefront();
+      allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    // ─── Factory floor — readable and writable by staff, not just admins ────────
     match /rawMaterials/{documentId} {
-      allow read, list: if hasPrivilegedProfileRole();
-      allow create, update, delete: if hasPrivilegedProfileRole();
+      allow read, list: if hasStaffProfileRole();
+      allow create, update, delete: if hasStaffProfileRole();
     }
 
     match /productionBatches/{documentId} {
-      allow read, list: if hasPrivilegedProfileRole();
-      allow create, update, delete: if hasPrivilegedProfileRole();
+      allow read, list: if hasStaffProfileRole();
+      allow create, update, delete: if hasStaffProfileRole();
     }
 
     match /productionRecipes/{documentId} {
-      allow read, list: if hasPrivilegedProfileRole();
-      allow create, update, delete: if hasPrivilegedProfileRole();
+      allow read, list: if hasStaffProfileRole();
+      allow create, update, delete: if hasStaffProfileRole();
     }
 
     match /rawMaterialPurchases/{documentId} {
-      allow read, list: if hasPrivilegedProfileRole();
-      allow create, delete: if hasPrivilegedProfileRole();
+      allow read, list: if hasStaffProfileRole();
+      allow create, delete: if hasStaffProfileRole();
       allow update: if false;
     }
 
     match /orders/{orderId} {
       allow get: if isOrderOwner() || hasPrivilegedProfileRole();
+      // Listing is for admins and for a signed-in shopper reading their own orders. There
+      // used to be a `request.query.limit == 1` escape hatch here for order-number lookup:
+      // rules cannot see a query's filters, so it let anyone — signed out included — pull
+      // an arbitrary order document complete with the buyer's name, phone and address.
+      // Order lookup now goes through /api/orders/lookup, which returns no personal data.
       allow list: if hasPrivilegedProfileRole()
-        || (isSignedIn() && request.auth.uid == resource.data.auth.uid)
-        || request.query.limit == 1;
+        || (isSignedIn() && request.auth.uid == resource.data.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.auth.uid == request.auth.uid
         && request.resource.data.auth.isAnonymous == (request.auth.token.firebase.sign_in_provider == "anonymous")
@@ -214,6 +247,11 @@ service cloud.firestore {
         && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
+        // Rules cannot sum a list, so the line totals behind `subtotal` cannot be checked
+        // here — api/_lib/postOrderPaidEntry.ts re-derives them against the catalogue
+        // before anything reaches the ledger. This bound just keeps a single order from
+        // carrying an unreasonable payload.
+        && request.resource.data.items.size() <= 100
         && request.resource.data.payment.method == "bonum"
         && request.resource.data.payment.provider == "bonum"
         && request.resource.data.payment.status == "pending"
@@ -222,8 +260,12 @@ service cloud.firestore {
         && request.resource.data.payment.qrPayload.size() > 0
         && (request.resource.data.payment.invoiceId == null || request.resource.data.payment.invoiceId is string)
         && request.resource.data.payment.paidAt == null
+        && request.resource.data.stockApplied == false
         && request.resource.data.totals.shippingFee == 8000
-        && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal + 8000;
+        // Delivery is billed at cost and stays outside НӨАТ. "added" mode bills the tax on
+        // top of the goods; the other modes leave the charged total untouched.
+        && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal + 8000
+          + (request.resource.data.totals.vatMode == "added" ? request.resource.data.totals.vatAmount : 0);
       // Orders an admin registers by hand (Messenger, phone, walk-in, …): no Bonum
       // invoice, so the payment method/status and shipping fee come from the form.
       allow create: if hasPrivilegedProfileRole()
@@ -269,7 +311,11 @@ service cloud.firestore {
         && request.resource.data.payment.paidAt is string
         && request.resource.data.payment.paidAt.size() > 0;
       allow update: if hasPrivilegedProfileRole()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "source", "payment", "customer", "address", "updatedAt"])
+        // `stockApplied` belongs here: updateOrderByAdmin moves stock in the same
+        // transaction as the status change and flips this flag with it. Leaving it out
+        // meant every admin edit that crossed the paid boundary — the only kind that moves
+        // stock — was rejected outright.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "source", "payment", "customer", "address", "stockApplied", "updatedAt"])
         && isOrderStatus(request.resource.data.status)
         && isOrderSource(request.resource.data.source)
         && request.resource.data.customer.fullName is string
@@ -382,10 +428,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // CRM: Counters (sequence generation) — only these documents are valid
+    // Counters (sequence generation) — only these documents are valid. Storefront order
+    // numbers are deliberately absent: a shopper must never be able to write here, so those
+    // are derived from the order's own document id instead (src/lib/documentNumbers.ts).
     match /counters/{counterId} {
       allow read, write: if hasPrivilegedProfileRole()
-        && (counterId == "transfers" || counterId == "journalEntries");
+        && counterId in [
+          "transfers",
+          "journalEntries",
+          "sales",
+          "directSales",
+          "customerTransactions",
+          "productionBatches",
+          "customers",
+          "crmContacts"
+        ];
     }
 
     // Finance: Chart of accounts

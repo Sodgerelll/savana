@@ -48,7 +48,7 @@ export function CustomerProfileHeader({ customer, onNewTransfer, onEdit }: Props
       label: "Борлуулалт",
       value: (
         <MoneyFormat
-          amount={customer.totalRevenue}
+          amount={customer.totalSales}
           className="text-xl font-bold text-gray-900"
         />
       ),
@@ -57,8 +57,8 @@ export function CustomerProfileHeader({ customer, onNewTransfer, onEdit }: Props
       label: "Өр",
       value: (
         <MoneyFormat
-          amount={customer.balance}
-          className={`text-xl font-bold ${customer.balance > 0 ? "text-red-600" : "text-green-600"}`}
+          amount={customer.outstandingBalance}
+          className={`text-xl font-bold ${customer.outstandingBalance > 0 ? "text-red-600" : "text-green-600"}`}
         />
       ),
     },

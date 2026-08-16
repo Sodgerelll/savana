@@ -1,45 +1,15 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { firestoreMock } from "../helpers/firestoreMock";
 
 // ─── Mock firebase/firestore ──────────────────────────────────────────────────
 
-const mockBatchSet = vi.fn();
-const mockBatchUpdate = vi.fn();
-const mockBatchCommit = vi.fn().mockResolvedValue(undefined);
-const mockBatch = {
-  set: mockBatchSet,
-  update: mockBatchUpdate,
-  delete: vi.fn(),
-  commit: mockBatchCommit,
-};
-
 vi.mock("../../lib/firebase", () => ({ db: {} }));
 
-vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(() => ({ id: "orders" })),
-  doc: vi.fn(() => ({ id: "new-order-id", path: "orders/new-order-id" })),
-  getDoc: vi.fn(),
-  getDocs: vi.fn(),
-  limit: vi.fn(),
-  onSnapshot: vi.fn(),
-  orderBy: vi.fn(),
-  query: vi.fn(),
-  // Used by generateJournalEntryNumber (postEntryClient) — runs the callback against
-  // an empty counter doc so numbering always starts at 1 in tests.
-  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) =>
-    fn({
-      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
-      set: vi.fn(),
-      update: vi.fn(),
-    }),
-  ),
-  serverTimestamp: vi.fn(() => ({ _serverTimestamp: true })),
-  setDoc: vi.fn().mockResolvedValue(undefined),
-  updateDoc: vi.fn().mockResolvedValue(undefined),
-  where: vi.fn(),
-  writeBatch: vi.fn(() => mockBatch),
-}));
+// Admin edits now move stock in the same transaction as the status change, so the mock
+// models a small in-memory Firestore. See src/__tests__/helpers/firestoreMock.ts.
+vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
-import { getDoc, onSnapshot, updateDoc } from "firebase/firestore";
+import { onSnapshot } from "firebase/firestore";
 import {
   registerOrderContact,
   subscribeToOrders,
@@ -50,7 +20,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (getDoc as Mock).mockResolvedValue({ exists: () => false, data: () => ({}) });
+  firestoreMock.reset();
 });
 
 // ─── registerOrderContact ─────────────────────────────────────────────────────
@@ -84,6 +54,7 @@ describe("registerOrderContact", () => {
 
 describe("updateOrderByAdmin", () => {
   it("persists a changed order source", async () => {
+    firestoreMock.seed("orders/order-1", { stockApplied: false, items: [] });
     const payment: OrderPaymentPayload = {
       method: "cash",
       provider: "cash",
@@ -108,7 +79,80 @@ describe("updateOrderByAdmin", () => {
       payment,
     });
 
-    expect((updateDoc as Mock).mock.calls[0][1]).toMatchObject({ status: "new", source: "facebook" });
+    expect(firestoreMock.lastWriteData("orders/order-1")).toMatchObject({
+      status: "new",
+      source: "facebook",
+    });
+  });
+
+  it("moves stock out when the order becomes paid, and back when it is unpaid again", async () => {
+    const payment: OrderPaymentPayload = {
+      method: "cash",
+      provider: "cash",
+      status: "pending",
+      amount: 26000,
+      qrPayload: "",
+      invoiceId: null,
+      paidAt: null,
+    };
+    const base = {
+      source: "web" as const,
+      customer: { fullName: "Alice", phoneNumber: "99001234", email: null, note: "" },
+      address: {
+        region: "Улаанбаатар",
+        districtOrSoum: "Баянгол",
+        khorooOrBag: "5-р хороо",
+        streetAddress: "12-р байр",
+        additionalAddress: "",
+      },
+      payment,
+    };
+
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 0, variants: null });
+    firestoreMock.seed("orders/order-1", {
+      stockApplied: false,
+      items: [{ productId: 10, quantity: 3, variant: null }],
+    });
+
+    // Marking it paid takes the goods off the shelf...
+    await updateOrderByAdmin("order-1", { ...base, status: "paid" });
+    expect(firestoreMock.lastWriteData("products/10")).toMatchObject({ soldCount: 3 });
+
+    // ...and putting it back to new returns them.
+    await updateOrderByAdmin("order-1", { ...base, status: "new" });
+    expect(firestoreMock.lastWriteData("products/10")).toMatchObject({ soldCount: 0 });
+  });
+
+  it("does not move stock twice when an already-paid order is edited", async () => {
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 3, variants: null });
+    firestoreMock.seed("orders/order-1", {
+      stockApplied: true,
+      items: [{ productId: 10, quantity: 3, variant: null }],
+    });
+
+    await updateOrderByAdmin("order-1", {
+      status: "delivered",
+      source: "web",
+      customer: { fullName: "Alice", phoneNumber: "99001234", email: null, note: "" },
+      address: {
+        region: "Улаанбаатар",
+        districtOrSoum: "Баянгол",
+        khorooOrBag: "5-р хороо",
+        streetAddress: "12-р байр",
+        additionalAddress: "",
+      },
+      payment: {
+        method: "cash",
+        provider: "cash",
+        status: "paid",
+        amount: 26000,
+        qrPayload: "",
+        invoiceId: null,
+        paidAt: "2026-08-12T00:00:00.000Z",
+      },
+    });
+
+    expect(firestoreMock.writesFor("products/10")).toHaveLength(0);
   });
 });
 

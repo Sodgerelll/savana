@@ -12,6 +12,8 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { FINANCE_ENTRIES_COLLECTION, type FinanceEntryType } from "./financeEntries";
+import { buildFinanceLedgerEntry } from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 export const FINANCE_RECURRING_COLLECTION = "financeRecurring";
 
@@ -195,6 +197,29 @@ export async function materializeDueRecurringEntries(rules: FinanceRecurringReco
 
     for (const date of due) {
       const entryRef = doc(db, FINANCE_ENTRIES_COLLECTION, `rec_${rule.id}_${date}`);
+      // Reserved before the batch is written, since it runs its own transaction.
+      const entryNumber = rule.amount > 0 ? await generateJournalEntryNumber() : null;
+      let journalEntryId: string | null = null;
+
+      if (entryNumber) {
+        // A generated occurrence is a real cost or receipt, so it posts to the ledger just
+        // like a hand-entered one does.
+        const posted = postJournalEntry(
+          batch,
+          entryNumber,
+          buildFinanceLedgerEntry({ type: rule.type, amount: rule.amount }),
+          {
+            sourceType: "financeEntry",
+            sourceId: entryRef.id,
+            sourceNumber: entryRef.id,
+            description: `${rule.category}${rule.note ? ` — ${rule.note}` : ""}`,
+            createdBy: rule.createdByUid,
+          },
+        );
+        journalEntryId = posted.id;
+        entryWrites += 1;
+      }
+
       batch.set(entryRef, {
         type: rule.type,
         amount: rule.amount,
@@ -202,6 +227,8 @@ export async function materializeDueRecurringEntries(rules: FinanceRecurringReco
         note: rule.note,
         date,
         recurringId: rule.id,
+        paymentMethod: null,
+        journalEntryId,
         createdByUid: rule.createdByUid,
         createdAt: new Date().toISOString(),
       });
