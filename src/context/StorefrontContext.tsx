@@ -89,8 +89,12 @@ function getRegularCollections(collections: Collection[]) {
 }
 
 export function StorefrontProvider({ children }: { children: ReactNode }) {
-  const { user, loading: authLoading } = useAuth();
-  const canManageStorefront = Boolean(user && !user.isAnonymous);
+  const { user, isPrivilegedUser, loading: authLoading } = useAuth();
+  // Seeding writes to the catalogue and the storefront content, which only an admin may do.
+  // This used to be "signed in and not anonymous", which matched the old Firestore rules —
+  // now that those collections are admin-only, an ordinary signed-in shopper would attempt
+  // the seed on every visit and land a permission error in the storefront's error banner.
+  const canManageStorefront = Boolean(user && !user.isAnonymous && isPrivilegedUser);
   const [storefront, setStorefront] = useState<StorefrontData>(createDefaultStorefrontData);
   const [loading, setLoading] = useState(true);
   const [savingCount, setSavingCount] = useState(0);
