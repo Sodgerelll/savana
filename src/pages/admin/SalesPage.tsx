@@ -17,6 +17,8 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
     individualSalesCount,
     organizationSalesCount,
     salesRevenueTotal,
+    salesReturnedTotal,
+    salesReturnedQuantity,
     saleChannelOptions,
     saleCustomerTypeOptions,
     openSaleModal,
@@ -103,6 +105,14 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
         <div className="admin-summary-card admin-summary-card-compact">
           <span>{mn ? "Нийт дүн" : "Revenue"}</span>
           <strong>{formatStorePrice(salesRevenueTotal)}</strong>
+        </div>
+        <div className="admin-summary-card admin-summary-card-compact">
+          <span>{mn ? "Буцаасан дүн" : "Returned amount"}</span>
+          <strong>{formatStorePrice(salesReturnedTotal)}</strong>
+        </div>
+        <div className="admin-summary-card admin-summary-card-compact">
+          <span>{mn ? "Буцаасан тоо ширхэг" : "Returned quantity"}</span>
+          <strong>{salesReturnedQuantity}</strong>
         </div>
       </div>
 

@@ -835,6 +835,19 @@ export default function Account() {
     () => sales.reduce((sum, sale) => (sale.status === "new" ? sum : sum + sale.totals.grandTotal), 0),
     [sales]
   );
+  const salesReturnedTotal = useMemo(
+    () => sales.reduce((sum, sale) => sum + (sale.returns ?? []).reduce((s, r) => s + r.totalAmount, 0), 0),
+    [sales]
+  );
+  const salesReturnedQuantity = useMemo(
+    () =>
+      sales.reduce(
+        (sum, sale) =>
+          sum + (sale.returns ?? []).reduce((s, r) => s + r.items.reduce((si, item) => si + item.quantity, 0), 0),
+        0,
+      ),
+    [sales]
+  );
   const contactMessagesLast7DaysCount = useMemo(() => {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
@@ -3390,6 +3403,8 @@ export default function Account() {
     individualSalesCount,
     organizationSalesCount,
     salesRevenueTotal,
+    salesReturnedTotal,
+    salesReturnedQuantity,
     saleChannelOptions,
     saleCustomerTypeOptions,
     // messages
