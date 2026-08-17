@@ -3531,7 +3531,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
 
 {transactionModal && (
   <AdminModal
-    title={transactionModal.mode === "create" ? copy.newTransaction : copy.editTransaction}
+    title={
+      transactionModal.mode !== "create"
+        ? copy.editTransaction
+        : transactionModal.draft.type === "return"
+          ? (language === "MN" ? "Буцаалт бүртгэх" : "Register a return")
+          : copy.newTransaction
+    }
     onClose={() => setTransactionModal(null)}
     disableClose={transactionSavingState}
     xl
@@ -3550,7 +3556,9 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           setTransactionError(copy.addAtLeastOneItem);
           return;
         }
-        for (const txItem of draft.items) {
+        // A return puts goods back on the shelf rather than taking them off, so it can never
+        // be short of stock — only delivery/sale need the "enough left to hand out" check.
+        for (const txItem of draft.type === "return" ? [] : draft.items) {
           const prod = products.find((p: any)=> p.id === txItem.productId);
           if (!prod) continue;
           let sTotal = 0;

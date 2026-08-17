@@ -559,7 +559,7 @@ export default function Account() {
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
-  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "payments">("history");
+  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "payments" | "returns">("history");
   const [expandedTxGrids, setExpandedTxGrids] = useState<Set<string>>(new Set());
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);

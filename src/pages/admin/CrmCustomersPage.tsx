@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ArrowLeftRight, Banknote, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Banknote, ChevronDown, ChevronUp, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import React from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
@@ -621,6 +621,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       { key: "history",  label: language === "MN" ? "Шилжүүлгээр" : "Transaction history" },
                                       { key: "products", label: language === "MN" ? "Бүтээгдэхүүнээр" : "Products" },
                                       { key: "payments", label: language === "MN" ? "Төлбөр төлөлт" : "Payments" },
+                                      { key: "returns",  label: language === "MN" ? "Буцаалт" : "Returns" },
                                     ] as const).map((tab) => (
                                       <button
                                         key={tab.key}
@@ -1058,6 +1059,159 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                 </tr>
                                               </tfoot>
                                             </table>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {/* Tab 4: Буцаалт */}
+                                  {expandedCustomerTab === "returns" && (() => {
+                                    const returnTxs = customerTxs.filter((tx: any) => tx.type === "return");
+                                    const totalReturnedQty = returnTxs.reduce(
+                                      (s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0),
+                                      0,
+                                    );
+                                    const totalReturnedAmount = returnTxs.reduce((s: number, tx: any) => s + tx.totals.grandTotal, 0);
+                                    return (
+                                      <div className="admin-product-expand-section">
+                                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem", padding: "0.35rem 0.8rem" }}
+                                            onClick={() => {
+                                              setTransactionError(null);
+                                              setTransactionModal({
+                                                mode: "create",
+                                                draft: {
+                                                  ...createEmptyTransactionDraft(),
+                                                  type: "return",
+                                                  customerId: customer.id,
+                                                  customerSnapshot: {
+                                                    code: customer.code,
+                                                    name: customer.name,
+                                                    phoneNumber: customer.phoneNumber,
+                                                  },
+                                                },
+                                              });
+                                            }}
+                                          >
+                                            <RotateCcw size={14} /> {language === "MN" ? "Буцаалт бүртгэх" : "Register a return"}
+                                          </button>
+                                        </div>
+                                        <div className="admin-product-expand-stats" style={{ marginBottom: "1rem" }}>
+                                          <div className="admin-expand-stat">
+                                            <small>{language === "MN" ? "Буцаалтын тоо" : "Returns"}</small>
+                                            <strong>{returnTxs.length}</strong>
+                                          </div>
+                                          <div className="admin-expand-stat">
+                                            <small>{language === "MN" ? "Буцаасан тоо ширхэг" : "Returned quantity"}</small>
+                                            <strong>{totalReturnedQty} ш</strong>
+                                          </div>
+                                          <div className="admin-expand-stat">
+                                            <small>{language === "MN" ? "Буцаасан дүн" : "Returned amount"}</small>
+                                            <strong>{formatStorePrice(totalReturnedAmount)}</strong>
+                                          </div>
+                                        </div>
+                                        {returnTxs.length === 0 ? (
+                                          <p className="admin-expand-empty">
+                                            {language === "MN" ? "Буцаалт байхгүй" : "No returns yet"}
+                                          </p>
+                                        ) : (
+                                          <div className="admin-customer-tx-list">
+                                            {returnTxs.map((tx: any) => (
+                                              <div key={tx.id} className="admin-customer-tx-card">
+                                                <div className="admin-customer-tx-head">
+                                                  <div className="admin-customer-tx-head-left">
+                                                    <span className="admin-customer-tx-date">
+                                                      {formatAdminDateTime(tx.transactionDate ?? tx.createdAt, language)}
+                                                    </span>
+                                                    <span className="admin-customer-tx-number">{tx.txNumber}</span>
+                                                    <span className="admin-customer-tx-type admin-customer-tx-type-return">
+                                                      {copy.txTypeReturn}
+                                                    </span>
+                                                  </div>
+                                                  <div className="admin-customer-tx-head-right">
+                                                    <button
+                                                      type="button"
+                                                      className="admin-icon-btn admin-icon-btn-neutral"
+                                                      title={language === "MN" ? "Засах" : "Edit"}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setTransactionError(null);
+                                                        setTransactionModal({
+                                                          mode: "edit",
+                                                          draft: { ...tx, items: tx.items.map((i: any) => ({ ...i })) },
+                                                          previous: { ...tx, items: tx.items.map((i: any) => ({ ...i })) },
+                                                        });
+                                                      }}
+                                                    >
+                                                      <Pencil size={13} />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="admin-icon-btn"
+                                                      title={language === "MN" ? "Устгах" : "Delete"}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openConfirmModal({
+                                                          title: copy.confirmDeleteTitle,
+                                                          description: copy.deleteTransactionDescription,
+                                                          confirmLabel: copy.delete,
+                                                          destructive: true,
+                                                          onConfirm: async () => {
+                                                            await deleteCustomerTransaction(tx);
+                                                          },
+                                                        });
+                                                      }}
+                                                    >
+                                                      <Trash2 size={13} />
+                                                    </button>
+                                                  </div>
+                                                </div>
+
+                                                {tx.note && <div className="admin-customer-tx-note">{tx.note}</div>}
+
+                                                <div className="admin-expand-sales-table-wrap" style={{ marginTop: "0.5rem" }}>
+                                                  <table className="admin-expand-sales-table" style={{ textAlign: "center" }}>
+                                                    <thead>
+                                                      <tr>
+                                                        <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                                                        <th style={{ textAlign: "left" }}>{copy.txProduct}</th>
+                                                        <th style={{ textAlign: "center" }}>{copy.txVariant}</th>
+                                                        <th style={{ textAlign: "center" }}>{language === "MN" ? "Тоо" : "Qty"}</th>
+                                                        <th style={{ textAlign: "center" }}>{copy.txUnitPrice}</th>
+                                                        <th style={{ textAlign: "center" }}>{copy.txLineTotal}</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {tx.items.map((it: any, idx: number) => (
+                                                        <tr key={idx}>
+                                                          <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                                                          <td style={{ textAlign: "left" }}>{getProductLabel(it.productId, it.productName)}</td>
+                                                          <td style={{ textAlign: "center" }}>{it.variant || "—"}</td>
+                                                          <td style={{ textAlign: "center" }}><strong>{it.quantity}</strong></td>
+                                                          <td style={{ textAlign: "center" }}>{formatStorePrice(it.unitPrice)}</td>
+                                                          <td style={{ textAlign: "center" }}><strong>{formatStorePrice(it.lineTotal)}</strong></td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+
+                                                <div className="admin-customer-tx-foot">
+                                                  <div className="admin-customer-tx-foot-item">
+                                                    <small>{language === "MN" ? "Буцаасан тоо" : "Returned qty"}</small>
+                                                    <strong>{tx.items.reduce((s: number, it: any) => s + it.quantity, 0)} ш</strong>
+                                                  </div>
+                                                  <div className="admin-customer-tx-foot-item">
+                                                    <small>{copy.txGrandTotal}</small>
+                                                    <strong>{formatStorePrice(tx.totals.grandTotal)}</strong>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
