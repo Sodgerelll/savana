@@ -1202,6 +1202,27 @@
   font-size: var(--fs-lg);
 }
 
+/* Sub-breakdown inside a merged stat card (e.g. individuals vs organizations under one
+   combined count) — resets the uppercase/letter-spacing the card's own label span carries,
+   since this text is a value pair, not a label. */
+.admin-summary-card-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.admin-summary-card-breakdown span {
+  font-size: var(--fs-xs);
+  letter-spacing: normal;
+  text-transform: none;
+  opacity: 0.75;
+}
+
+.admin-summary-card-breakdown b {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
 .admin-summary-grid-sm .admin-summary-card strong {
   font-size: var(--fs-lg);
 }
@@ -3805,6 +3826,85 @@ select.admin-search-input {
 }
 
 /* ── Product filter bar ── */
+
+/* Day/week/month scope — a broader filter than admin-filter-bar below it, since it affects
+   the summary stat cards as well as the table, not just the table. */
+.admin-period-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  width: fit-content;
+  padding: 0.3rem;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1.5px solid rgba(183, 185, 167, 0.5);
+  border-radius: 11px;
+}
+
+.admin-period-toggle-icon {
+  margin: 0 0.3rem;
+  color: rgba(58, 54, 48, 0.5);
+}
+
+.admin-period-toggle-btn {
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(58, 54, 48, 0.7);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-period-toggle-btn:hover {
+  background: rgba(183, 185, 167, 0.18);
+}
+
+.admin-period-toggle-btn-active {
+  background: var(--color-heading);
+  color: #fff;
+}
+
+.admin-period-toggle-btn-active:hover {
+  background: var(--color-heading);
+}
+
+/* The picked calendar day, shown next to the toggle only while "Өдөр" is active. */
+.admin-period-toggle-date {
+  margin-left: 0.15rem;
+  padding: 0.4rem 0.6rem;
+  border: 1.5px solid rgba(183, 185, 167, 0.65);
+  border-radius: 8px;
+  background: #fdfcf9;
+  color: var(--color-heading);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-period-toggle-date:hover {
+  border-color: rgba(140, 130, 80, 0.5);
+  background: #fff;
+}
+
+.admin-period-toggle-date:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(90, 81, 3, 0.08);
+}
+
+/* Clarifies what the picked calendar day means for the active tab — a single day, the week
+   ending on it, or the month it falls in. */
+.admin-period-toggle-hint {
+  padding: 0 0.3rem;
+  font-size: var(--fs-xs);
+  color: rgba(58, 54, 48, 0.55);
+  white-space: nowrap;
+}
 
 .admin-filter-bar {
   display: flex;

@@ -23,7 +23,9 @@
       "Bash(python3)",
       "Bash(python)",
       "Bash(grep -n \"^  const copy\\\\|^  }\\\\s*:\\\\s*{\\\\s*$\\\\|^  };\\\\s*$\\\\|^  const \\\\[activeSection\\\\|^  const navigate\" e:/AI/Projects/savana/src/pages/Account.tsx)",
-      "Bash(python -)"
+      "Bash(python -)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

@@ -1,10 +1,90 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ChevronDown, ChevronUp, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
 import { isSaleSettled } from "../../lib/sales";
 import { hasReturnableQuantity, returnLineKey, returnedQuantities } from "../../lib/returns";
+
+type SalesPeriodFilter = "today" | "week" | "month";
+
+/** Today's date as a local (not UTC) YYYY-MM-DD, suitable for an <input type="date">. */
+function todayDateInputValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+/** This month as YYYY-MM, suitable for an <input type="month">. */
+function currentMonthInputValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The ISO-8601 week (Monday start) containing `date`, as {year, week} — the year of an ISO
+ *  week is the year its Thursday falls in, which can differ from the calendar year at either
+ *  end of December/January. */
+function isoWeekOf(date: Date): { year: number; week: number } {
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const isoDayOfWeek = thursday.getDay() || 7; // Monday=1 .. Sunday=7
+  thursday.setDate(thursday.getDate() + 4 - isoDayOfWeek);
+  const yearStart = new Date(thursday.getFullYear(), 0, 1);
+  const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { year: thursday.getFullYear(), week };
+}
+
+/** This week as YYYY-Www, suitable for an <input type="week">. */
+function currentWeekInputValue(): string {
+  const { year, week } = isoWeekOf(new Date());
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+/** The Monday of ISO week `week` in ISO year `year`. */
+function isoWeekMonday(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4);
+  const jan4IsoDayOfWeek = jan4.getDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - (jan4IsoDayOfWeek - 1));
+  const monday = new Date(week1Monday);
+  monday.setDate(week1Monday.getDate() + (week - 1) * 7);
+  return monday;
+}
+
+/** [start, end) window a sale's createdAt must fall in to count for the period — each period
+ *  reads its own picker value, since "Сар" picks a month, "7 хоног" picks an ISO week, and
+ *  "Өдөр" picks a single day. */
+function periodRange(
+  period: SalesPeriodFilter,
+  selectedDate: string,
+  selectedWeek: string,
+  selectedMonth: string,
+): { start: Date; end: Date } {
+  const now = new Date();
+
+  if (period === "today") {
+    const [y, m, d] = selectedDate.split("-").map(Number);
+    const start = new Date(y || now.getFullYear(), (m || now.getMonth() + 1) - 1, d || now.getDate());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }
+
+  if (period === "week") {
+    const match = /^(\d{4})-W(\d{2})$/.exec(selectedWeek);
+    const fallback = isoWeekOf(now);
+    const year = match ? Number(match[1]) : fallback.year;
+    const week = match ? Number(match[2]) : fallback.week;
+    const start = isoWeekMonday(year, week);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start, end };
+  }
+
+  // month
+  const match = /^(\d{4})-(\d{2})$/.exec(selectedMonth);
+  const year = match ? Number(match[1]) : now.getFullYear();
+  const monthIndex = match ? Number(match[2]) - 1 : now.getMonth();
+  return { start: new Date(year, monthIndex, 1), end: new Date(year, monthIndex + 1, 1) };
+}
 
 export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -12,13 +92,6 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
     language,
     sales,
     salesError,
-    paidSalesCount,
-    deliveredSalesCount,
-    individualSalesCount,
-    organizationSalesCount,
-    salesRevenueTotal,
-    salesReturnedTotal,
-    salesReturnedQuantity,
     saleChannelOptions,
     saleCustomerTypeOptions,
     openSaleModal,
@@ -43,6 +116,10 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
     () => new Map((crmContacts as any[]).map((contact: any) => [contact.id, contact.code])),
     [crmContacts],
   );
+  const [periodFilter, setPeriodFilter] = useState<SalesPeriodFilter>("today");
+  const [selectedDate, setSelectedDate] = useState<string>(todayDateInputValue());
+  const [selectedWeek, setSelectedWeek] = useState<string>(currentWeekInputValue());
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthInputValue());
   const [channelFilter, setChannelFilter] = useState<string>("all");
   const [customerTypeFilter, setCustomerTypeFilter] = useState<string>("all");
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
@@ -50,17 +127,91 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
   // always shows them, this toggle only has an effect below the mobile breakpoint.
   const [summaryOpen, setSummaryOpen] = useState(false);
 
+  // Every stat card and the table itself scope to this — it affects everything on the page,
+  // unlike the channel/customer-type filters below, which only narrow the table.
+  const periodFilteredSales = useMemo(() => {
+    const range = periodRange(periodFilter, selectedDate, selectedWeek, selectedMonth);
+    return (sales as any[]).filter((sale: any) => {
+      if (!sale.createdAt) return false;
+      const createdAt = new Date(sale.createdAt);
+      return !Number.isNaN(createdAt.getTime()) && createdAt >= range.start && createdAt < range.end;
+    });
+  }, [sales, periodFilter, selectedDate, selectedWeek, selectedMonth]);
+
+  const paidSalesCount = useMemo(
+    () => periodFilteredSales.filter((sale: any) => sale.status !== "new").length,
+    [periodFilteredSales],
+  );
+  const deliveredSalesCount = useMemo(
+    () => periodFilteredSales.filter((sale: any) => sale.status === "delivered").length,
+    [periodFilteredSales],
+  );
+  const individualSalesCount = useMemo(
+    () => periodFilteredSales.filter((sale: any) => sale.customer.type === "individual").length,
+    [periodFilteredSales],
+  );
+  const organizationSalesCount = useMemo(
+    () => periodFilteredSales.filter((sale: any) => sale.customer.type === "organization").length,
+    [periodFilteredSales],
+  );
+  const salesRevenueTotal = useMemo(
+    () =>
+      periodFilteredSales.reduce(
+        (sum: number, sale: any) =>
+          sale.status === "new" ? sum : sum + (Number(sale.totals?.grandTotal) || 0),
+        0,
+      ),
+    [periodFilteredSales],
+  );
+  const salesPendingTotal = useMemo(
+    () =>
+      periodFilteredSales.reduce(
+        (sum: number, sale: any) =>
+          sale.status === "new" ? sum + (Number(sale.totals?.grandTotal) || 0) : sum,
+        0,
+      ),
+    [periodFilteredSales],
+  );
+  const salesReturnedTotal = useMemo(
+    () =>
+      periodFilteredSales.reduce(
+        (sum: number, sale: any) =>
+          sum + (sale.returns ?? []).reduce((rSum: number, r: any) => rSum + (Number(r.totalAmount) || 0), 0),
+        0,
+      ),
+    [periodFilteredSales],
+  );
+  const salesReturnedQuantity = useMemo(
+    () =>
+      periodFilteredSales.reduce(
+        (sum: number, sale: any) =>
+          sum +
+          (sale.returns ?? []).reduce(
+            (rSum: number, r: any) => rSum + r.items.reduce((iSum: number, it: any) => iSum + it.quantity, 0),
+            0,
+          ),
+        0,
+      ),
+    [periodFilteredSales],
+  );
+
   const visibleSales = useMemo(
     () =>
-      (sales as any[]).filter((sale: any) => {
+      periodFilteredSales.filter((sale: any) => {
         if (channelFilter !== "all" && sale.channel !== channelFilter) return false;
         if (customerTypeFilter !== "all" && sale.customer.type !== customerTypeFilter) return false;
         return true;
       }),
-    [sales, channelFilter, customerTypeFilter],
+    [periodFilteredSales, channelFilter, customerTypeFilter],
   );
 
-  const filtersActive = channelFilter !== "all" || customerTypeFilter !== "all";
+  const filtersActive =
+    channelFilter !== "all" ||
+    customerTypeFilter !== "all" ||
+    periodFilter !== "today" ||
+    selectedDate !== todayDateInputValue() ||
+    selectedWeek !== currentWeekInputValue() ||
+    selectedMonth !== currentMonthInputValue();
 
   return (
     <>
@@ -79,6 +230,53 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
 
       {salesError && <div className="admin-sync-error">{salesError}</div>}
 
+      <div className="admin-period-toggle">
+        <Calendar size={14} className="admin-period-toggle-icon" />
+        {(
+          [
+            { key: "today", label: mn ? "Өдөр" : "Day" },
+            { key: "week", label: mn ? "7 хоног" : "7 days" },
+            { key: "month", label: mn ? "Сар" : "Month" },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            className={`admin-period-toggle-btn ${periodFilter === option.key ? "admin-period-toggle-btn-active" : ""}`}
+            onClick={() => setPeriodFilter(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+        {periodFilter === "today" && (
+          <input
+            type="date"
+            className="admin-period-toggle-date"
+            value={selectedDate}
+            max={todayDateInputValue()}
+            onChange={(event) => setSelectedDate(event.target.value || todayDateInputValue())}
+          />
+        )}
+        {periodFilter === "week" && (
+          <input
+            type="week"
+            className="admin-period-toggle-date"
+            value={selectedWeek}
+            max={currentWeekInputValue()}
+            onChange={(event) => setSelectedWeek(event.target.value || currentWeekInputValue())}
+          />
+        )}
+        {periodFilter === "month" && (
+          <input
+            type="month"
+            className="admin-period-toggle-date"
+            value={selectedMonth}
+            max={currentMonthInputValue()}
+            onChange={(event) => setSelectedMonth(event.target.value || currentMonthInputValue())}
+          />
+        )}
+      </div>
+
       <button
         type="button"
         className="admin-summary-toggle"
@@ -92,7 +290,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
       <div className={`admin-summary-grid ${summaryOpen ? "admin-summary-grid-open" : ""}`}>
         <div className="admin-summary-card admin-summary-card-compact">
           <span>{mn ? "Нийт борлуулалт" : "Total sales"}</span>
-          <strong>{sales.length}</strong>
+          <strong>{periodFilteredSales.length}</strong>
         </div>
         <div className="admin-summary-card admin-summary-card-compact">
           <span>{mn ? "Төлбөр төлөгдсөн" : "Paid"}</span>
@@ -103,16 +301,24 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
           <strong>{deliveredSalesCount}</strong>
         </div>
         <div className="admin-summary-card admin-summary-card-compact">
-          <span>{mn ? "Хувь хүн" : "Individuals"}</span>
-          <strong>{individualSalesCount}</strong>
+          <span>{mn ? "Харилцагчийн төрөл" : "Customer type"}</span>
+          <strong>{individualSalesCount + organizationSalesCount}</strong>
+          <div className="admin-summary-card-breakdown">
+            <span>
+              {mn ? "Хувь хүн" : "Individuals"}: <b>{individualSalesCount}</b>
+            </span>
+            <span>
+              {mn ? "Байгууллага" : "Organizations"}: <b>{organizationSalesCount}</b>
+            </span>
+          </div>
         </div>
         <div className="admin-summary-card admin-summary-card-compact">
-          <span>{mn ? "Байгууллага" : "Organizations"}</span>
-          <strong>{organizationSalesCount}</strong>
-        </div>
-        <div className="admin-summary-card admin-summary-card-compact">
-          <span>{mn ? "Нийт дүн" : "Revenue"}</span>
+          <span>{mn ? "Төлөгдсөн" : "Paid"}</span>
           <strong>{formatStorePrice(salesRevenueTotal)}</strong>
+        </div>
+        <div className="admin-summary-card admin-summary-card-compact">
+          <span>{mn ? "Хүлээгдэж буй" : "Pending"}</span>
+          <strong>{formatStorePrice(salesPendingTotal)}</strong>
         </div>
         <div className="admin-summary-card admin-summary-card-compact">
           <span>{mn ? "Буцаасан дүн" : "Returned amount"}</span>
@@ -154,6 +360,10 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
               onClick={() => {
                 setChannelFilter("all");
                 setCustomerTypeFilter("all");
+                setPeriodFilter("today");
+                setSelectedDate(todayDateInputValue());
+                setSelectedWeek(currentWeekInputValue());
+                setSelectedMonth(currentMonthInputValue());
               }}
             >
               <X size={14} />
@@ -161,7 +371,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
             </button>
           )}
           <span className="admin-filter-count">
-            {visibleSales.length} / {sales.length} {mn ? "үр дүн" : "results"}
+            {visibleSales.length} / {periodFilteredSales.length} {mn ? "үр дүн" : "results"}
           </span>
         </div>
       </div>
@@ -203,8 +413,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                   >
                     <td>
                       <div className="admin-table-primary">
-                        <strong>{formatAdminDateTime(sale.createdAt, language)}</strong>
-                        <small>{mn ? "Дарж дэлгэрэнгүйг харна" : "Click for details"}</small>
+                        <strong>{formatAdminDateTime(sale.createdAt, language)}</strong>                        
                       </div>
                     </td>
                     <td>

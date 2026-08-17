@@ -985,7 +985,8 @@ export default function Account() {
               },
               {
                 id: "sales",
-                label: "Борлуулалт",              
+                label: "Борлуулалт",
+                description: "Дэлгүүр, мессенжер, утас — онлайн дэлгүүрээс бусад бүх сувгийн борлуулалт.",
                 icon: <ShoppingBag size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
