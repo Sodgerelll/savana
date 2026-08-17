@@ -27,6 +27,7 @@ const Login = lazy(() => import("./pages/Login"));
 const Account = lazy(() => import("./pages/Account"));
 const Checkout = lazy(() => import("./pages/Checkout"));
 const Partnerships = lazy(() => import("./pages/Partnerships"));
+const Legal = lazy(() => import("./pages/Legal"));
 const CustomerListPage = lazy(() => import("./pages/admin/CustomerListPage"));
 const CustomerProfilePage = lazy(() => import("./pages/admin/CustomerProfilePage"));
 
@@ -73,6 +74,10 @@ function AppShell() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/partnerships" element={<Partnerships />} />
             <Route path="/find-us" element={<Navigate to="/contact" replace />} />
+            {/* Meta requires a reachable privacy policy before it will approve the
+                chat app, and the footer has linked to both of these all along. */}
+            <Route path="/privacy" element={<Legal document="privacy" />} />
+            <Route path="/terms" element={<Legal document="terms" />} />
             <Route path="/journal" element={<Journal />} />
             <Route path="/login" element={<Login />} />
             <Route path="/checkout" element={<Checkout />} />

@@ -1,0 +1,82 @@
+/* Privacy policy and terms. Long-form reading, so the column is narrow and the
+   line height generous — the rest of the storefront palette is unchanged. */
+
+.legal-page {
+  background: var(--color-bg, #fefaf6);
+}
+
+.legal-container {
+  max-width: 46rem;
+}
+
+.legal-head {
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(183, 185, 167, 0.55);
+}
+
+.legal-kicker {
+  margin: 0 0 0.5rem;
+  font-size: var(--fs-xs, 0.72rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.legal-head h1 {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-heading, "Petrona", serif);
+  font-size: var(--fs-xl, 2rem);
+  color: var(--color-heading, #151210);
+}
+
+.legal-head p {
+  margin: 0;
+  opacity: 0.7;
+  line-height: 1.6;
+}
+
+.legal-section {
+  margin-bottom: 2rem;
+}
+
+.legal-section h2 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-heading, "Petrona", serif);
+  font-size: var(--fs-md, 1.2rem);
+  color: var(--color-heading, #151210);
+}
+
+.legal-section p {
+  margin: 0 0 0.7rem;
+  line-height: 1.75;
+  color: var(--color-text, #26211d);
+  overflow-wrap: anywhere;
+}
+
+.legal-section p:last-child {
+  margin-bottom: 0;
+}
+
+.legal-section strong {
+  color: var(--color-heading, #151210);
+}
+
+.legal-bullet {
+  padding-left: 1.1rem;
+  position: relative;
+}
+
+.legal-bullet::before {
+  content: "·";
+  position: absolute;
+  left: 0.3rem;
+  color: var(--color-accent, rgb(90, 81, 3));
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .legal-head h1 {
+    font-size: var(--fs-lg, 1.5rem);
+  }
+}
