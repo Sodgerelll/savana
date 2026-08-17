@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
+import { hasReturnableQuantity } from "../../lib/returns";
 
 export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -14,6 +15,7 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
     deliveredOrdersCount,
     guestOrdersCount,
     openOrderModal,
+    openOrderReturnModal,
     openConfirmModal,
     deleteOrder,
     formatAdminDateTime,
@@ -207,6 +209,16 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                         >
                           <Pencil size={15} />
                         </button>
+                        {order.payment.status === "paid" && hasReturnableQuantity(order.items, order.returns ?? []) && (
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-icon-btn-neutral"
+                            onClick={() => openOrderReturnModal(order)}
+                            aria-label={`${language === "MN" ? "Буцаалт" : "Return"} ${order.orderNumber}`}
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
                         {order.source !== "web" && (
                           <button
                             type="button"

@@ -172,6 +172,30 @@ export function buildSaleEntry(params: {
 }
 
 /**
+ * A Sales/Orders return. Unlike the wholesale return above, these buyers carry no running
+ * balance, so what was collected has to come straight back out of the money account it was
+ * paid into instead of reducing a receivable.
+ */
+export function buildSaleReturnEntry(params: {
+  /** Returned value net of VAT — debited to Sales Returns. */
+  returnAmount: number;
+  vatAmount: number;
+  cogsAmount: number;
+  paymentMethod: string;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const returnAmount = round(params.returnAmount);
+  const vatAmount = round(params.vatAmount);
+  const lines = [
+    line(ACCOUNT_CODES.SALES_RETURNS, returnAmount, 0),
+    line(ACCOUNT_CODES.VAT_PAYABLE, vatAmount, 0),
+    line(moneyAccount, 0, returnAmount + vatAmount),
+    ...cogsLines(params.cogsAmount).reverse().map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/**
  * Goods that left stock without a sale — gifts and own use. No money changes hands and
  * no revenue is earned, so the only movement is inventory turning into an expense at cost.
  * Returns an empty entry when the cost is unknown, which the caller skips posting.

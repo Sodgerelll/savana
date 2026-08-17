@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ChevronDown, ChevronUp, Pencil, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
+import { isSaleSettled } from "../../lib/sales";
+import { hasReturnableQuantity, returnLineKey, returnedQuantities } from "../../lib/returns";
 
 export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -19,6 +21,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
     saleCustomerTypeOptions,
     openSaleModal,
     openSaleCreateModal,
+    openSaleReturnModal,
     handleSaleDeleteRequest,
     formatAdminDateTime,
     formatStorePrice,
@@ -184,6 +187,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
               ) : (
                 visibleSales.map((sale: any) => {
                   const isExpanded = expandedSaleId === sale.id;
+                  const saleReturnedQty = returnedQuantities(sale.returns ?? []);
                   return (
                   <Fragment key={sale.id}>
                   <tr
@@ -300,6 +304,19 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                         >
                           <Pencil size={15} />
                         </button>
+                        {isSaleSettled(sale.status) && hasReturnableQuantity(sale.items, sale.returns ?? []) && (
+                          <button
+                            type="button"
+                            className="admin-icon-btn admin-icon-btn-neutral"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openSaleReturnModal(sale);
+                            }}
+                            aria-label={`${mn ? "Буцаалт" : "Return"} ${sale.saleNumber}`}
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="admin-icon-btn"
@@ -349,7 +366,17 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                                         </td>
                                         <td style={{ textAlign: "center" }}>{item.category || "—"}</td>
                                         <td style={{ textAlign: "center" }}>{item.variant || "—"}</td>
-                                        <td style={{ textAlign: "center" }}>{item.quantity}</td>
+                                        <td style={{ textAlign: "center" }}>
+                                          {item.quantity}
+                                          {(() => {
+                                            const returnedQty = saleReturnedQty.get(returnLineKey(item.productId, item.variant)) ?? 0;
+                                            return returnedQty > 0 ? (
+                                              <div style={{ color: "#8f3321", fontSize: "0.72rem" }}>
+                                                {mn ? "Буцаасан" : "Returned"}: {returnedQty}
+                                              </div>
+                                            ) : null;
+                                          })()}
+                                        </td>
                                         <td style={{ textAlign: "center" }}>
                                           {lineDiscount > 0 ? (
                                             <div

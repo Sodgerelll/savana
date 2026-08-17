@@ -13,6 +13,7 @@ vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMoc
 import { onSnapshot } from "firebase/firestore";
 import {
   createSale,
+  createSaleReturn,
   deleteSale,
   saleChannelRequiresAddress,
   subscribeToSales,
@@ -385,6 +386,109 @@ describe("deleteSale", () => {
 
     expect(writtenJournalEntries()).toHaveLength(0);
     expect(firestoreMock.writesFor("sales/sale-1").some((w) => w.op === "delete")).toBe(true);
+  });
+});
+
+// ─── createSaleReturn ──────────────────────────────────────────────────────────
+
+describe("createSaleReturn", () => {
+  function seedSale(overrides: Record<string, unknown> = {}) {
+    firestoreMock.seed("sales/sale-1", {
+      saleNumber: "SL-2026-00001",
+      status: "delivered",
+      channel: "store",
+      paymentMethod: "cash",
+      items: makeSaleInput().items,
+      totals: { subtotal: 18000, shippingFee: 0, grandTotal: 18000, discountTotal: 2000, vatMode: "none", vatAmount: 0 },
+      returns: [],
+      ...overrides,
+    });
+  }
+
+  function saleReturns(): Array<Record<string, unknown>> {
+    const data = firestoreMock.lastWriteData("sales/sale-1");
+    return (data?.returns as Array<Record<string, unknown>>) ?? [];
+  }
+
+  it("restores stock and posts a Sales Returns entry for a full return", async () => {
+    seedProduct(10, { soldCount: 2 });
+    seedSale();
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 2 }], "damaged", "uid-1", "Admin");
+
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 0 });
+
+    const [entry] = writtenJournalEntries();
+    expect(entry.sourceType).toBe("sale");
+    expect(entry.lines).toEqual([
+      { accountCode: "4910", accountName: expect.any(String), debit: 18000, credit: 0 },
+      { accountCode: "1010", accountName: expect.any(String), debit: 0, credit: 18000 },
+    ]);
+
+    expect(saleReturns()).toHaveLength(1);
+    expect(saleReturns()[0]).toMatchObject({ totalAmount: 18000, reason: "damaged", createdByUid: "uid-1" });
+  });
+
+  it("caps a further return at what remains after a prior partial return", async () => {
+    seedProduct(10, { soldCount: 2 });
+    seedSale();
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "one back", "uid-1", "Admin");
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 1 });
+
+    await expect(
+      createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 2 }], "too many", "uid-1", "Admin"),
+    ).rejects.toThrow();
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "the rest", "uid-1", "Admin");
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 0 });
+    expect(saleReturns()).toHaveLength(2);
+  });
+
+  it("rejects returning more than was ever sold", async () => {
+    seedProduct(10, { soldCount: 2 });
+    seedSale();
+
+    await expect(
+      createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 5 }], "too many", "uid-1", "Admin"),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a return against a sale that was never settled", async () => {
+    seedProduct(10, { soldCount: 0 });
+    seedSale({ status: "new" });
+
+    await expect(
+      createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "too soon", "uid-1", "Admin"),
+    ).rejects.toThrow();
+  });
+
+  it("carves VAT out of the returned amount using the sale's own VAT mode", async () => {
+    seedProduct(10, { soldCount: 2 });
+    seedSale({ totals: { subtotal: 18000, shippingFee: 0, grandTotal: 19800, discountTotal: 0, vatMode: "included", vatAmount: 1800 } });
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 2 }], "damaged", "uid-1", "Admin");
+
+    // returnGross = 9000 * 2 = 18000; VAT carved out at 10% "included" = round(18000 - 18000/1.1) = 1636
+    const [entry] = writtenJournalEntries();
+    expect(entry.lines).toEqual([
+      { accountCode: "4910", accountName: expect.any(String), debit: 16364, credit: 0 },
+      { accountCode: "2410", accountName: expect.any(String), debit: 1636, credit: 0 },
+      { accountCode: "1010", accountName: expect.any(String), debit: 0, credit: 18000 },
+    ]);
+  });
+
+  it("reverses the write-off entry, not Sales Returns, for a gift/own-use channel sale", async () => {
+    seedProduct(10, { soldCount: 2, costPrice: 5000 });
+    seedSale({ channel: "gift" });
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 2 }], "unused", "uid-1", "Admin");
+
+    const [entry] = writtenJournalEntries();
+    expect(entry.lines).toEqual([
+      { accountCode: "5900", accountName: expect.any(String), debit: 0, credit: 10000 },
+      { accountCode: "1210", accountName: expect.any(String), debit: 10000, credit: 0 },
+    ]);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   writeBatch,
   type DocumentData,
@@ -16,6 +17,7 @@ import {
   buildGoodsWriteOffEntry,
   buildReversalEntry,
   buildSaleEntry,
+  buildSaleReturnEntry,
   isEmptyEntry,
   type BuiltEntry,
 } from "./accounting/entryBuilders";
@@ -34,7 +36,14 @@ import {
   type ProductStockState,
   type StockMovementRequest,
 } from "./inventory";
-import { calculateVat, VAT_MODE_VALUES, VAT_RATE, type VatMode } from "./vat";
+import { calculateVat, vatCarriedBy, VAT_MODE_VALUES, VAT_RATE, type VatMode } from "./vat";
+import {
+  deserializeReturns,
+  returnLineKey,
+  returnedQuantities,
+  type RetailReturnItem,
+  type RetailReturnRecord,
+} from "./returns";
 import type {
   OrderAddressPayload,
   OrderItemPayload,
@@ -157,6 +166,7 @@ export interface SaleRecord {
   createdByUid: string;
   createdByName: string;
   journalEntryId: string | null;
+  returns: RetailReturnRecord[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -246,6 +256,34 @@ function normalizePaymentMethod(value: unknown): SalePaymentMethod {
   return "cash";
 }
 
+/** Item list of a raw sale document, tolerant of anything malformed stored alongside it. */
+function deserializeSaleItems(value: unknown): SaleItemPayload[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): SaleItemPayload | null => {
+      if (typeof item !== "object" || item === null) {
+        return null;
+      }
+
+      const itemData = item as Record<string, unknown>;
+      return {
+        productId: Number(itemData.productId ?? 0),
+        name: String(itemData.name ?? ""),
+        category: String(itemData.category ?? ""),
+        image: typeof itemData.image === "string" ? itemData.image : null,
+        variant: typeof itemData.variant === "string" ? itemData.variant : null,
+        quantity: Number(itemData.quantity ?? 0),
+        unitPrice: Number(itemData.unitPrice ?? 0),
+        originalUnitPrice: Number(itemData.originalUnitPrice ?? itemData.unitPrice ?? 0),
+        lineTotal: Number(itemData.lineTotal ?? 0),
+      } satisfies SaleItemPayload;
+    })
+    .filter((item): item is SaleItemPayload => item !== null);
+}
+
 function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRecord {
   const data = snapshot.data() as Record<string, unknown>;
   const customerData =
@@ -278,28 +316,7 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
       streetAddress: String(addressData.streetAddress ?? ""),
       additionalAddress: String(addressData.additionalAddress ?? ""),
     },
-    items: Array.isArray(data.items)
-      ? data.items
-          .map((item): SaleItemPayload | null => {
-            if (typeof item !== "object" || item === null) {
-              return null;
-            }
-
-            const itemData = item as Record<string, unknown>;
-            return {
-              productId: Number(itemData.productId ?? 0),
-              name: String(itemData.name ?? ""),
-              category: String(itemData.category ?? ""),
-              image: typeof itemData.image === "string" ? itemData.image : null,
-              variant: typeof itemData.variant === "string" ? itemData.variant : null,
-              quantity: Number(itemData.quantity ?? 0),
-              unitPrice: Number(itemData.unitPrice ?? 0),
-              originalUnitPrice: Number(itemData.originalUnitPrice ?? itemData.unitPrice ?? 0),
-              lineTotal: Number(itemData.lineTotal ?? 0),
-            } satisfies SaleItemPayload;
-          })
-          .filter((item): item is SaleItemPayload => item !== null)
-      : [],
+    items: deserializeSaleItems(data.items),
     totals: {
       subtotal: Number(totalsData.subtotal ?? 0),
       shippingFee: Number(totalsData.shippingFee ?? 0),
@@ -313,6 +330,7 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
     createdByUid: String(data.createdByUid ?? ""),
     createdByName: String(data.createdByName ?? ""),
     journalEntryId: typeof data.journalEntryId === "string" ? data.journalEntryId : null,
+    returns: deserializeReturns(data.returns),
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
@@ -601,6 +619,146 @@ export async function deleteSale(
   states.forEach((state) => writeProductStock(batch, state));
 
   await batch.commit();
+}
+
+/** One line of a return request — the caller only picks a product/variant and a quantity. */
+export interface SaleReturnRequestItem {
+  productId: number;
+  variant: string | null;
+  quantity: number;
+}
+
+/**
+ * Books a full or partial return against a settled sale: the returned units go back onto the
+ * shelf and a return entry (Sales Returns / VAT / money account, COGS reversed) is posted for
+ * just the returned value — never the whole sale, so two partial returns against the same
+ * sale net out correctly. Mirrors `transferService.ts`'s `createReturn`, but a sale/order
+ * buyer carries no running balance, so the money always comes back out of whichever account
+ * the sale was paid into instead of reducing a receivable.
+ */
+export async function createSaleReturn(
+  id: string,
+  requestItems: SaleReturnRequestItem[],
+  reason: string,
+  createdByUid: string,
+  createdByName: string,
+): Promise<string> {
+  const entryNumber = await generateJournalEntryNumber();
+  const returnId = doc(collection(db, SALES_COLLECTION)).id;
+
+  await runTransaction(db, async (t) => {
+    const saleRef = doc(db, SALES_COLLECTION, id);
+    const snap = await t.get(saleRef);
+    if (!snap.exists()) {
+      throw new Error("Борлуулалт олдсонгүй");
+    }
+
+    const data = snap.data() as Record<string, unknown>;
+    const status = normalizeStatus(data.status);
+    if (!isSaleSettled(status)) {
+      throw new Error("Зөвхөн бүртгэгдсэн (төлбөр орсон) борлуулалтыг буцаах боломжтой");
+    }
+
+    const items = deserializeSaleItems(data.items);
+    const existingReturns = deserializeReturns(data.returns);
+    const returned = returnedQuantities(existingReturns);
+
+    const returnItems: RetailReturnItem[] = [];
+    for (const request of requestItems) {
+      if (!(request.quantity > 0)) continue;
+      const original = items.find((item) => item.productId === request.productId && (item.variant ?? null) === request.variant);
+      if (!original) {
+        throw new Error("Энэ борлуулалтад байхгүй барааг буцаах боломжгүй");
+      }
+      const key = returnLineKey(original.productId, original.variant);
+      const remaining = original.quantity - (returned.get(key) ?? 0);
+      if (request.quantity > remaining) {
+        throw new Error(`"${original.name}" барааны буцаах тоо хэтэрсэн байна. Боломжит: ${Math.max(0, remaining)}`);
+      }
+      returnItems.push({
+        productId: original.productId,
+        variant: original.variant,
+        name: original.name,
+        quantity: request.quantity,
+        unitPrice: original.unitPrice,
+      });
+    }
+
+    if (returnItems.length === 0) {
+      throw new Error("Буцаах бараа сонгогдоогүй байна");
+    }
+
+    // Every product read must complete before the first write in this transaction.
+    const states = new Map<number | string, ProductStockState>();
+    for (const item of returnItems) {
+      if (states.has(item.productId)) continue;
+      const productSnap = await t.get(productRef(item.productId));
+      states.set(
+        item.productId,
+        readProductStockState(item.productId, productSnap.exists() ? (productSnap.data() as Record<string, unknown>) : null),
+      );
+    }
+
+    const returnGross = returnItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const vatMode = normalizeVatMode((data.totals as Record<string, unknown> | undefined)?.vatMode);
+    const vatAmount = vatCarriedBy(returnGross, vatMode);
+    const returnNet = returnGross - vatAmount;
+
+    const movements: StockMovementRequest[] = returnItems.map((item) => ({
+      productId: item.productId,
+      variant: item.variant,
+      quantity: item.quantity,
+    }));
+    const cogsAmount = cogsForMovements(states, movements);
+
+    for (const movement of movements) {
+      const state = states.get(movement.productId);
+      if (!state) continue;
+      applyStockMovement(state, { variant: movement.variant, quantity: -movement.quantity }, { validate: false });
+    }
+
+    const channel = normalizeChannel(data.channel);
+    const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+    const builtEntry = saleChannelEarnsRevenue(channel)
+      ? buildSaleReturnEntry({ returnAmount: returnNet, vatAmount, cogsAmount, paymentMethod })
+      : buildReversalEntry(buildGoodsWriteOffEntry({ cogsAmount }).lines);
+
+    const saleNumber = String(data.saleNumber ?? id);
+    let journalEntryId: string | null = null;
+    if (!isEmptyEntry(builtEntry)) {
+      const entryRef = postJournalEntry(t, entryNumber, builtEntry, {
+        sourceType: "sale",
+        sourceId: id,
+        sourceNumber: saleNumber,
+        description: `Буцаалт: ${saleNumber}`,
+        createdBy: createdByUid,
+        createdByName,
+      });
+      journalEntryId = entryRef.id;
+    }
+
+    const returnRecord: RetailReturnRecord = {
+      id: returnId,
+      items: returnItems,
+      subtotal: returnNet,
+      vatAmount,
+      totalAmount: returnGross,
+      reason,
+      journalEntryId,
+      createdByUid,
+      createdByName,
+      createdAt: new Date().toISOString(),
+    };
+
+    t.update(saleRef, {
+      returns: [...existingReturns, returnRecord],
+      updatedAt: serverTimestamp(),
+    });
+
+    states.forEach((state) => writeProductStock(t, state));
+  });
+
+  return returnId;
 }
 
 export function subscribeToSales({

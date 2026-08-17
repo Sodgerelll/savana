@@ -19,12 +19,22 @@ import { db } from "./firebase";
 import { documentNumberFromId } from "./documentNumbers";
 import {
   applyStockMovement,
+  cogsForMovements,
   productRef,
   readProductStockState,
   writeProductStock,
   type ProductStockState,
 } from "./inventory";
-import { normalizeVatMode, type VatMode } from "./vat";
+import { normalizeVatMode, vatCarriedBy, type VatMode } from "./vat";
+import { buildSaleReturnEntry, isEmptyEntry } from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
+import {
+  deserializeReturns,
+  returnLineKey,
+  returnedQuantities,
+  type RetailReturnItem,
+  type RetailReturnRecord,
+} from "./returns";
 
 export const ORDERS_COLLECTION = "orders";
 export const ORDER_SCHEMA_VERSION = 1;
@@ -156,6 +166,7 @@ export interface OrderRecord {
   items: OrderItemPayload[];
   totals: OrderTotalsPayload;
   payment: OrderPaymentPayload;
+  returns: RetailReturnRecord[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -351,6 +362,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
       ...(typeof paymentData.bonumTerminalId === "string" && { bonumTerminalId: paymentData.bonumTerminalId }),
       ...(typeof paymentData.bonumAmount === "number" && { bonumAmount: paymentData.bonumAmount }),
     },
+    returns: deserializeReturns(data.returns),
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
@@ -643,6 +655,143 @@ export async function updateOrderByAdmin(orderId: string, input: UpdateOrderAdmi
   });
 
   return nextPayment;
+}
+
+/** One line of a return request — the caller only picks a product/variant and a quantity. */
+export interface OrderReturnRequestItem {
+  productId: number;
+  variant: string | null;
+  quantity: number;
+}
+
+/**
+ * Books a full or partial return against a paid order. Mirrors `createSaleReturn` in
+ * `src/lib/sales.ts` — the two item shapes are identical, only the eligibility check and the
+ * collection differ: an order is returnable once it has been paid (and therefore has taken
+ * stock and money), regardless of its delivery status.
+ */
+export async function createOrderReturn(
+  orderId: string,
+  requestItems: OrderReturnRequestItem[],
+  reason: string,
+  createdByUid: string,
+  createdByName: string,
+): Promise<string> {
+  const entryNumber = await generateJournalEntryNumber();
+  const returnId = doc(collection(db, ORDERS_COLLECTION)).id;
+
+  await runTransaction(db, async (t) => {
+    const orderRef = doc(db, ORDERS_COLLECTION, orderId);
+    const snap = await t.get(orderRef);
+    if (!snap.exists()) {
+      throw new Error("Захиалга олдсонгүй");
+    }
+
+    const data = snap.data() as Record<string, unknown>;
+    const paymentData =
+      typeof data.payment === "object" && data.payment !== null ? (data.payment as Record<string, unknown>) : {};
+    if (normalizePaymentStatus(paymentData.status) !== "paid") {
+      throw new Error("Зөвхөн төлбөр төлөгдсөн захиалгыг буцаах боломжтой");
+    }
+
+    const items = deserializeOrderItems(data.items);
+    const existingReturns = deserializeReturns(data.returns);
+    const returned = returnedQuantities(existingReturns);
+
+    const returnItems: RetailReturnItem[] = [];
+    for (const request of requestItems) {
+      if (!(request.quantity > 0)) continue;
+      const original = items.find((item) => item.productId === request.productId && (item.variant ?? null) === request.variant);
+      if (!original) {
+        throw new Error("Энэ захиалгад байхгүй барааг буцаах боломжгүй");
+      }
+      const key = returnLineKey(original.productId, original.variant);
+      const remaining = original.quantity - (returned.get(key) ?? 0);
+      if (request.quantity > remaining) {
+        throw new Error(`"${original.name}" барааны буцаах тоо хэтэрсэн байна. Боломжит: ${Math.max(0, remaining)}`);
+      }
+      returnItems.push({
+        productId: original.productId,
+        variant: original.variant,
+        name: original.name,
+        quantity: request.quantity,
+        unitPrice: original.unitPrice,
+      });
+    }
+
+    if (returnItems.length === 0) {
+      throw new Error("Буцаах бараа сонгогдоогүй байна");
+    }
+
+    // Every product read must complete before the first write in this transaction.
+    const states = new Map<number | string, ProductStockState>();
+    for (const item of returnItems) {
+      if (states.has(item.productId)) continue;
+      const productSnap = await t.get(productRef(item.productId));
+      states.set(
+        item.productId,
+        readProductStockState(item.productId, productSnap.exists() ? (productSnap.data() as Record<string, unknown>) : null),
+      );
+    }
+
+    const returnGross = returnItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const totalsData = typeof data.totals === "object" && data.totals !== null ? (data.totals as Record<string, unknown>) : {};
+    const vatAmount = vatCarriedBy(returnGross, normalizeVatMode(totalsData.vatMode));
+    const returnNet = returnGross - vatAmount;
+
+    for (const item of returnItems) {
+      const state = states.get(item.productId);
+      if (!state) continue;
+      applyStockMovement(state, { variant: item.variant, quantity: -item.quantity }, { validate: false });
+    }
+    const cogsAmount = cogsForMovements(
+      states,
+      returnItems.map((item) => ({ productId: item.productId, variant: item.variant, quantity: item.quantity })),
+    );
+
+    const orderNumber = String(data.orderNumber ?? orderId);
+    const builtEntry = buildSaleReturnEntry({
+      returnAmount: returnNet,
+      vatAmount,
+      cogsAmount,
+      paymentMethod: normalizePaymentMethod(paymentData.method),
+    });
+
+    let journalEntryId: string | null = null;
+    if (!isEmptyEntry(builtEntry)) {
+      const entryRef = postJournalEntry(t, entryNumber, builtEntry, {
+        sourceType: "order",
+        sourceId: orderId,
+        sourceNumber: orderNumber,
+        description: `Буцаалт: ${orderNumber}`,
+        createdBy: createdByUid,
+        createdByName,
+      });
+      journalEntryId = entryRef.id;
+    }
+
+    const returnRecord: RetailReturnRecord = {
+      id: returnId,
+      items: returnItems,
+      subtotal: returnNet,
+      vatAmount,
+      totalAmount: returnGross,
+      reason,
+      journalEntryId,
+      createdByUid,
+      createdByName,
+      createdAt: new Date().toISOString(),
+    };
+
+    t.update(orderRef, {
+      returns: [...existingReturns, returnRecord],
+      updatedAt: serverTimestamp(),
+    });
+
+    states.forEach((state) => writeProductStock(t, state));
+  });
+
+  return returnId;
 }
 
 export function subscribeToOrders({

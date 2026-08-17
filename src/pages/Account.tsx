@@ -60,6 +60,7 @@ import {
   type ChatSettingsRecord,
 } from "../lib/chat/types";
 import {
+  createOrderReturn,
   deleteOrder,
   subscribeToOrders,
   subscribeToUserOrders,
@@ -71,6 +72,7 @@ import {
 import {
   calculateSaleVat,
   createSale,
+  createSaleReturn,
   deleteSale,
   subscribeToSales,
   updateSale,
@@ -81,6 +83,7 @@ import {
   type SaleStatus,
   type SaleVatMode,
 } from "../lib/sales";
+import { ReturnModal, type ReturnModalState, type ReturnRequestItem } from "./admin/ReturnModal";
 import { DEFAULT_ADDRESS_REGION } from "../lib/checkoutAddress";
 import {
   DEFAULT_COLLECTION_GRADIENT,
@@ -568,6 +571,9 @@ export default function Account() {
   const [discountModal, setDiscountModal] = useState<DiscountModalState | null>(null);
   const [orderModal, setOrderModal] = useState<OrderModalState | null>(null);
   const [saleModal, setSaleModal] = useState<SaleModalState | null>(null);
+  const [returnModal, setReturnModal] = useState<ReturnModalState | null>(null);
+  const [returnModalSaving, setReturnModalSaving] = useState(false);
+  const [returnModalError, setReturnModalError] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [confirmModalLoading, setConfirmModalLoading] = useState(false);
   const [confirmModalError, setConfirmModalError] = useState<string | null>(null);
@@ -2978,6 +2984,51 @@ export default function Account() {
     });
   };
 
+  const openSaleReturnModal = (sale: SaleRecord) => {
+    setReturnModalError(null);
+    setReturnModal({ kind: "sale", id: sale.id, number: sale.saleNumber, items: sale.items, returns: sale.returns ?? [] });
+  };
+
+  const openOrderReturnModal = (order: OrderRecord) => {
+    setReturnModalError(null);
+    setReturnModal({ kind: "order", id: order.id, number: order.orderNumber, items: order.items, returns: order.returns ?? [] });
+  };
+
+  const closeReturnModal = () => {
+    if (returnModalSaving) return;
+    setReturnModal(null);
+    setReturnModalError(null);
+  };
+
+  const submitReturn = async (items: ReturnRequestItem[], reason: string) => {
+    if (!returnModal) return;
+    setReturnModalSaving(true);
+    setReturnModalError(null);
+
+    try {
+      const createdByUid = user?.uid ?? "";
+      const createdByName = profile?.displayName ?? user?.email ?? "";
+
+      if (returnModal.kind === "sale") {
+        await createSaleReturn(returnModal.id, items, reason, createdByUid, createdByName);
+      } else {
+        await createOrderReturn(returnModal.id, items, reason, createdByUid, createdByName);
+      }
+
+      setReturnModal(null);
+    } catch (error) {
+      setReturnModalError(
+        error instanceof Error
+          ? error.message
+          : language === "MN"
+            ? "Буцаалтыг хадгалж чадсангүй."
+            : "Unable to save the return.",
+      );
+    } finally {
+      setReturnModalSaving(false);
+    }
+  };
+
   const handleOrderCustomerChange =
     (field: keyof OrderRecord["customer"]) =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -3453,6 +3504,8 @@ export default function Account() {
     openOrderModal,
     openSaleModal,
     openSaleCreateModal,
+    openSaleReturnModal,
+    openOrderReturnModal,
     setCustomerModal,
     setTransactionModal,
     setPackagingModal,
@@ -3922,6 +3975,19 @@ export default function Account() {
       </div>
 
       <AdminModals ctx={adminCtx} />
+
+      {returnModal && (
+        <ReturnModal
+          state={returnModal}
+          language={language}
+          saving={returnModalSaving}
+          error={returnModalError}
+          onClose={closeReturnModal}
+          onSubmit={submitReturn}
+          formatStorePrice={formatStorePrice}
+          formatAdminDateTime={formatAdminDateTime}
+        />
+      )}
     </div>
   );
 }

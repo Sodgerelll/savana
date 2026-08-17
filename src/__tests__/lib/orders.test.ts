@@ -11,12 +11,32 @@ vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMoc
 
 import { onSnapshot } from "firebase/firestore";
 import {
+  createOrderReturn,
   registerOrderContact,
   subscribeToOrders,
   updateOrderByAdmin,
   type OrderPaymentPayload,
   type OrderRecord,
 } from "../../lib/orders";
+
+interface WrittenJournalLine {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+}
+
+interface WrittenJournalEntry {
+  sourceType?: string;
+  sourceNumber?: string;
+  lines?: WrittenJournalLine[];
+}
+
+function writtenJournalEntries(): WrittenJournalEntry[] {
+  return firestoreMock.writes
+    .filter((write) => write.op === "set" && write.data && "lines" in write.data)
+    .map((write) => write.data as WrittenJournalEntry);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -153,6 +173,96 @@ describe("updateOrderByAdmin", () => {
     });
 
     expect(firestoreMock.writesFor("products/10")).toHaveLength(0);
+  });
+});
+
+// ─── createOrderReturn ─────────────────────────────────────────────────────────
+
+describe("createOrderReturn", () => {
+  const paidPayment: OrderPaymentPayload = {
+    method: "cash",
+    provider: "cash",
+    status: "paid",
+    amount: 18000,
+    qrPayload: "",
+    invoiceId: null,
+    paidAt: "2026-08-12T00:00:00.000Z",
+  };
+
+  function seedOrder(overrides: Record<string, unknown> = {}) {
+    firestoreMock.seed("orders/order-1", {
+      orderNumber: "ORD-1",
+      stockApplied: true,
+      items: [
+        { productId: 10, name: "Soap", category: "soap", image: null, variant: null, quantity: 2, unitPrice: 9000, originalUnitPrice: 9000, lineTotal: 18000 },
+      ],
+      totals: { subtotal: 18000, shippingFee: 0, grandTotal: 18000, discountTotal: 0, vatMode: "none", vatAmount: 0 },
+      payment: paidPayment,
+      returns: [],
+      ...overrides,
+    });
+  }
+
+  function orderReturns(): Array<Record<string, unknown>> {
+    const data = firestoreMock.lastWriteData("orders/order-1");
+    return (data?.returns as Array<Record<string, unknown>>) ?? [];
+  }
+
+  it("restores stock and posts a Sales Returns entry for a full return", async () => {
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 2, variants: null });
+    seedOrder();
+
+    await createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 2 }], "damaged", "uid-1", "Admin");
+
+    expect(firestoreMock.lastWriteData("products/10")).toMatchObject({ soldCount: 0 });
+
+    const [entry] = writtenJournalEntries();
+    expect(entry.sourceType).toBe("order");
+    expect(entry.lines).toEqual([
+      { accountCode: "4910", accountName: expect.any(String), debit: 18000, credit: 0 },
+      { accountCode: "1010", accountName: expect.any(String), debit: 0, credit: 18000 },
+    ]);
+    expect(orderReturns()).toHaveLength(1);
+  });
+
+  it("credits the Bonum clearing account back for an online order", async () => {
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 2, variants: null });
+    seedOrder({ payment: { ...paidPayment, method: "bonum", provider: "bonum" } });
+
+    await createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 1 }], "damaged", "uid-1", "Admin");
+
+    expect(writtenJournalEntries()[0].lines?.[1]).toMatchObject({ accountCode: "1030", credit: 9000 });
+  });
+
+  it("rejects a return against an order that was never paid", async () => {
+    seedOrder({ payment: { ...paidPayment, status: "pending" } });
+
+    await expect(
+      createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 1 }], "too soon", "uid-1", "Admin"),
+    ).rejects.toThrow();
+  });
+
+  it("rejects returning more than the order ever shipped", async () => {
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 2, variants: null });
+    seedOrder();
+
+    await expect(
+      createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 5 }], "too many", "uid-1", "Admin"),
+    ).rejects.toThrow();
+  });
+
+  it("caps a further return at what remains after a prior partial return", async () => {
+    firestoreMock.seed("products/10", { totalStock: 100, soldCount: 2, variants: null });
+    seedOrder();
+
+    await createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 1 }], "one back", "uid-1", "Admin");
+    await expect(
+      createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 2 }], "too many", "uid-1", "Admin"),
+    ).rejects.toThrow();
+
+    await createOrderReturn("order-1", [{ productId: 10, variant: null, quantity: 1 }], "the rest", "uid-1", "Admin");
+    expect(firestoreMock.lastWriteData("products/10")).toMatchObject({ soldCount: 0 });
+    expect(orderReturns()).toHaveLength(2);
   });
 });
 
