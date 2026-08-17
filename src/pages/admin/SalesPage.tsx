@@ -46,6 +46,9 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
   const [channelFilter, setChannelFilter] = useState<string>("all");
   const [customerTypeFilter, setCustomerTypeFilter] = useState<string>("all");
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
+  // Collapsed by default on phones, where 8 stat cards eat the whole first screen — desktop
+  // always shows them, this toggle only has an effect below the mobile breakpoint.
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const visibleSales = useMemo(
     () =>
@@ -64,12 +67,7 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
       <div className="admin-topbar">
         <div>
           <p className="admin-kicker">{mn ? "Борлуулалт" : "Sales"}</p>
-          <h1>{mn ? "Борлуулалтын бүртгэл" : "Sales register"}</h1>
-          <p>
-            {mn
-              ? "Дэлгүүр, мессенжер, утас гэх мэт онлайнаас бусад бүх сувгийн борлуулалт."
-              : "Every sale made outside the online store — walk-in, Messenger, phone and more."}
-          </p>
+          <h1>{mn ? "Борлуулалтын бүртгэл" : "Sales register"}</h1>          
         </div>
         <div className="admin-topbar-actions">
           <button type="button" className="btn btn-primary" onClick={openSaleCreateModal}>
@@ -81,7 +79,17 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
 
       {salesError && <div className="admin-sync-error">{salesError}</div>}
 
-      <div className="admin-summary-grid">
+      <button
+        type="button"
+        className="admin-summary-toggle"
+        onClick={() => setSummaryOpen((prev) => !prev)}
+        aria-expanded={summaryOpen}
+      >
+        <span>{mn ? "Тойм үзүүлэлт" : "Summary"}</span>
+        {summaryOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      <div className={`admin-summary-grid ${summaryOpen ? "admin-summary-grid-open" : ""}`}>
         <div className="admin-summary-card admin-summary-card-compact">
           <span>{mn ? "Нийт борлуулалт" : "Total sales"}</span>
           <strong>{sales.length}</strong>
@@ -161,36 +169,25 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
       <div className="admin-data-card">
         <div className="admin-data-card-head">
           <div>
-            <h2>{mn ? "Борлуулалт" : "Sales"}</h2>
-            <p>
-              {mn
-                ? "Мөр дээр дарж борлуулсан бүтээгдэхүүний жагсаалтыг харна."
-                : "Click a row to see the products sold in that sale."}
-            </p>
+            <h2>{mn ? "Борлуулалт" : "Sales"}</h2>            
           </div>
         </div>
         <div className="admin-data-table-wrap">
-          <table className="admin-data-table admin-orders-table">
+          <table className="admin-data-table">
             <thead>
               <tr>
-                <th>{mn ? "Борлуулалт" : "Sale"}</th>
                 <th>{mn ? "Үүссэн хугацаа" : "Created"}</th>
-                <th>{mn ? "Суваг" : "Channel"}</th>
-                <th>{mn ? "Харилцагчийн төрөл" : "Customer type"}</th>
                 <th>{copy.status}</th>
-                <th>{mn ? "Бараа" : "Items"}</th>
                 <th>{copy.paymentLabel}</th>
                 <th>{mn ? "Нийт дүн" : "Total"}</th>
-                <th>{mn ? "Харилцагч" : "Customer"}</th>
-                <th>{mn ? "Утас" : "Phone"}</th>
                 <th style={{ width: "2.5rem" }}></th>
-                <th className="admin-table-sticky-action">{copy.actions}</th>
+                <th>{copy.actions}</th>
               </tr>
             </thead>
             <tbody>
               {visibleSales.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="admin-table-empty">
+                  <td colSpan={6} className="admin-table-empty">
                     {mn ? "Борлуулалт бүртгэгдээгүй байна." : "No sales registered yet."}
                   </td>
                 </tr>
@@ -206,28 +203,8 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                   >
                     <td>
                       <div className="admin-table-primary">
-                        <strong>{sale.saleNumber}</strong>
-                        <small>{mn ? "Дарж дэлгэрэнгүйг харна" : "Click for details"}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
                         <strong>{formatAdminDateTime(sale.createdAt, language)}</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <strong>{getSaleChannelLabel(sale.channel, language)}</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <strong>{getSaleCustomerTypeLabel(sale.customer.type, language)}</strong>
-                        {sale.customer.type === "organization" && sale.customer.registrationNumber && (
-                          <small>
-                            {mn ? "РД" : "Reg."}: {sale.customer.registrationNumber}
-                          </small>
-                        )}
+                        <small>{mn ? "Дарж дэлгэрэнгүйг харна" : "Click for details"}</small>
                       </div>
                     </td>
                     <td>
@@ -239,31 +216,22 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                     </td>
                     <td>
                       <div className="admin-table-primary">
-                        <strong>
-                          {mn
-                            ? `${sale.items.length} нэр төрөл`
-                            : `${sale.items.length} ${sale.items.length === 1 ? "product" : "products"}`}
+                        <strong
+                          style={{
+                            fontSize: "var(--fs-md)",
+                            color: sale.status === "new" ? "#c2760c" : "#2f7a4a",
+                          }}
+                        >
+                          {sale.status === "new"
+                            ? mn ? "Хүлээгдэж буй" : "Pending"
+                            : mn ? "Төлөгдсөн" : "Paid"}
                         </strong>
                         <small>
-                          {mn
-                            ? `Нийт ${getOrderTotalQuantity(sale)} ширхэг`
-                            : `Total ${getOrderTotalQuantity(sale)} pcs`}
-                        </small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <strong>
                           {sale.paymentMethod === "cash"
                             ? mn ? "Бэлэн мөнгө" : "Cash"
                             : sale.paymentMethod === "bank_transfer"
                             ? mn ? "Банкны шилжүүлэг" : "Bank transfer"
                             : "Bonum"}
-                        </strong>
-                        <small>
-                          {sale.status === "new"
-                            ? mn ? "Хүлээгдэж буй" : "Pending"
-                            : mn ? "Төлөгдсөн" : "Paid"}
                         </small>
                       </div>
                     </td>
@@ -282,26 +250,10 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                         )}
                       </div>
                     </td>
-                    <td>
-                      <div className="admin-table-primary admin-table-cell-wrap">
-                        <strong>{getSaleCustomerName(sale) || "-"}</strong>
-                        {sale.customer.type === "organization" && sale.customer.fullName && (
-                          <small>{sale.customer.fullName}</small>
-                        )}
-                        {contactCodeById.get(sale.customer.contactId) && (
-                          <small>{contactCodeById.get(sale.customer.contactId)}</small>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <strong>{sale.customer.phoneNumber || "-"}</strong>
-                      </div>
-                    </td>
                     <td className="admin-td-center">
                       {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </td>
-                    <td className="admin-table-sticky-action">
+                    <td>
                       <div className="admin-table-actions">
                         <button
                           type="button"
@@ -343,8 +295,55 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                   </tr>
                   {isExpanded && (
                     <tr className="admin-product-expand-row">
-                      <td colSpan={12}>
+                      <td colSpan={6}>
                         <div className="admin-product-expand">
+                          <div className="admin-product-expand-stats">
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Борлуулалт" : "Sale"}</small>
+                              <strong>{sale.saleNumber}</strong>
+                            </div>
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Суваг" : "Channel"}</small>
+                              <strong>{getSaleChannelLabel(sale.channel, language)}</strong>
+                            </div>
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Харилцагчийн төрөл" : "Customer type"}</small>
+                              <strong>{getSaleCustomerTypeLabel(sale.customer.type, language)}</strong>
+                              {sale.customer.type === "organization" && sale.customer.registrationNumber && (
+                                <small>
+                                  {mn ? "РД" : "Reg."}: {sale.customer.registrationNumber}
+                                </small>
+                              )}
+                            </div>
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Бараа" : "Items"}</small>
+                              <strong>
+                                {mn
+                                  ? `${sale.items.length} нэр төрөл`
+                                  : `${sale.items.length} ${sale.items.length === 1 ? "product" : "products"}`}
+                              </strong>
+                              <small>
+                                {mn
+                                  ? `Нийт ${getOrderTotalQuantity(sale)} ширхэг`
+                                  : `Total ${getOrderTotalQuantity(sale)} pcs`}
+                              </small>
+                            </div>
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Харилцагч" : "Customer"}</small>
+                              <strong>{getSaleCustomerName(sale) || "-"}</strong>
+                              {sale.customer.type === "organization" && sale.customer.fullName && (
+                                <small>{sale.customer.fullName}</small>
+                              )}
+                              {contactCodeById.get(sale.customer.contactId) && (
+                                <small>{contactCodeById.get(sale.customer.contactId)}</small>
+                              )}
+                            </div>
+                            <div className="admin-expand-stat">
+                              <small>{mn ? "Утас" : "Phone"}</small>
+                              <strong>{sale.customer.phoneNumber || "-"}</strong>
+                            </div>
+                          </div>
+
                           <div className="admin-product-expand-section">
                             <div className="admin-expand-sales-table-wrap">
                               <table className="admin-expand-sales-table" style={{ textAlign: "center" }}>

@@ -78,6 +78,7 @@ import {
   updateSale,
   type SaleChannel,
   type SaleCustomerPayload,
+  type SaleDiscountType,
   type SalePaymentMethod,
   type SaleRecord,
   type SaleStatus,
@@ -344,6 +345,9 @@ interface SaleDraft {
   shippingFee: number;
   /** Whether the 10% НӨАТ sits inside the typed prices, on top of them, or not at all. */
   vatMode: SaleVatMode;
+  /** A manual, whole-sale discount typed at checkout — how it was entered, and the raw value. */
+  discountType: SaleDiscountType;
+  discountValue: number;
 }
 
 interface SaleModalState {
@@ -981,8 +985,7 @@ export default function Account() {
               },
               {
                 id: "sales",
-                label: "Борлуулалт",
-                description: "Дэлгүүр, мессенжер, утас — онлайнаас бусад бүх борлуулалт.",
+                label: "Борлуулалт",              
                 icon: <ShoppingBag size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
@@ -2739,6 +2742,8 @@ export default function Account() {
     shippingFee: 0,
     // Retail prices in the catalog are quoted VAT-inclusive, so that is the default here.
     vatMode: "included",
+    discountType: "amount",
+    discountValue: 0,
   });
 
   const openSaleCreateModal = () => {
@@ -2762,6 +2767,8 @@ export default function Account() {
         items: previous.items.map((item) => ({ ...item })),
         shippingFee: previous.totals.shippingFee,
         vatMode: previous.totals.vatMode ?? "none",
+        discountType: previous.totals.discountType ?? "amount",
+        discountValue: previous.totals.discountValue ?? 0,
       },
     });
     setSaleModalError(null);
@@ -2814,22 +2821,32 @@ export default function Account() {
       return;
     }
 
-    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
-    const discountTotal = items.reduce(
-      (sum, item) => sum + Math.max(0, (item.originalUnitPrice ?? item.unitPrice) - item.unitPrice) * item.quantity,
-      0,
+    const rawSubtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    // Хөнгөлөлт: a manual, whole-sale discount typed at checkout — either a flat ₮ amount or
+    // a percent of the goods total — separate from any per-product catalogue discount, which
+    // is already baked into item.unitPrice above.
+    const discountValue = Math.max(0, draft.discountValue || 0);
+    const discountTotal = Math.min(
+      rawSubtotal,
+      draft.discountType === "percent"
+        ? Math.round((rawSubtotal * Math.min(100, discountValue)) / 100)
+        : Math.round(discountValue),
     );
+    const subtotal = Math.max(0, rawSubtotal - discountTotal);
     const shippingFee = Math.max(0, Math.round(draft.shippingFee));
-    // НӨАТ is charged on the goods only — delivery is billed at cost and stays outside it.
+    // НӨАТ is charged on the goods only, after the discount — delivery is billed at cost and
+    // stays outside it, and a discounted sale is never taxed on the pre-discount amount.
     const vatAmount = calculateSaleVat(subtotal, draft.vatMode);
     const grandTotal = subtotal + shippingFee + (draft.vatMode === "added" ? vatAmount : 0);
     const totals = {
-      subtotal,
+      subtotal: rawSubtotal,
       shippingFee,
       grandTotal,
       discountTotal,
       vatMode: draft.vatMode,
       vatAmount,
+      discountType: draft.discountType,
+      discountValue,
     };
 
     setSavingSale(true);

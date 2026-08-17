@@ -1152,6 +1152,12 @@
   gap: 1rem;
 }
 
+/* Collapse/expand affordance for the stat cards — only shown on phones (see the 900px
+   query below); on desktop the grid is always visible and this button never renders. */
+.admin-summary-toggle {
+  display: none;
+}
+
 .admin-summary-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1228,6 +1234,30 @@
 
 .admin-data-table-wrap {
   overflow-x: auto;
+}
+
+/* An always-visible, thick horizontal scrollbar — used where a wide item grid inside a
+   modal (the transaction/transfer editor's products table) needs its scroll affordance to
+   be obvious rather than the thin, hover-only bar the platform default gives it. */
+.admin-data-table-wrap-scrollbar-visible {
+  scrollbar-width: auto;
+  scrollbar-color: #a89f8c #ece8de;
+  padding-bottom: 6px;
+}
+.admin-data-table-wrap-scrollbar-visible::-webkit-scrollbar {
+  height: 16px;
+}
+.admin-data-table-wrap-scrollbar-visible::-webkit-scrollbar-track {
+  background: #ece8de;
+  border-radius: 8px;
+}
+.admin-data-table-wrap-scrollbar-visible::-webkit-scrollbar-thumb {
+  background: #a89f8c;
+  border-radius: 8px;
+  border: 3px solid #ece8de;
+}
+.admin-data-table-wrap-scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: #8f8571;
 }
 
 /* Tall lists: cap at roughly 20 rows and scroll the rest, keeping the header pinned. */
@@ -2384,6 +2414,112 @@
   color: #3a3630;
 }
 
+/* Item picker inside the sale modal — a stacked card per line instead of a table, so adding
+   a product on a phone never needs horizontal scrolling or a cramped table-cell input. */
+.admin-sale-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-sale-item-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1.5px solid rgba(183, 185, 167, 0.55);
+  border-radius: 12px;
+  background: #fdfcf9;
+}
+
+.admin-sale-item-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-sale-item-index {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(58, 54, 48, 0.55);
+  font-weight: 600;
+}
+
+.admin-sale-item-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-sale-item-card-row .admin-field {
+  flex: 1 1 9rem;
+  min-width: 9rem;
+}
+
+/* Big tap targets either side of the number — easier to hit accurately on a phone than
+   typing into a bare <input type="number">. */
+.admin-qty-stepper {
+  display: flex;
+  align-items: stretch;
+  border: 1.5px solid rgba(183, 185, 167, 0.75);
+  border-radius: 9px;
+  background: #fdfcf9;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.admin-qty-stepper button {
+  min-width: 2.75rem;
+  border: none;
+  background: #f0ede4;
+  color: var(--color-heading);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.admin-qty-stepper button:hover:not(:disabled) {
+  background: #e5e0d3;
+}
+
+.admin-qty-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.admin-qty-stepper input {
+  width: 3.5rem;
+  border: none;
+  border-left: 1.5px solid rgba(183, 185, 167, 0.55);
+  border-right: 1.5px solid rgba(183, 185, 167, 0.55);
+  text-align: center;
+  font-size: var(--fs-base);
+  padding: 0.6rem 0.25rem;
+  -moz-appearance: textfield;
+}
+
+.admin-qty-stepper input::-webkit-inner-spin-button,
+.admin-qty-stepper input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.admin-sale-item-card-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.6rem;
+  border-top: 1px dashed #e8e4dc;
+  font-size: var(--fs-sm);
+  color: #8a8477;
+}
+
+.admin-sale-item-card-total strong {
+  font-size: var(--fs-md);
+  color: #3a3630;
+}
+
 .admin-customer-tx-note {
   font-size: var(--fs-sm);
   color: #6b6658;
@@ -3145,6 +3281,31 @@
   .admin-shell,
   .admin-shell-collapsed {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-summary-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.85rem 1.1rem;
+    margin-bottom: 0.85rem;
+    border: 1px solid rgba(183, 185, 167, 0.65);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.76);
+    color: var(--color-heading);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Collapsed by default: the grid only renders once admin-summary-grid-open is added. */
+  .admin-summary-grid {
+    display: none;
+  }
+
+  .admin-summary-grid.admin-summary-grid-open {
+    display: grid;
   }
 
   /* Off-canvas drawer sidebar */

@@ -15,7 +15,7 @@ import {
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
 import { SHIPPING_FEE } from "../../lib/orders";
-import { calculateSaleVat, saleChannelRequiresAddress } from "../../lib/sales";
+import { calculateSaleVat, saleChannelRequiresAddress, type SaleDiscountType } from "../../lib/sales";
 import { calculateVat, normalizeVatMode, type VatMode } from "../../lib/vat";
 import type { CustomerType } from "../../lib/customers";
 import {
@@ -3787,7 +3787,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <Plus size={14} /> {copy.txAddItem}
           </button>}
         </div>
-        <div className="admin-data-table-wrap">
+        <div className="admin-data-table-wrap admin-data-table-wrap-scrollbar-visible">
           <table className="admin-data-table">
             <thead>
               <tr>
@@ -5044,18 +5044,28 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   // field is mandatory — an offline sale can be booked with the goods alone.
   const deliveryChannel = saleChannelRequiresAddress(draft.channel);
 
-  const subtotal = draft.items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
-  const discountTotal = draft.items.reduce(
-    (sum: number, item: any) =>
-      sum + Math.max(0, (item.originalUnitPrice ?? item.unitPrice) - item.unitPrice) * item.quantity,
-    0,
+  const rawSubtotal = draft.items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+  // Хөнгөлөлт: a manual, whole-sale discount typed at checkout — either a flat ₮ amount or a
+  // percent of the goods total — separate from any per-product catalogue discount, which is
+  // already baked into item.unitPrice above.
+  const discountType: SaleDiscountType = draft.discountType === "percent" ? "percent" : "amount";
+  const discountValue = Math.max(0, draft.discountValue || 0);
+  const discountTotal = Math.min(
+    rawSubtotal,
+    discountType === "percent"
+      ? Math.round((rawSubtotal * Math.min(100, discountValue)) / 100)
+      : Math.round(discountValue),
   );
+  const subtotal = Math.max(0, rawSubtotal - discountTotal);
   const shippingFee = Math.max(0, Math.round(draft.shippingFee || 0));
-  // НӨАТ 10% — either carved out of the item prices or charged on top of them.
+  // НӨАТ 10% — either carved out of the item prices or charged on top of them, computed on
+  // the discounted subtotal so a discounted sale is never taxed on the pre-discount amount.
   const vatMode = draft.vatMode ?? "none";
   const vatAmount = calculateSaleVat(subtotal, vatMode);
   const grandTotal = subtotal + shippingFee + (vatMode === "added" ? vatAmount : 0);
   const totalQuantity = draft.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+  const patchDiscount = (type: SaleDiscountType, value: number) =>
+    patchDraft({ discountType: type, discountValue: value });
 
   const districtOptions = getDistrictOrSoumOptions(draft.address.region);
   const khorooOptions = getKhorooOrBagOptions(draft.address.region, draft.address.districtOrSoum);
@@ -5082,11 +5092,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             ? "Борлуулалт бүртгэх"
             : "Register a sale"
       }
-      description={
-        language === "MN"
-          ? "Дэлгүүр, мессенжер, утас гэх мэт онлайнаас бусад сувгийн борлуулалт."
-          : "Sales made through any channel other than the online store."
-      }
+     
       onClose={closeSaleModal}
       xl
       disableClose={savingSale}
@@ -5164,7 +5170,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         <AdminCollapsibleCard
           title={copy.customerInfo}
           note={language === "MN" ? "Сонголттой" : "Optional"}
-          defaultOpen
         >
           <SaleContactPicker
             contacts={crmContacts as CrmContactRecord[]}
@@ -5359,168 +5364,205 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               <Plus size={14} /> {copy.txAddItem}
             </button>
           </div>
-          <div className="admin-data-table-wrap">
-            <table className="admin-data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "2rem", textAlign: "center" }}>#</th>
-                  <th>{copy.txProduct}</th>
-                  <th>{copy.txVariant}</th>
-                  <th>{language === "MN" ? "Тоо" : "Qty"}</th>
-                  <th>{copy.txUnitPrice}</th>
-                  <th>{copy.txLineTotal}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {draft.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="admin-table-empty">
-                      {copy.addAtLeastOneItem}
-                    </td>
-                  </tr>
-                ) : (
-                  draft.items.map((item: any, idx: number) => {
-                    const selectedProduct = (products as any[]).find((p: any) => p.id === item.productId);
-                    const remaining = remainingStock(item.productId, item.variant);
-                    return (
-                      <tr key={idx}>
-                        <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
-                        <td>
-                          <select
-                            value={item.productId || ""}
-                            onChange={(event: any) => {
-                              const productId = Number(event.target.value);
-                              const product = (products as any[]).find((p: any) => p.id === productId);
-                              const listPrice = Math.round(product?.price ?? 0);
-                              const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
-                              const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
-                              const primaryImage = product ? getProductPrimaryImage(product) : "";
-                              patchItem(idx, {
-                                productId,
-                                name: product?.name ?? "",
-                                category: product?.category ?? "",
-                                // data-URL images are huge and overflow Firestore's 1 MiB doc limit
-                                image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
-                                variant: null,
-                                unitPrice,
-                                originalUnitPrice: listPrice,
-                                lineTotal: unitPrice * item.quantity,
-                              });
-                            }}
-                            required
-                          >
-                            <option value="">—</option>
-                            {(products as any[])
-                              .filter((p: any) => p.status === "active")
-                              .map((p: any) => {
-                                const pStock = p.variants?.length
-                                  ? p.variants.reduce((s: number, v: any) => s + (v.quantity || 0), 0)
-                                  : (p.totalStock ?? 0);
-                                const pSold = p.soldCount ?? 0;
-                                return (
-                                  <option key={p.id} value={p.id}>
-                                    {getProductLabel(p.id, p.name)} ({pStock - pSold}/{pStock})
-                                  </option>
-                                );
-                              })}
-                          </select>
-                        </td>
-                        <td>
-                          {selectedProduct?.variants && selectedProduct.variants.length > 0 ? (
-                            <select
-                              value={item.variant ?? ""}
-                              onChange={(event: any) => {
-                                const variantName = event.target.value || null;
-                                const variant = selectedProduct.variants?.find((v: any) => v.name === variantName);
-                                const listPrice = Math.round(variant?.price ?? selectedProduct.price);
-                                const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
-                                const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
-                                patchItem(idx, {
-                                  variant: variantName,
-                                  unitPrice,
-                                  originalUnitPrice: listPrice,
-                                  lineTotal: unitPrice * item.quantity,
-                                });
-                              }}
-                            >
-                              <option value="">—</option>
-                              {selectedProduct.variants.map((v: any) => (
-                                <option key={v.name} value={v.name}>
-                                  {v.name} ({(v.quantity || 0) - (v.soldCount ?? 0)}/{v.quantity || 0})
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span>—</span>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.quantity}
-                              onChange={(event: any) => {
-                                const quantity = Math.max(1, Number(event.target.value) || 1);
-                                patchItem(idx, { quantity, lineTotal: item.unitPrice * quantity });
-                              }}
-                              style={{ width: "80px", textAlign: "center" }}
-                            />
-                            {remaining != null && (
-                              <small
-                                style={{
-                                  fontSize: "0.7rem",
-                                  color: item.quantity > remaining ? "#b14141" : "#8a8477",
-                                }}
-                              >
-                                {language === "MN" ? "Үлдэгдэл" : "Remaining"}: {remaining}
-                              </small>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min={0}
-                            value={item.unitPrice}
-                            onChange={(event: any) => {
-                              const unitPrice = Math.max(0, Number(event.target.value) || 0);
-                              patchItem(idx, { unitPrice, lineTotal: unitPrice * item.quantity });
-                            }}
-                            style={{ width: "110px" }}
-                          />
-                          {(item.originalUnitPrice ?? 0) > item.unitPrice && (
-                            <div style={{ fontSize: "0.7rem", color: "#dc2626", whiteSpace: "nowrap" }}>
-                              <s style={{ color: "#9ca3af" }}>{formatStorePrice(item.originalUnitPrice)}</s>{" "}
-                              −{formatStorePrice((item.originalUnitPrice ?? 0) - item.unitPrice)}
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <strong>{formatStorePrice(item.lineTotal)}</strong>
-                        </td>
-                        <td>
+          {draft.items.length === 0 ? (
+            <p className="admin-expand-empty">{copy.addAtLeastOneItem}</p>
+          ) : (
+            <div className="admin-sale-item-list">
+              {draft.items.map((item: any, idx: number) => {
+                const selectedProduct = (products as any[]).find((p: any) => p.id === item.productId);
+                const remaining = remainingStock(item.productId, item.variant);
+                return (
+                  <div key={idx} className="admin-sale-item-card">
+                    <div className="admin-sale-item-card-head">
+                      <span className="admin-sale-item-index">#{idx + 1}</span>
+                      <button
+                        type="button"
+                        className="admin-icon-btn"
+                        aria-label={language === "MN" ? "Бараа хасах" : "Remove item"}
+                        onClick={() =>
+                          patchDraft({ items: draft.items.filter((_: any, i: number) => i !== idx) })
+                        }
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+
+                    <label className="admin-field admin-field-wide">
+                      <span>{copy.txProduct}</span>
+                      <select
+                        value={item.productId || ""}
+                        onChange={(event: any) => {
+                          const productId = Number(event.target.value);
+                          const product = (products as any[]).find((p: any) => p.id === productId);
+                          const listPrice = Math.round(product?.price ?? 0);
+                          const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
+                          const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                          const primaryImage = product ? getProductPrimaryImage(product) : "";
+                          patchItem(idx, {
+                            productId,
+                            name: product?.name ?? "",
+                            category: product?.category ?? "",
+                            // data-URL images are huge and overflow Firestore's 1 MiB doc limit
+                            image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
+                            variant: null,
+                            unitPrice,
+                            originalUnitPrice: listPrice,
+                            lineTotal: unitPrice * item.quantity,
+                          });
+                        }}
+                        required
+                      >
+                        <option value="">—</option>
+                        {(products as any[])
+                          .filter((p: any) => p.status === "active")
+                          .map((p: any) => {
+                            const pStock = p.variants?.length
+                              ? p.variants.reduce((s: number, v: any) => s + (v.quantity || 0), 0)
+                              : (p.totalStock ?? 0);
+                            const pSold = p.soldCount ?? 0;
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {getProductLabel(p.id, p.name)} ({pStock - pSold}/{pStock})
+                              </option>
+                            );
+                          })}
+                      </select>
+                    </label>
+
+                    {selectedProduct?.variants && selectedProduct.variants.length > 0 && (
+                      <label className="admin-field admin-field-wide">
+                        <span>{copy.txVariant}</span>
+                        <select
+                          value={item.variant ?? ""}
+                          onChange={(event: any) => {
+                            const variantName = event.target.value || null;
+                            const variant = selectedProduct.variants?.find((v: any) => v.name === variantName);
+                            const listPrice = Math.round(variant?.price ?? selectedProduct.price);
+                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
+                            const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                            patchItem(idx, {
+                              variant: variantName,
+                              unitPrice,
+                              originalUnitPrice: listPrice,
+                              lineTotal: unitPrice * item.quantity,
+                            });
+                          }}
+                        >
+                          <option value="">—</option>
+                          {selectedProduct.variants.map((v: any) => (
+                            <option key={v.name} value={v.name}>
+                              {v.name} ({(v.quantity || 0) - (v.soldCount ?? 0)}/{v.quantity || 0})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    <div className="admin-sale-item-card-row">
+                      <div className="admin-field">
+                        <span>{language === "MN" ? "Тоо" : "Qty"}</span>
+                        <div className="admin-qty-stepper">
                           <button
                             type="button"
-                            className="admin-icon-btn"
-                            onClick={() =>
-                              patchDraft({ items: draft.items.filter((_: any, i: number) => i !== idx) })
-                            }
+                            aria-label={language === "MN" ? "Хасах" : "Decrease"}
+                            disabled={item.quantity <= 1}
+                            onClick={() => {
+                              const quantity = Math.max(1, item.quantity - 1);
+                              patchItem(idx, { quantity, lineTotal: item.unitPrice * quantity });
+                            }}
                           >
-                            <Trash2 size={14} />
+                            −
                           </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(event: any) => {
+                              const quantity = Math.max(1, Number(event.target.value) || 1);
+                              patchItem(idx, { quantity, lineTotal: item.unitPrice * quantity });
+                            }}
+                          />
+                          <button
+                            type="button"
+                            aria-label={language === "MN" ? "Нэмэх" : "Increase"}
+                            onClick={() => {
+                              const quantity = item.quantity + 1;
+                              patchItem(idx, { quantity, lineTotal: item.unitPrice * quantity });
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                        {remaining != null && (
+                          <small style={{ color: item.quantity > remaining ? "#b14141" : "#8a8477" }}>
+                            {language === "MN" ? "Үлдэгдэл" : "Remaining"}: {remaining}
+                          </small>
+                        )}
+                      </div>
+
+                      <label className="admin-field">
+                        <span>{copy.txUnitPrice}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.unitPrice}
+                          onChange={(event: any) => {
+                            const unitPrice = Math.max(0, Number(event.target.value) || 0);
+                            patchItem(idx, { unitPrice, lineTotal: unitPrice * item.quantity });
+                          }}
+                        />
+                        {(item.originalUnitPrice ?? 0) > item.unitPrice && (
+                          <small style={{ color: "#dc2626" }}>
+                            <s style={{ color: "#9ca3af" }}>{formatStorePrice(item.originalUnitPrice)}</s>{" "}
+                            −{formatStorePrice((item.originalUnitPrice ?? 0) - item.unitPrice)}
+                          </small>
+                        )}
+                      </label>
+                    </div>
+
+                    <div className="admin-sale-item-card-total">
+                      <span>{copy.txLineTotal}</span>
+                      <strong>{formatStorePrice(item.lineTotal)}</strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="admin-form-grid" style={{ marginTop: "1rem" }}>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Хөнгөлөлт" : "Discount"}</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <select
+                value={discountType}
+                style={{ width: "5rem", flexShrink: 0 }}
+                onChange={(event: any) => {
+                  const nextType: SaleDiscountType = event.target.value === "percent" ? "percent" : "amount";
+                  patchDiscount(nextType, nextType === "percent" ? Math.min(100, discountValue) : discountValue);
+                }}
+              >
+                <option value="amount">₮</option>
+                <option value="percent">%</option>
+              </select>
+              <input
+                type="number"
+                min={0}
+                max={discountType === "percent" ? 100 : undefined}
+                value={discountValue}
+                style={{ flex: 1, minWidth: 0 }}
+                onChange={(event: any) => {
+                  const raw = Math.max(0, Number(event.target.value) || 0);
+                  patchDiscount(discountType, discountType === "percent" ? Math.min(100, raw) : raw);
+                }}
+              />
+            </div>
+            {discountType === "percent" && discountTotal > 0 && (
+              <small>= {formatStorePrice(discountTotal)}</small>
+            )}
+          </label>
+
           <label className="admin-field">
             <span>{language === "MN" ? "Хүргэлтийн үнэ" : "Shipping fee"}</span>
             <input
@@ -5575,11 +5617,11 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 ? `Барааны дүн · ${totalQuantity} ширхэг`
                 : `Subtotal · ${totalQuantity} pcs`}
             </span>
-            <span>{formatStorePrice(subtotal)}</span>
+            <span>{formatStorePrice(rawSubtotal)}</span>
           </div>
           {discountTotal > 0 && (
             <div className="admin-order-totals-row">
-              <span>{language === "MN" ? "Хямдрал" : "Discount"}</span>
+              <span>{language === "MN" ? "Хөнгөлөлт" : "Discount"}</span>
               <span style={{ color: "#dc2626" }}>−{formatStorePrice(discountTotal)}</span>
             </div>
           )}

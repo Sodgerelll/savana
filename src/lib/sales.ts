@@ -101,10 +101,18 @@ export type SaleVatMode = VatMode;
 export const SALE_VAT_MODE_VALUES = VAT_MODE_VALUES;
 export const calculateSaleVat = calculateVat;
 
+/** How a manually entered, whole-sale discount was specified at checkout. */
+export type SaleDiscountType = "amount" | "percent";
+export const SALE_DISCOUNT_TYPE_VALUES = ["amount", "percent"] as const;
+
 export interface SaleTotalsPayload extends OrderTotalsPayload {
   vatMode?: SaleVatMode;
   /** НӨАТ in tugriks — carved out of `grandTotal` when included, part of it when added. */
   vatAmount?: number;
+  /** How the checkout-time discount below was entered — a flat ₮ amount or a percent. */
+  discountType?: SaleDiscountType;
+  /** Raw value the admin typed — 0-100 for percent, ₮ for amount. `discountTotal` is the resulting money figure. */
+  discountValue?: number;
 }
 
 /**
@@ -324,6 +332,8 @@ function deserializeSale(snapshot: QueryDocumentSnapshot<DocumentData>): SaleRec
       discountTotal: Number(totalsData.discountTotal ?? 0),
       vatMode: normalizeVatMode(totalsData.vatMode),
       vatAmount: Number(totalsData.vatAmount ?? 0),
+      discountType: totalsData.discountType === "percent" ? "percent" : "amount",
+      discountValue: Number(totalsData.discountValue ?? 0),
     },
     paymentMethod: normalizePaymentMethod(data.paymentMethod),
     paidAt: parseTimestamp(data.paidAt),
