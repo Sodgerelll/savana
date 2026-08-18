@@ -71,6 +71,27 @@ export class UnknownVariantError extends Error {
   }
 }
 
+/**
+ * Goods left the shelf without saying which variant they came from.
+ *
+ * Nothing used to stop this: the movement found no variant to touch, moved the
+ * product-level counter alone and returned happily. The product's own figure and the sum
+ * of its variants then disagreed for good — one soap ended up at −4 product-level against
+ * +7 on its only variant — and no later sale could bring them back together.
+ *
+ * Only the outgoing, validated direction raises. Putting goods back must never be blocked,
+ * and a web order is recorded whatever it says: the money has already changed hands.
+ */
+export class MissingVariantError extends Error {
+  readonly productName: string;
+
+  constructor(productName: string) {
+    super(`MISSING_VARIANT:${productName}`);
+    this.name = "MissingVariantError";
+    this.productName = productName;
+  }
+}
+
 export class InsufficientStockError extends Error {
   readonly productName: string;
   readonly available: number;
@@ -129,14 +150,15 @@ export function availableStock(state: ProductStockState, variant: string | null)
  * stock — pass a negative quantity to put units back.
  *
  * Returning units is never blocked, but taking more than is on the shelf raises
- * InsufficientStockError so a caller can surface it instead of overselling. `soldCount` is
- * deliberately allowed to go negative on a return: clamping it at zero would make the
- * movement irreversible, which is how stock used to drift.
+ * InsufficientStockError so a caller can surface it instead of overselling, and taking
+ * them from a variant product without naming a variant raises MissingVariantError.
+ * `soldCount` is deliberately allowed to go negative on a return: clamping it at zero
+ * would make the movement irreversible, which is how stock used to drift.
  */
 export function applyStockMovement(
   state: ProductStockState,
   movement: Pick<StockMovementRequest, "variant" | "quantity">,
-  options: { productName?: string; validate?: boolean } = {},
+  options: { productName?: string; validate?: boolean; requireVariant?: boolean } = {},
 ): void {
   if (!state.exists || movement.quantity === 0) {
     return;
@@ -152,6 +174,15 @@ export function applyStockMovement(
   }
 
   if (options.validate !== false && quantity > 0) {
+    // Goods can only leave a variant product through one of its variants. Without this the
+    // movement lands on the product-level counter alone and the two figures drift apart
+    // for good — see MissingVariantError. `requireVariant: false` is for re-applying a
+    // record's own units (an edited sale re-takes exactly what it was already holding),
+    // where refusing would only make an old, already-drifted record impossible to correct.
+    if (options.requireVariant !== false && !variant && state.variants && state.variants.length > 0) {
+      throw new MissingVariantError(options.productName ?? String(state.productId));
+    }
+
     const available = availableStock(state, variant);
     if (quantity > available) {
       throw new InsufficientStockError(

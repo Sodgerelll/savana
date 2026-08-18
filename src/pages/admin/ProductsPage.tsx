@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { AdminModal } from "./AdminModal";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
-import { getProductLabel } from "./adminHelpers";
+import { describeStockError, getProductLabel } from "./adminHelpers";
 import { isDiscountActive, localDateKey } from "../../lib/storefrontHelpers";
 import { recountProductStock } from "../../lib/inventory";
 import { isSaleSettled } from "../../lib/sales";
@@ -224,14 +224,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
   };
 
   const formatStockError = (err: any): string => {
-    const msg = err?.message ?? "";
-    if (typeof msg === "string" && msg.startsWith("INSUFFICIENT_STOCK:")) {
-      const avail = msg.slice("INSUFFICIENT_STOCK:".length);
-      return language === "MN"
-        ? `Нөөц хүрэлцэхгүй байна. Боломжит үлдэгдэл: ${avail}`
-        : `Insufficient stock. Available: ${avail}`;
-    }
-    return msg || (language === "MN" ? "Алдаа гарлаа." : "Error occurred.");
+    // Every stock refusal — not enough left, no variant named, a variant that no longer
+    // exists — is worded in one place so the wording cannot drift between screens.
+    return describeStockError(err instanceof Error ? err : new Error(String(err?.message ?? "")), language);
   };
 
   // ── Recount (тооллого) ──────────────────────────────────────────────────────

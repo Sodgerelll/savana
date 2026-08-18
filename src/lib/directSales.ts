@@ -206,9 +206,11 @@ export async function updateDirectSale(
     );
 
     // Release the quantity the sale currently holds, then take the new one, so an edit is
-    // checked against stock that excludes the sale's own units.
+    // checked against stock that excludes the sale's own units. The edit form changes the
+    // quantity and the price, never the variant, so a sale recorded before variants had to
+    // be named is still editable — refusing it would leave the record stuck instead.
     applyStockMovement(state, { variant: oldSale.variant, quantity: -oldSale.quantity }, { validate: false });
-    applyStockMovement(state, { variant: oldSale.variant, quantity: updates.quantity });
+    applyStockMovement(state, { variant: oldSale.variant, quantity: updates.quantity }, { requireVariant: false });
 
     const cogsAmount = state.costPrice > 0 ? state.costPrice * updates.quantity : 0;
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { describeStockError } from "../pages/admin/adminHelpers";
 import {
   confirmTransfer,
   shipTransfer,
@@ -28,8 +29,13 @@ export function useTransferMutations() {
       const result = await fn();
       return result;
     } catch (err) {
+      // The stock module reports its refusals as codes (INSUFFICIENT_STOCK:…,
+      // MISSING_VARIANT:…) so every screen can word them the same way; everything else
+      // already carries a sentence of its own.
       const msg =
-        err instanceof Error ? err.message : "Уучлаарай, алдаа гарлаа. Дахин оролдоно уу.";
+        err instanceof Error
+          ? describeStockError(err, "MN")
+          : "Уучлаарай, алдаа гарлаа. Дахин оролдоно уу.";
       setError(msg);
       console.error(err);
       return null;

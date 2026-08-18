@@ -14,6 +14,40 @@ export function getProductCode(productId: number): string {
   return `#${String((productId + 99) % 1000).padStart(3, "0")}`;
 }
 
+/**
+ * Turns the stock module's coded errors into a sentence an admin can act on.
+ *
+ * `INSUFFICIENT_STOCK:<available>`, `MISSING_VARIANT:<product>` and
+ * `UNKNOWN_VARIANT:<variant>` travel as the Error message (src/lib/inventory.ts) so that
+ * every screen that moves stock can say the same thing about them.
+ */
+export function describeStockError(error: Error, language: "MN" | "EN"): string {
+  const message = String(error.message ?? "");
+
+  if (message.startsWith("INSUFFICIENT_STOCK:")) {
+    const available = message.slice("INSUFFICIENT_STOCK:".length);
+    return language === "MN"
+      ? `Нөөц хүрэлцэхгүй байна. Боломжит үлдэгдэл: ${available}`
+      : `Insufficient stock. Available: ${available}`;
+  }
+
+  if (message.startsWith("MISSING_VARIANT:")) {
+    const productName = message.slice("MISSING_VARIANT:".length);
+    return language === "MN"
+      ? `"${productName}" — хувилбартай бүтээгдэхүүн тул хувилбарыг заавал сонгоно уу.`
+      : `"${productName}" has variants — pick which one is leaving stock.`;
+  }
+
+  if (message.startsWith("UNKNOWN_VARIANT:")) {
+    const variant = message.slice("UNKNOWN_VARIANT:".length);
+    return language === "MN"
+      ? `"${variant}" хувилбар бүтээгдэхүүн дээр байхгүй байна. Хувилбарын нэр өөрчлөгдсөн эсэхийг шалгана уу.`
+      : `The product has no variant called "${variant}" — check whether it was renamed.`;
+  }
+
+  return message || (language === "MN" ? "Алдаа гарлаа." : "Error occurred.");
+}
+
 export function getProductLabel(productId: number, productName: string): string {
   return `${getProductCode(productId)} - ${productName}`;
 }

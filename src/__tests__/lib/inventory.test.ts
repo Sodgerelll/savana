@@ -10,6 +10,7 @@ import {
   availableStock,
   cogsForMovements,
   InsufficientStockError,
+  MissingVariantError,
   ProductNotFoundError,
   readProductStockState,
   recountProductStock,
@@ -92,6 +93,67 @@ describe("applyStockMovement", () => {
     applyStockMovement(s, { variant: "85g", quantity: 3 });
     expect(s.soldCount).toBe(8);
     expect(s.variants![0].soldCount).toBe(7);
+  });
+
+  it("refuses to send out a variant product without naming a variant", () => {
+    // The movement used to land on the product-level counter alone, leaving the variant's
+    // own figure behind — the two then disagreed for good.
+    const s = state({
+      totalStock: 30,
+      soldCount: 5,
+      variants: [{ name: "85g", price: 1000, quantity: 10, soldCount: 4 }],
+    });
+    expect(() => applyStockMovement(s, { variant: null, quantity: 3 }, { productName: "Soap" })).toThrow(
+      MissingVariantError,
+    );
+    expect(s.soldCount).toBe(5);
+  });
+
+  it("still takes a variant-less movement for a product that has no variants", () => {
+    const s = state({ totalStock: 30, soldCount: 5 });
+    applyStockMovement(s, { variant: null, quantity: 3 });
+    expect(s.soldCount).toBe(8);
+  });
+
+  it("lets a variant product take goods back without naming a variant", () => {
+    // A return, a deleted sale and an un-settled order all come back through here, and
+    // blocking them would leave the movement that took the goods impossible to undo.
+    const s = state({
+      totalStock: 30,
+      soldCount: 5,
+      variants: [{ name: "85g", price: 1000, quantity: 10, soldCount: 4 }],
+    });
+    applyStockMovement(s, { variant: null, quantity: -3 });
+    expect(s.soldCount).toBe(2);
+  });
+
+  it("records a web order that names no variant — the money has already been taken", () => {
+    const s = state({
+      totalStock: 30,
+      soldCount: 5,
+      variants: [{ name: "85g", price: 1000, quantity: 10, soldCount: 4 }],
+    });
+    applyStockMovement(s, { variant: null, quantity: 3 }, { validate: false });
+    expect(s.soldCount).toBe(8);
+  });
+
+  it("lets a caller re-apply a record's own variant-less units on purpose", () => {
+    // An edited POS sale re-takes exactly what it was already holding. Refusing would only
+    // make a sale recorded before variants had to be named impossible to correct.
+    const s = state({
+      totalStock: 30,
+      soldCount: 5,
+      variants: [{ name: "85g", price: 1000, quantity: 10, soldCount: 4 }],
+    });
+    applyStockMovement(s, { variant: null, quantity: 3 }, { requireVariant: false });
+    expect(s.soldCount).toBe(8);
+  });
+
+  it("still refuses a re-applied movement that exceeds the shelf", () => {
+    const s = state({ totalStock: 10, soldCount: 8 });
+    expect(() =>
+      applyStockMovement(s, { variant: null, quantity: 3 }, { requireVariant: false, productName: "Soap" }),
+    ).toThrow(InsufficientStockError);
   });
 
   it("refuses to take more than is on the shelf", () => {

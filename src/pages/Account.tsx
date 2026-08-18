@@ -230,6 +230,7 @@ import {
   getManagedNavigationLabel,
   getManagedJournalTitle,
   getManagedJournalCategory,
+  describeStockError,
 } from "./admin/adminHelpers";
 import type { AdminCtx } from "./admin/adminShellTypes";
 import "./Auth.css";
@@ -2822,6 +2823,23 @@ export default function Account() {
       return;
     }
 
+    // A sale that names no variant moves the product-level counter and leaves the variant's
+    // own figure behind, and nothing later brings the two back together. The stock module
+    // refuses it too; catching it here names the line instead of raising mid-save.
+    const itemWithoutVariant = items.find((item) => {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      return Boolean(product?.variants?.length) && !item.variant;
+    });
+
+    if (itemWithoutVariant) {
+      setSaleModalError(
+        language === "MN"
+          ? `"${itemWithoutVariant.name}" — хувилбарыг заавал сонгоно уу.`
+          : `"${itemWithoutVariant.name}" — pick a variant.`,
+      );
+      return;
+    }
+
     const rawSubtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
     // Хөнгөлөлт: a manual, whole-sale discount typed at checkout — either a flat ₮ amount or
     // a percent of the goods total — separate from any per-product catalogue discount, which
@@ -2879,7 +2897,7 @@ export default function Account() {
     } catch (error) {
       setSaleModalError(
         error instanceof Error
-          ? error.message
+          ? describeStockError(error, language)
           : language === "MN"
             ? "Борлуулалтыг хадгалж чадсангүй."
             : "Unable to save the sale.",

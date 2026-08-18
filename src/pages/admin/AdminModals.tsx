@@ -3558,6 +3558,17 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
         for (const txItem of draft.type === "return" ? [] : draft.items) {
           const prod = products.find((p: any)=> p.id === txItem.productId);
           if (!prod) continue;
+          // Without a variant the movement lands on the product-level counter alone and the
+          // variant's own figure never catches up — the drift is permanent, so it is caught
+          // here rather than left to the stock module to refuse mid-transaction.
+          if (prod.variants?.length > 0 && !txItem.variant) {
+            setTransactionError(
+              language === "MN"
+                ? `"${prod.name}" — хувилбарыг заавал сонгоно уу.`
+                : `"${prod.name}" — pick a variant.`,
+            );
+            return;
+          }
           let sTotal = 0;
           let sSold = 0;
           if (txItem.variant && prod.variants) {
@@ -3819,7 +3830,11 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           onChange={(event: any)=> {
                             const productId = Number(event.target.value);
                             const product = products.find((p: any)=> p.id === productId);
-                            const listPrice = Math.round(product?.price ?? 0);
+                            // Goods can only leave a variant product through one of its
+                            // variants, so the first one stands selected rather than
+                            // leaving a blank that moves the product-level counter alone.
+                            const firstVariant = product?.variants?.[0] ?? null;
+                            const listPrice = Math.round(firstVariant?.price ?? product?.price ?? 0);
                             const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
                             const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                             const primaryImage = product ? getProductPrimaryImage(product) : "";
@@ -3833,7 +3848,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
                               unitPrice,
                               originalUnitPrice: listPrice,
-                              variant: null,
+                              variant: firstVariant?.name ?? null,
                               lineTotal: unitPrice * item.quantity,
                             };
                             setTransactionModal({
@@ -3886,8 +3901,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                                 draft: { ...transactionModal.draft, items: nextItems },
                               });
                             }}
+                            required
                           >
-                            <option value="">—</option>
+                            {/* No blank option: a variant product cannot be moved without one. */}
+                            {item.variant == null && <option value="">—</option>}
                             {selectedProduct.variants.map((v: any)=> {
                               const vRemaining = (v.quantity || 0) - (v.soldCount ?? 0);
                               return (
@@ -5391,7 +5408,11 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                         onChange={(event: any) => {
                           const productId = Number(event.target.value);
                           const product = (products as any[]).find((p: any) => p.id === productId);
-                          const listPrice = Math.round(product?.price ?? 0);
+                          // Goods can only leave a variant product through one of its
+                          // variants, so the first one stands selected rather than leaving
+                          // a blank that would move the product-level counter alone.
+                          const firstVariant = product?.variants?.[0] ?? null;
+                          const listPrice = Math.round(firstVariant?.price ?? product?.price ?? 0);
                           const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
                           const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                           const primaryImage = product ? getProductPrimaryImage(product) : "";
@@ -5401,7 +5422,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                             category: product?.category ?? "",
                             // data-URL images are huge and overflow Firestore's 1 MiB doc limit
                             image: primaryImage && !primaryImage.startsWith("data:") ? primaryImage : null,
-                            variant: null,
+                            variant: firstVariant?.name ?? null,
                             unitPrice,
                             originalUnitPrice: listPrice,
                             lineTotal: unitPrice * item.quantity,
@@ -5444,8 +5465,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               lineTotal: unitPrice * item.quantity,
                             });
                           }}
+                          required
                         >
-                          <option value="">—</option>
+                          {/* No blank option: a variant product cannot be sold without one. */}
+                          {item.variant == null && <option value="">—</option>}
                           {selectedProduct.variants.map((v: any) => (
                             <option key={v.name} value={v.name}>
                               {v.name} ({(v.quantity || 0) - (v.soldCount ?? 0)}/{v.quantity || 0})
