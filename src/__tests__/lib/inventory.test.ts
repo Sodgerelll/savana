@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { firestoreMock } from "../helpers/firestoreMock";
 
 vi.mock("../../lib/firebase", () => ({ db: {} }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
@@ -9,7 +10,9 @@ import {
   availableStock,
   cogsForMovements,
   InsufficientStockError,
+  ProductNotFoundError,
   readProductStockState,
+  recountProductStock,
   writeProductStock,
   type ProductStockState,
 } from "../../lib/inventory";
@@ -221,5 +224,84 @@ describe("cogsForMovements", () => {
   it("counts nothing for a product with no recorded cost", () => {
     const states = new Map([[10, state({ costPrice: 0 }, 10)]]);
     expect(cogsForMovements(states, [{ productId: 10, variant: null, quantity: 3 }])).toBe(0);
+  });
+});
+
+// ─── recountProductStock ──────────────────────────────────────────────────────
+
+describe("recountProductStock", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestoreMock.reset();
+  });
+
+  const count = {
+    reason: "сарын тооллого",
+    createdBy: "uid-1",
+    createdByName: "Sodo",
+  };
+
+  it("repairs a counter that drifted below zero and derives totalStock from the count", async () => {
+    // Four units were given back that the counter never recorded leaving, so the shelf
+    // reads four higher than it is: totalStock 100 with soldCount −4 shows 104 remaining.
+    firestoreMock.seed("products/211", { totalStock: 100, soldCount: -4 });
+
+    await recountProductStock({ productId: 211, productName: "Саван", remaining: 96, soldCount: 0, ...count });
+
+    expect(firestoreMock.lastWriteData("products/211")).toMatchObject({ totalStock: 96, soldCount: 0 });
+  });
+
+  it("files the correction, its reason and the person in stock movements", async () => {
+    firestoreMock.seed("products/211", { totalStock: 100, soldCount: -4 });
+
+    await recountProductStock({ productId: 211, productName: "Саван", remaining: 96, soldCount: 0, ...count });
+
+    const movement = firestoreMock.writes.find((write) => write.path.startsWith("stockMovements/"));
+    expect(movement?.data).toMatchObject({
+      productId: 211,
+      type: "ADJUSTMENT",
+      // The count found 8 fewer on the shelf than the drifted figures claimed.
+      quantity: -8,
+      balanceAfter: 96,
+      before: { totalStock: 100, soldCount: -4, remaining: 104 },
+      after: { totalStock: 96, soldCount: 0, remaining: 96 },
+      reason: "сарын тооллого",
+      createdBy: "uid-1",
+      createdByName: "Sodo",
+    });
+  });
+
+  it("counts each variant and mirrors the total, leaving an uncounted variant alone", async () => {
+    firestoreMock.seed("products/211", {
+      totalStock: 150,
+      soldCount: -4,
+      variants: [
+        { name: "85 гр", price: 8000, quantity: 140, soldCount: 7 },
+        { name: "35 гр", price: 3000, quantity: 10, soldCount: 0 },
+      ],
+    });
+
+    await recountProductStock({
+      productId: 211,
+      productName: "Саван",
+      remaining: 0,
+      soldCount: 7,
+      variants: [{ name: "85 гр", remaining: 120, soldCount: 7 }],
+      ...count,
+    });
+
+    const written = firestoreMock.lastWriteData("products/211") as Record<string, unknown>;
+    expect(written.variants).toEqual([
+      { name: "85 гр", price: 8000, quantity: 127, soldCount: 7 },
+      { name: "35 гр", price: 3000, quantity: 10, soldCount: 0 },
+    ]);
+    // totalStock mirrors the sum of variant quantities, never the product-level count.
+    expect(written).toMatchObject({ totalStock: 137, soldCount: 7 });
+  });
+
+  it("refuses to invent a product that does not exist", async () => {
+    await expect(
+      recountProductStock({ productId: 999, productName: "Байхгүй", remaining: 5, soldCount: 0, ...count }),
+    ).rejects.toThrow(ProductNotFoundError);
   });
 });

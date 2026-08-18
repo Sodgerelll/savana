@@ -1,4 +1,11 @@
-import { doc, serverTimestamp, type DocumentData, type DocumentReference } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  type DocumentData,
+  type DocumentReference,
+} from "firebase/firestore";
 import { db } from "./firebase";
 
 /**
@@ -18,6 +25,8 @@ import { db } from "./firebase";
  */
 
 export const PRODUCTS_COLLECTION = "products";
+/** Audit trail for stock that moved outside a sale — transfers, returns, hand corrections. */
+export const STOCK_MOVEMENTS_COLLECTION = "stockMovements";
 
 export interface ProductStockVariant {
   name: string;
@@ -204,6 +213,120 @@ export function writeProductStock(writer: Writer, state: ProductStockState): voi
     soldCount: state.soldCount,
     ...(state.variants ? { variants: state.variants } : {}),
     updatedAt: serverTimestamp(),
+  });
+}
+
+/** One variant's counted position in a recount. */
+export interface ProductRecountVariantInput {
+  name: string;
+  /** Units counted on the shelf. */
+  remaining: number;
+  /** The corrected sales counter for this variant. */
+  soldCount: number;
+}
+
+export interface ProductRecountInput {
+  productId: number | string;
+  productName: string;
+  /** Units counted on the shelf. Ignored for a product with variants — each carries its own. */
+  remaining: number;
+  /** The corrected product-level sales counter. */
+  soldCount: number;
+  variants?: ProductRecountVariantInput[] | null;
+  /** Why the figures are being overridden — recorded on the movement, never optional. */
+  reason: string;
+  createdBy: string;
+  createdByName?: string;
+}
+
+export class ProductNotFoundError extends Error {
+  constructor(productId: number | string) {
+    super(`PRODUCT_NOT_FOUND:${productId}`);
+    this.name = "ProductNotFoundError";
+  }
+}
+
+/**
+ * Sets a product's stock counters from a physical count.
+ *
+ * Every other path in this module *moves* stock: a sale adds to `soldCount`, a return
+ * takes it away, production raises `totalStock`. None of them can repair a counter that
+ * has already drifted — a `soldCount` of −4 means four units were given back that the
+ * counter never recorded leaving, and no further sale will undo that. The product editor
+ * deliberately refuses to write `soldCount` (see saveProductEdit), so this is the one door
+ * through which a corrected figure may pass.
+ *
+ * It is deliberately not a quiet field edit: the before and after figures, the reason and
+ * the person are written to /stockMovements in the same transaction, so a counter that was
+ * overridden by hand can always be told apart from one the sales history produced.
+ *
+ * `remaining` is what the shelf holds, which is what an admin can actually count;
+ * `totalStock` is derived as `remaining + soldCount`, keeping the invariant every screen
+ * relies on. A variant product takes its total from the sum of its variants.
+ */
+export async function recountProductStock(input: ProductRecountInput): Promise<void> {
+  await runTransaction(db, async (t) => {
+    const ref = productRef(input.productId);
+    const snapshot = await t.get(ref);
+    if (!snapshot.exists()) {
+      throw new ProductNotFoundError(input.productId);
+    }
+
+    const state = readProductStockState(input.productId, snapshot.data() as Record<string, unknown>);
+    const before = {
+      totalStock: state.totalStock,
+      soldCount: state.soldCount,
+      remaining: state.totalStock - state.soldCount,
+    };
+
+    const countedByName = new Map((input.variants ?? []).map((variant) => [variant.name, variant]));
+
+    // A variant the count does not mention keeps exactly what it had: a recount of one
+    // size must never silently reset the others.
+    const nextVariants = state.variants?.map((variant) => {
+      const counted = countedByName.get(String(variant.name ?? ""));
+      if (!counted) return variant;
+      return {
+        ...variant,
+        quantity: counted.remaining + counted.soldCount,
+        soldCount: counted.soldCount,
+      };
+    }) ?? null;
+
+    const nextTotalStock = nextVariants
+      ? nextVariants.reduce((sum, variant) => sum + Number(variant.quantity ?? 0), 0)
+      : input.remaining + input.soldCount;
+
+    const after = {
+      totalStock: nextTotalStock,
+      soldCount: input.soldCount,
+      remaining: nextTotalStock - input.soldCount,
+    };
+
+    t.update(ref, {
+      totalStock: after.totalStock,
+      soldCount: after.soldCount,
+      ...(nextVariants ? { variants: nextVariants } : {}),
+      updatedAt: serverTimestamp(),
+    });
+
+    t.set(doc(collection(db, STOCK_MOVEMENTS_COLLECTION)), {
+      productId: input.productId,
+      productName: input.productName,
+      transferId: null,
+      customerId: null,
+      customerName: null,
+      type: "ADJUSTMENT",
+      // Positive when the count found more on the shelf than the system believed.
+      quantity: after.remaining - before.remaining,
+      balanceAfter: after.remaining,
+      before,
+      after,
+      reason: input.reason,
+      createdBy: input.createdBy,
+      createdByName: input.createdByName ?? "",
+      createdAt: serverTimestamp(),
+    });
   });
 }
 

@@ -1756,15 +1756,16 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
                   }}
                 />
+                {/* Sales counter: shown so the remaining figure above can be read against
+                    it, never editable. Only a sale moves it, and a wrong one is repaired
+                    through the recount action on the products table. */}
                 <input
                   type="number"
                   placeholder={copy.soldCount}
                   value={variant.soldCount ?? 0}
-                  onChange={(event: any)=> {
-                    const next = [...(productModal.draft.variants ?? [])];
-                    next[vIndex] = { ...next[vIndex], soldCount: Number(event.target.value) || 0 };
-                    setProductModal({ ...productModal, draft: { ...productModal.draft, variants: next } });
-                  }}
+                  readOnly
+                  title={language === "MN" ? "Зарагдсан тоо зөвхөн борлуулалтаар өөрчлөгдөнө. Засах бол жагсаалтын \"Тооллого\" товчийг ашиглана уу." : "The sold counter only moves with a sale. Use the recount action on the products table to correct it."}
+                  className="admin-input-readonly"
                 />
                 <button
                   type="button"
@@ -1829,18 +1830,14 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 )}
                 <label className="admin-field">
                   <small>{copy.soldCount}</small>
-                  <input
-                    type="number"
-                    value={sold}
-                    onChange={(event: any)=>
-                      setProductModal({
-                        ...productModal,
-                        draft: { ...productModal.draft, soldCount: Number(event.target.value) || 0 },
-                      })
-                    }
-                  />
+                  <input type="number" value={sold} readOnly className="admin-input-readonly" />
                 </label>
               </div>
+              <small className="admin-field-hint">
+                {language === "MN"
+                  ? "Зарагдсан тоог зөвхөн борлуулалт хөдөлгөнө. Буруу байвал жагсаалтын мөрөн дэх \"Тооллого\" товчоор засна."
+                  : "The sold counter only moves with a sale. Correct a wrong one with the recount action on the products table."}
+              </small>
             </div>
           );
         })()}
@@ -5146,11 +5143,11 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <small>
               {draft.status === "new"
                 ? language === "MN"
-                  ? "Төлбөр хүлээгдэж буй борлуулалт болно."
-                  : "The sale is saved with a pending payment."
+                  ? "Төлбөр хүлээгдэж буй борлуулалт болно. Нөөцөөс ХАСАГДАХГҮЙ — төлвийг өөрчилсөн үед бараа агуулахаас гарна."
+                  : "The sale is saved with a pending payment. Stock is NOT deducted — the goods leave the shelf when the status changes."
                 : language === "MN"
-                  ? "Төлбөр төлөгдсөн гэж бүртгэгдэж, санхүүгийн бичилт хийгдэнэ."
-                  : "Saved as paid — the revenue journal entry is posted."}
+                  ? "Төлбөр төлөгдсөн гэж бүртгэгдэж, санхүүгийн бичилт хийгдэж, нөөцөөс шууд хасагдана."
+                  : "Saved as paid — the revenue journal entry is posted and the stock is deducted."}
             </small>
           </label>
 

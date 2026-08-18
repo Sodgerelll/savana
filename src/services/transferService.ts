@@ -40,16 +40,16 @@ import {
   readProductStockState,
   writeProductStock,
   PRODUCTS_COLLECTION,
+  STOCK_MOVEMENTS_COLLECTION,
   type ProductStockState,
 } from "../lib/inventory";
 
 export const TRANSFERS_COLLECTION = "transfers";
 export const CUSTOMERS_COLLECTION = "customers";
 export const PAYMENTS_COLLECTION = "payments";
-export const STOCK_MOVEMENTS_COLLECTION = "stockMovements";
 export const CUSTOMER_TIMELINE_COLLECTION = "customerTimeline";
 export const CUSTOMER_PRICING_COLLECTION = "customerPricing";
-export { COUNTERS_COLLECTION, PRODUCTS_COLLECTION };
+export { COUNTERS_COLLECTION, PRODUCTS_COLLECTION, STOCK_MOVEMENTS_COLLECTION };
 
 // ─── Number Generator ─────────────────────────────────────────────────────────
 

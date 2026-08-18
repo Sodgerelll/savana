@@ -1793,6 +1793,31 @@
   min-height: 72px;
 }
 
+/* A figure the form shows but does not own — the sales counter, which only a sale or a
+   recorded recount may move. Styled as a value rather than a field so it does not invite
+   an edit that would be thrown away on save. */
+.admin-input-readonly,
+.admin-field input.admin-input-readonly {
+  background: rgba(183, 185, 167, 0.16);
+  border-style: dashed;
+  color: rgba(58, 54, 48, 0.7);
+  cursor: not-allowed;
+}
+
+.admin-input-readonly:hover,
+.admin-field input.admin-input-readonly:hover {
+  background: rgba(183, 185, 167, 0.16);
+  border-color: rgba(183, 185, 167, 0.75);
+}
+
+.admin-field-hint {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: rgba(58, 54, 48, 0.62);
+}
+
 .admin-field select {
   appearance: none;
   -webkit-appearance: none;

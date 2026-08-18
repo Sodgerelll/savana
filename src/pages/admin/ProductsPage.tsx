@@ -1,11 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ChevronDown, ChevronUp, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Tag, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardCheck, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Tag, Trash2, X } from "lucide-react";
 import React, { useState } from "react";
 import { AdminModal } from "./AdminModal";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
 import { isDiscountActive, localDateKey } from "../../lib/storefrontHelpers";
+import { recountProductStock } from "../../lib/inventory";
+import { isSaleSettled } from "../../lib/sales";
+
+interface RecountVariantState {
+  name: string;
+  remaining: number;
+  soldCount: number;
+}
+
+interface RecountModalState {
+  product: any;
+  /** Empty for a product without variants — then the product-level figures are counted. */
+  variants: RecountVariantState[];
+  remaining: number;
+  soldCount: number;
+  reason: string;
+}
 
 interface DirectSaleModalState {
   product: any;
@@ -60,6 +77,8 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     deleteDirectSale,
     openConfirmModal,
     user,
+    isPrivilegedUser,
+    error,
   } = ctx;
 
   const today = localDateKey();
@@ -215,6 +234,62 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
     return msg || (language === "MN" ? "Алдаа гарлаа." : "Error occurred.");
   };
 
+  // ── Recount (тооллого) ──────────────────────────────────────────────────────
+  // The only way to correct a stock counter by hand. The product editor refuses to write
+  // soldCount — it belongs to the sales history — so a figure that has drifted (a negative
+  // sold count means units were given back that were never recorded as leaving) can only be
+  // repaired here, against a stated reason that is filed in /stockMovements.
+  const [recountModal, setRecountModal] = useState<RecountModalState | null>(null);
+  const [recountSaving, setRecountSaving] = useState(false);
+  const [recountError, setRecountError] = useState<string | null>(null);
+
+  const openRecountModal = (product: any) => {
+    const variants = (product.variants ?? []).map((v: any) => ({
+      name: v.name,
+      remaining: Math.max(0, (v.quantity || 0) - (v.soldCount ?? 0)),
+      soldCount: v.soldCount ?? 0,
+    }));
+    setRecountModal({
+      product,
+      variants,
+      remaining: Math.max(0, (product.totalStock ?? 0) - (product.soldCount ?? 0)),
+      soldCount: product.soldCount ?? 0,
+      reason: "",
+    });
+    setRecountError(null);
+  };
+
+  const handleRecountSubmit = async () => {
+    if (!recountModal) return;
+    if (!recountModal.reason.trim()) {
+      setRecountError(language === "MN" ? "Шалтгаанаа бичнэ үү." : "A reason is required.");
+      return;
+    }
+    setRecountSaving(true);
+    setRecountError(null);
+    try {
+      await recountProductStock({
+        productId: recountModal.product.id,
+        productName: recountModal.product.name,
+        remaining: recountModal.remaining,
+        soldCount: recountModal.soldCount,
+        variants: recountModal.variants.length > 0 ? recountModal.variants : null,
+        reason: recountModal.reason.trim(),
+        createdBy: user?.uid ?? "",
+        createdByName: user?.displayName ?? "",
+      });
+      setRecountModal(null);
+    } catch (err: any) {
+      setRecountError(
+        String(err?.message ?? "").startsWith("PRODUCT_NOT_FOUND")
+          ? (language === "MN" ? "Бүтээгдэхүүн олдсонгүй." : "Product not found.")
+          : (err?.message || (language === "MN" ? "Алдаа гарлаа." : "Error occurred.")),
+      );
+    } finally {
+      setRecountSaving(false);
+    }
+  };
+
   const handleSaleSubmit = async () => {
     if (!saleModal) return;
     if (saleModal.quantity <= 0) { setSaleError(language === "MN" ? "Тоо ширхэг 0-ээс их байх ёстой." : "Quantity must be > 0."); return; }
@@ -270,6 +345,9 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {selectableCategories.length === 0 && <div className="admin-sync-error">{copy.noCategories}</div>}
+      {/* A rejected write used to fail in silence: the local copy updated, the snapshot
+          arrived and put the old figures straight back, and nothing said why. */}
+      {error && <div className="admin-sync-error">{error}</div>}
 
       <div className="admin-summary-grid">
         <div className="admin-summary-card">
@@ -461,6 +539,17 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                             >
                               <Pencil size={15} />
                             </button>
+                            {isPrivilegedUser && (
+                              <button
+                                type="button"
+                                className="admin-icon-btn admin-icon-btn-neutral"
+                                onClick={(e) => { e.stopPropagation(); openRecountModal(product); }}
+                                aria-label={`${language === "MN" ? "Тооллого" : "Recount"} ${product.name}`}
+                                title={language === "MN" ? "Тооллого — үлдэгдэл, зарагдсаныг засах" : "Recount — correct remaining and sold"}
+                              >
+                                <ClipboardCheck size={15} />
+                              </button>
+                            )}
                             {!lockedProductIds.has(product.id) && (
                               <button
                                 type="button"
@@ -523,9 +612,14 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                 lineTotal: it.lineTotal,
                                 note: [
                                   getSaleChannelLabel(sale.channel, language),
-                                  // Stock only moves once a sale is delivered, so anything
-                                  // short of that is flagged as not yet counted.
                                   sale.status === "delivered" ? "" : getOrderStatusLabel(sale.status, language),
+                                  // Stock leaves the shelf the moment a sale stops being
+                                  // "new". A sale still sitting there is listed here like
+                                  // any other, but it has taken nothing off the shelf —
+                                  // which is why the remaining figure above ignores it.
+                                  isSaleSettled(sale.status)
+                                    ? ""
+                                    : (language === "MN" ? "нөөцөөс хасагдаагүй" : "stock not counted"),
                                 ]
                                   .filter(Boolean)
                                   .join(" · "),
@@ -1182,6 +1276,163 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
           </form>
         </AdminModal>
       )}
+
+      {recountModal && (() => {
+        const hasVariants = recountModal.variants.length > 0;
+        // What the tables will show after saving: totalStock less the product-level
+        // counter. For a variant product that is the counted shelf only while the
+        // product-level sold figure agrees with the variants — hence the warning below.
+        const nextRemaining = hasVariants
+          ? recountModal.variants.reduce((sum, v) => sum + v.remaining + v.soldCount, 0) - recountModal.soldCount
+          : recountModal.remaining;
+        const currentStock = hasVariants
+          ? (recountModal.product.variants ?? []).reduce((sum: number, v: any) => sum + (v.quantity || 0), 0)
+          : (recountModal.product.totalStock ?? 0);
+        const currentRemaining = currentStock - (recountModal.product.soldCount ?? 0);
+        const variantSoldSum = recountModal.variants.reduce((sum, v) => sum + v.soldCount, 0);
+
+        return (
+          <AdminModal
+            title={language === "MN" ? "Тооллого — нөөц засах" : "Recount — correct stock"}
+            description={language === "MN"
+              ? "Тавиур дээр байгаа бодит тоо болон зарагдсаны тоолуурыг гараар засна. Өөрчлөлт нь шалтгааны хамт нөөцийн хөдөлгөөнд бүртгэгдэнэ."
+              : "Set the counted shelf figure and the sales counter by hand. The change is filed in stock movements with its reason."}
+            onClose={() => !recountSaving && setRecountModal(null)}
+            disableClose={recountSaving}
+          >
+            <form
+              className="admin-modal-form"
+              onSubmit={(e) => { e.preventDefault(); handleRecountSubmit(); }}
+            >
+              <div className="sale-modal-product-card">
+                {getProductPrimaryImage(recountModal.product) ? (
+                  <img className="sale-modal-product-img" src={getProductPrimaryImage(recountModal.product)} alt={recountModal.product.name} />
+                ) : (
+                  <div className="sale-modal-product-img sale-modal-product-img-placeholder">
+                    {recountModal.product.name.slice(0, 1)}
+                  </div>
+                )}
+                <div className="sale-modal-product-info">
+                  <strong>{getProductLabel(recountModal.product.id, recountModal.product.name)}</strong>
+                  <span>
+                    {language === "MN" ? "Одоогийн" : "Currently"}: {currentRemaining} {language === "MN" ? "үлдэгдэл" : "remaining"}
+                    {" — "}{recountModal.product.soldCount ?? 0} {language === "MN" ? "зарагдсан" : "sold"}
+                  </span>
+                </div>
+              </div>
+
+              {hasVariants ? (
+                <div className="admin-field admin-field-wide">
+                  <span>{language === "MN" ? "Хувилбар бүрээр" : "Per variant"}</span>
+                  {recountModal.variants.map((variant, index) => (
+                    <div key={variant.name} className="admin-form-grid">
+                      <label className="admin-field">
+                        <small>{variant.name} — {copy.stockRemaining}</small>
+                        <input
+                          type="number"
+                          min={0}
+                          value={variant.remaining}
+                          disabled={recountSaving}
+                          onChange={(e) => {
+                            const next = [...recountModal.variants];
+                            next[index] = { ...variant, remaining: Math.max(0, Number(e.target.value) || 0) };
+                            setRecountModal({ ...recountModal, variants: next });
+                          }}
+                        />
+                      </label>
+                      <label className="admin-field">
+                        <small>{variant.name} — {copy.soldCount}</small>
+                        <input
+                          type="number"
+                          value={variant.soldCount}
+                          disabled={recountSaving}
+                          onChange={(e) => {
+                            const next = [...recountModal.variants];
+                            next[index] = { ...variant, soldCount: Number(e.target.value) || 0 };
+                            setRecountModal({ ...recountModal, variants: next });
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="admin-form-grid">
+                  <label className="admin-field">
+                    <span>{copy.stockRemaining}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={recountModal.remaining}
+                      disabled={recountSaving}
+                      onChange={(e) => setRecountModal({ ...recountModal, remaining: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </label>
+                  <label className="admin-field">
+                    <span>{copy.soldCount}</span>
+                    <input
+                      type="number"
+                      value={recountModal.soldCount}
+                      disabled={recountSaving}
+                      onChange={(e) => setRecountModal({ ...recountModal, soldCount: Number(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {hasVariants && (
+                <label className="admin-field admin-field-wide">
+                  <span>{language === "MN" ? "Бүтээгдэхүүний зарагдсан (нийт)" : "Product-level sold (total)"}</span>
+                  <input
+                    type="number"
+                    value={recountModal.soldCount}
+                    disabled={recountSaving}
+                    onChange={(e) => setRecountModal({ ...recountModal, soldCount: Number(e.target.value) || 0 })}
+                  />
+                  {recountModal.soldCount !== variantSoldSum && (
+                    <small className="admin-field-hint">
+                      {language === "MN"
+                        ? `Хувилбаруудын нийлбэр ${variantSoldSum}. Хувилбаргүй бүртгэгдсэн борлуулалт байхгүй бол ижил байх ёстой.`
+                        : `The variants add up to ${variantSoldSum}. They should match unless sales were recorded without a variant.`}
+                    </small>
+                  )}
+                </label>
+              )}
+
+              <label className="admin-field admin-field-wide">
+                <span>{language === "MN" ? "Шалтгаан" : "Reason"}</span>
+                <input
+                  type="text"
+                  value={recountModal.reason}
+                  disabled={recountSaving}
+                  placeholder={language === "MN" ? "Жишээ: сарын тооллого, буруу тоолуур засав" : "e.g. monthly count, corrected a drifted counter"}
+                  onChange={(e) => setRecountModal({ ...recountModal, reason: e.target.value })}
+                />
+              </label>
+
+              <div className="sale-modal-total-row">
+                <span>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</span>
+                <strong className="sale-modal-total-amount">
+                  {currentRemaining} → {nextRemaining}
+                </strong>
+              </div>
+
+              {recountError && <p className="sale-modal-error">{recountError}</p>}
+
+              <div className="admin-modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setRecountModal(null)} disabled={recountSaving}>
+                  {language === "MN" ? "Болих" : "Cancel"}
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={recountSaving}>
+                  {recountSaving
+                    ? (language === "MN" ? "Хадгалж байна..." : "Saving...")
+                    : (language === "MN" ? "Тооллого хадгалах" : "Save recount")}
+                </button>
+              </div>
+            </form>
+          </AdminModal>
+        );
+      })()}
     </>
   );
 }
