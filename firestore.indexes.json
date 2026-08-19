@@ -275,7 +275,7 @@
     },
     {
       "collectionGroup": "chat_prompt_caches",
-      "fieldPath": "expiresAt",
+      "fieldPath": "expireAt",
       "ttl": true,
       "indexes": []
     }
