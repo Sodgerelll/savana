@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, History, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
   createChatFaq,
   createChatFaqsBatch,
@@ -10,7 +10,7 @@ import {
   type ChatFaqDraft,
 } from "../../lib/chat/faqStore";
 import { saveChatSettings } from "../../lib/chat/chatSettings";
-import { ChatApiError, sendAssistantMessage } from "../../lib/chat/chatApi";
+import { ChatApiError, importFaqsFromHistory, sendAssistantMessage } from "../../lib/chat/chatApi";
 import { FAQ_GENERATOR_INSTRUCTION, parseGeneratedFaqs } from "../../lib/chat/faqGenerator";
 import type { ChatFaqRecord, ChatSettingsRecord } from "../../lib/chat/types";
 import type { AdminCtx } from "./adminShellTypes";
@@ -51,6 +51,12 @@ const COPY = {
       "Каталог, дэлгүүрийн мэдээлэлд тулгуурлан 8 асуулт-хариулт үүсгэнэ. Үүссэний дараа заавал хянаж засна уу.",
     generated: (n: number) => `${n} асуулт нэмэгдлээ. Дарааллаар нь хянаж засна уу.`,
     generateFailed: "Үүсгэж чадсангүй. Дахин оролдоно уу.",
+    fromHistory: "Messenger түүхээс",
+    fromHistoryBusy: "Яриаг уншиж байна…",
+    fromHistoryHelp:
+      "Facebook хуудсан дээрх бодит асуулт-хариултаас FAQ үүсгэнэ. Хэдэн минут үргэлжилж болно. Бүх шинэ асуулт УНТРААЛТТАЙ орж ирнэ.",
+    fromHistoryYear: "Он",
+    fromHistoryFailed: "Түүхээс үүсгэж чадсангүй.",
     questionRequired: "Асуулт болон хариулт хоёуланг бөглөнө үү.",
     confirmDelete: "Энэ асуултыг устгах уу?",
   },
@@ -88,6 +94,12 @@ const COPY = {
       "Generates 8 question/answer pairs from the catalog and shop details. Always review them afterwards.",
     generated: (n: number) => `Added ${n} questions. Review and edit them.`,
     generateFailed: "Could not generate. Please try again.",
+    fromHistory: "From Messenger history",
+    fromHistoryBusy: "Reading conversations…",
+    fromHistoryHelp:
+      "Builds FAQs from what the page actually answered on Facebook. This can take a few minutes. Everything arrives switched off.",
+    fromHistoryYear: "Year",
+    fromHistoryFailed: "Could not import from history.",
     questionRequired: "Both a question and an answer are required.",
     confirmDelete: "Delete this question?",
   },
@@ -109,6 +121,10 @@ export default function ChatKnowledgePage({ ctx }: { ctx: AdminCtx }) {
   const [faqError, setFaqError] = useState("");
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  // The year the shop wants mined. Held as a string because it goes straight
+  // into a text field and straight back out to the server as one.
+  const [historyYear, setHistoryYear] = useState("2026");
   const [notice, setNotice] = useState("");
 
   // Adopt server changes only while the field is untouched, so a save landing
@@ -239,6 +255,21 @@ export default function ChatKnowledgePage({ ctx }: { ctx: AdminCtx }) {
     }
   }
 
+  async function importFromHistory() {
+    setImporting(true);
+    setNotice("");
+    try {
+      const result = await importFaqsFromHistory(historyYear);
+      // The server's own sentence carries the counts — how many threads it read
+      // and how much of the year it found — which a generic "done" would lose.
+      setNotice(result.message);
+    } catch (error) {
+      setNotice(error instanceof ChatApiError ? error.message : copy.fromHistoryFailed);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const editorRow = faqDraft && (
     <div className="admin-section-card">
       <div className="admin-form-grid">
@@ -315,7 +346,30 @@ export default function ChatKnowledgePage({ ctx }: { ctx: AdminCtx }) {
           <p>{copy.text}</p>
         </div>
         <div className="admin-topbar-actions">
-          <button type="button" className="btn" onClick={() => void generateFaqs()} disabled={generating}>
+          <input
+            className="admin-input chat-history-year"
+            value={historyYear}
+            onChange={(event) => setHistoryYear(event.target.value.trim())}
+            aria-label={copy.fromHistoryYear}
+            inputMode="numeric"
+            maxLength={4}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void importFromHistory()}
+            disabled={importing || generating}
+            title={copy.fromHistoryHelp}
+          >
+            <History size={16} />
+            {importing ? copy.fromHistoryBusy : copy.fromHistory}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void generateFaqs()}
+            disabled={generating || importing}
+          >
             <Sparkles size={16} />
             {generating ? copy.generating : copy.generate}
           </button>

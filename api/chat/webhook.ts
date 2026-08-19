@@ -11,7 +11,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
-import { buildStorefrontPrompt, loadStorefrontContext } from './_lib/buildPrompt.js';
+import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { handleCommentEvent, parseCommentChange } from './_lib/comments.js';
 import {
   appendMessage,
@@ -394,6 +394,7 @@ async function replyToEvent(
   const toolContext: ToolContext = {
     storefront,
     imageUrlFor: (product) => product.imageUrl || undefined,
+    productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
     lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
   };
 

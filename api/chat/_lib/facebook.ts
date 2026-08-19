@@ -33,8 +33,15 @@ export interface CarouselCard {
   title: string;
   subtitle?: string;
   imageUrl?: string;
-  buttons?: Array<{ title: string; payload: string }>;
+  /** Storefront page for the card. Opens when the customer taps the image. */
+  url?: string;
+  buttons?: Array<CarouselButton>;
 }
+
+/** A postback stays inside Messenger; a url opens the storefront. */
+export type CarouselButton =
+  | { title: string; payload: string; url?: undefined }
+  | { title: string; url: string; payload?: undefined };
 
 /**
  * Splits a long reply into Messenger-sized chunks, breaking at a newline,
@@ -225,12 +232,15 @@ export async function sendCarousel(
     };
     if (card.subtitle) element.subtitle = String(card.subtitle).slice(0, CARD_SUBTITLE_LIMIT);
     if (card.imageUrl) element.image_url = card.imageUrl;
+    // Tapping the picture opens the product page; the buttons stay as they are.
+    if (card.url) element.default_action = { type: 'web_url', url: card.url };
     if (card.buttons && card.buttons.length > 0) {
-      element.buttons = card.buttons.slice(0, 3).map((button) => ({
-        type: 'postback',
-        title: String(button.title).slice(0, CARD_BUTTON_TITLE_LIMIT),
-        payload: button.payload,
-      }));
+      element.buttons = card.buttons.slice(0, 3).map((button) => {
+        const title = String(button.title).slice(0, CARD_BUTTON_TITLE_LIMIT);
+        return button.url
+          ? { type: 'web_url', title, url: button.url }
+          : { type: 'postback', title, payload: button.payload };
+      });
     }
     return element;
   });

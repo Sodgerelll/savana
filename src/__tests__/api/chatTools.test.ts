@@ -242,8 +242,42 @@ describe("show_promotions", () => {
   });
 });
 
+describe("product cards", () => {
+  it("adds a storefront link beside the order button", async () => {
+    const ctx = context({ productUrlFor: (p) => `https://savana.mn/product/${p.id}` });
+
+    const [card] = (await runTool(TOOL_NAMES.SHOW_PRODUCTS, {}, ctx)).cards ?? [];
+
+    // Ordering stays leftmost; the link is the second button.
+    expect(card.buttons?.map((b) => b.title)).toEqual(["Захиалах", "Дэлгэрэнгүй"]);
+    expect(card.buttons?.[1]).toMatchObject({ url: "https://savana.mn/product/1" });
+    // Tapping the picture goes to the same place.
+    expect(card.url).toBe("https://savana.mn/product/1");
+  });
+
+  it("leaves the link off entirely when the site address is unknown", async () => {
+    // A button that leads nowhere is worse than no button.
+    const [card] = (await runTool(TOOL_NAMES.SHOW_PRODUCTS, {}, context())).cards ?? [];
+
+    expect(card.buttons?.map((b) => b.title)).toEqual(["Захиалах"]);
+    expect(card.url).toBeUndefined();
+  });
+
+  it("still links a sold-out product, which is where its return shows up", async () => {
+    const ctx = context({
+      storefront: { ...storefront(), products: [{ ...storefront().products[0], inStock: false }] },
+      productUrlFor: (p) => `https://savana.mn/product/${p.id}`,
+    });
+
+    const [card] = (await runTool(TOOL_NAMES.SHOW_PRODUCTS, {}, ctx)).cards ?? [];
+
+    expect(card.buttons?.map((b) => b.title)).toEqual(["Дэлгэрэнгүй"]);
+    expect(card.subtitle).toContain("Дууссан");
+  });
+});
+
 describe("check_order", () => {
-  it("reports the status and total of an existing order", async () => {
+  it("reports the status of an existing order", async () => {
     const ctx = context({
       lookupOrder: async () => ({ orderNumber: "ORD-1", status: "delivering", grandTotal: 58000 }),
     });
@@ -251,7 +285,19 @@ describe("check_order", () => {
     const result = await runTool(TOOL_NAMES.CHECK_ORDER, { orderNumber: "ord-1" }, ctx);
 
     expect(result.text).toContain("Хүргэлтэд гарсан");
-    expect(result.text).toContain("58,000₮");
+  });
+
+  it("withholds the amount, which order numbers are too guessable to hand out", async () => {
+    // ORD-2026-00123 is one keystroke from ORD-2026-00124. Status is a nudge;
+    // what somebody paid is not something a stranger should be able to type in.
+    const ctx = context({
+      lookupOrder: async () => ({ orderNumber: "ORD-1", status: "delivering", grandTotal: 58000 }),
+    });
+
+    const result = await runTool(TOOL_NAMES.CHECK_ORDER, { orderNumber: "ORD-1" }, ctx);
+
+    expect(result.text).not.toContain("58,000");
+    expect(result.text).not.toContain("58000");
   });
 
   it("normalizes the number before looking it up", async () => {

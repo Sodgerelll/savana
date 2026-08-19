@@ -1,6 +1,13 @@
 import { auth } from "../firebase";
 import { CHAT_LIMITS, type ChatMessageRole } from "./types";
 
+/**
+ * The history import reads a year of Messenger threads before it answers, so
+ * it gets its own budget — the 40s an ordinary reply is allowed would abort a
+ * run that is working perfectly well. Stays under the route's own 240s cap.
+ */
+const HISTORY_TIMEOUT_MS = 230_000;
+
 /** A turn as the assistant route expects it — only user/assistant reach the model. */
 export interface ChatApiHistoryEntry {
   role: "user" | "assistant";
@@ -74,10 +81,14 @@ async function authorizationHeader(): Promise<string> {
  * disabled forever, and turns every non-2xx into a {@link ChatApiError}
  * carrying the server's own Mongolian message.
  */
-async function postToChatApi(path: string, input: unknown): Promise<Record<string, unknown>> {
+async function postToChatApi(
+  path: string,
+  input: unknown,
+  timeoutMs: number = CHAT_LIMITS.REQUEST_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
   const authorization = await authorizationHeader();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CHAT_LIMITS.REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -127,6 +138,32 @@ export async function sendAdminReply(conversationId: string, message: string): P
 export async function applyFacebookSetup(): Promise<string> {
   const payload = await postToChatApi("/api/chat/setup", {});
   return typeof payload.message === "string" ? payload.message : "Амжилттай.";
+}
+
+export interface HistoryImportResult {
+  created: number;
+  conversationsScanned: number;
+  pairs: number;
+  message: string;
+}
+
+/**
+ * Builds FAQs out of what the page actually answered on Messenger in `year`.
+ *
+ * Slower than the catalog generator — it reads a year of conversations before
+ * it writes anything — so callers should expect to wait rather than assume the
+ * request has hung.
+ */
+export async function importFaqsFromHistory(year: string): Promise<HistoryImportResult> {
+  const payload = await postToChatApi("/api/chat/importHistory", { year }, HISTORY_TIMEOUT_MS);
+
+  return {
+    created: typeof payload.created === "number" ? payload.created : 0,
+    conversationsScanned:
+      typeof payload.conversationsScanned === "number" ? payload.conversationsScanned : 0,
+    pairs: typeof payload.pairs === "number" ? payload.pairs : 0,
+    message: typeof payload.message === "string" ? payload.message : "Дууслаа.",
+  };
 }
 
 export interface FacebookStatus {

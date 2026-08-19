@@ -258,6 +258,31 @@ describe("sendCarousel", () => {
     });
   });
 
+  it("renders a link button as web_url and the card link as default_action", async () => {
+    await sendCarousel(TOKEN, "PSID-1", [
+      {
+        title: "Хужирт саван",
+        url: "https://savana.mn/product/1",
+        buttons: [
+          { title: "Захиалах", payload: "ORDER_1" },
+          { title: "Дэлгэрэнгүй", url: "https://savana.mn/product/1" },
+        ],
+      },
+    ]);
+
+    const element = body().message.attachment.payload.elements[0];
+    expect(element.default_action).toEqual({
+      type: "web_url",
+      url: "https://savana.mn/product/1",
+    });
+    expect(element.buttons).toEqual([
+      { type: "postback", title: "Захиалах", payload: "ORDER_1" },
+      // A url button sent as a postback is silently ignored by Messenger, so
+      // the type has to follow the button, not the card.
+      { type: "web_url", title: "Дэлгэрэнгүй", url: "https://savana.mn/product/1" },
+    ]);
+  });
+
   it("still renders a card that has no image", async () => {
     await sendCarousel(TOKEN, "PSID-1", [{ title: "Зурaггүй бараа" }]);
 

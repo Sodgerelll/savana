@@ -128,23 +128,40 @@ function rankProducts(products: PromptProduct[]): PromptProduct[] {
 export function buildProductCards(
   products: PromptProduct[],
   imageUrlFor: (product: PromptProduct) => string | undefined,
+  productUrlFor?: (product: PromptProduct) => string | undefined,
 ): CarouselCard[] {
-  return products.map((product) => ({
-    title: product.name,
-    subtitle: product.inStock
-      ? `${formatTugrik(product.price)}${product.sizeLabel ? ` · ${product.sizeLabel}` : ''}`
-      : `${formatTugrik(product.price)} · Дууссан`,
-    imageUrl: imageUrlFor(product),
-    buttons: product.inStock
-      ? [{ title: 'Захиалах', payload: `ORDER_PRODUCT_${product.id}` }]
-      : undefined,
-  }));
+  return products.map((product) => {
+    const url = productUrlFor?.(product) || undefined;
+    const buttons: CarouselCard['buttons'] = [];
+
+    if (product.inStock) {
+      buttons.push({ title: 'Захиалах', payload: `ORDER_PRODUCT_${product.id}` });
+    }
+    // Second so ordering — the thing we want them to do — stays leftmost. A
+    // sold-out product still gets the link: the page is where they see when it
+    // is back.
+    if (url) {
+      buttons.push({ title: 'Дэлгэрэнгүй', url });
+    }
+
+    return {
+      title: product.name,
+      subtitle: product.inStock
+        ? `${formatTugrik(product.price)}${product.sizeLabel ? ` · ${product.sizeLabel}` : ''}`
+        : `${formatTugrik(product.price)} · Дууссан`,
+      imageUrl: imageUrlFor(product),
+      url,
+      buttons: buttons.length > 0 ? buttons : undefined,
+    };
+  });
 }
 
 export interface ToolContext {
   storefront: StorefrontContext;
   /** Resolves a product's primary image to an absolute, publicly reachable URL. */
   imageUrlFor: (product: PromptProduct) => string | undefined;
+  /** Storefront page for a product. Omitted when the site address is unknown. */
+  productUrlFor?: (product: PromptProduct) => string | undefined;
   /** Looks an order up by number; returns null when it does not exist. */
   lookupOrder: (orderNumber: string) => Promise<{
     orderNumber: string;
@@ -185,7 +202,7 @@ export async function runTool(
 
       return {
         text: query ? `"${query}" — ${matches.length} бүтээгдэхүүн олдлоо 🌿` : 'Манай бүтээгдэхүүнүүд 🌿',
-        cards: buildProductCards(matches.slice(0, 10), context.imageUrlFor),
+        cards: buildProductCards(matches.slice(0, 10), context.imageUrlFor, context.productUrlFor),
       };
     }
 
@@ -212,8 +229,11 @@ export async function runTool(
         };
       }
 
+      // Status only. Order numbers run in sequence, so anyone can guess one
+      // that is not theirs — the total is the customer's own business and is
+      // not worth handing to whoever types the number.
       const label = ORDER_STATUS_LABELS[order.status] ?? order.status;
-      return { text: `${order.orderNumber} — ${label}.\nНийт дүн: ${formatTugrik(order.grandTotal)}` };
+      return { text: `${order.orderNumber} — ${label}.` };
     }
 
     case TOOL_NAMES.START_ORDER: {

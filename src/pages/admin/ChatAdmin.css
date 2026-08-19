@@ -175,3 +175,10 @@
   align-items: center;
   color: rgb(90, 81, 3);
 }
+
+/* Year box beside the "from Messenger history" button — a four-digit field
+   sitting in a row of buttons, so it is sized to its content, not the grid. */
+.chat-history-year {
+  width: 5.2rem;
+  text-align: center;
+}

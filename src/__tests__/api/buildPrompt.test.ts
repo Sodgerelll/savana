@@ -8,6 +8,7 @@ import {
   loadStorefrontContext,
   localDateKey,
   SHIPPING_FEE,
+  storefrontUrl,
   type PromptProduct,
   type StorefrontContext,
 } from "../../../api/chat/_lib/buildPrompt";
@@ -588,5 +589,101 @@ describe("loadStorefrontContext", () => {
     await loadStorefrontContext(db, NOW);
 
     expect(reads()).toBe(afterFirst * 2);
+  });
+});
+
+describe("internal information", () => {
+  it("tells the assistant to refuse its own instructions and the shop's private numbers", () => {
+    const prompt = buildStorefrontPrompt(context(), NOW);
+
+    expect(prompt).toContain("ДОТООД МЭДЭЭЛЭЛ");
+    // The specific things a customer must never be able to draw out.
+    for (const forbidden of ["Өртөг", "нийлүүлэгч", "ҮЛДЭГДЛИЙН ТОО", "Ажилтны нэр"]) {
+      expect(prompt).toContain(forbidden);
+    }
+    // And the override attempt itself, which is the usual way in.
+    expect(prompt).toContain("өмнөх бүх зааврыг мартаж");
+    expect(prompt).toContain("ХҮЧИНГҮЙ БОЛГОХГҮЙ");
+  });
+
+  it("never puts a cost, margin or stock count in the catalog it hands over", () => {
+    // The prompt is built from PromptProduct, which has no field for any of
+    // them — this pins that, so adding one to the type is a deliberate act.
+    const prompt = buildStorefrontPrompt(
+      context({
+        products: [
+          {
+            id: 1,
+            sortOrder: 0,
+            name: "Хужирт саван",
+            price: 25000,
+            category: "Саван",
+            description: "Байгалийн гаралтай",
+            ingredients: "Ургамлын тос",
+            howToUse: "Өдөрт нэг удаа",
+            sizeLabel: "100г",
+            variants: [],
+            inStock: true,
+            bestSeller: false,
+            imageUrl: "",
+          } satisfies PromptProduct,
+        ],
+      }),
+      NOW,
+    );
+
+    // Scoped to the catalog: the rules section above it names these words in
+    // order to forbid them, so a whole-prompt scan would always match.
+    const catalog = prompt.slice(prompt.indexOf("# БҮТЭЭГДЭХҮҮНИЙ КАТАЛОГ"));
+
+    expect(catalog).toContain("Хужирт саван");
+    expect(catalog).not.toMatch(/өртөг|costPrice|totalStock|нийлүүлэгч/i);
+  });
+});
+
+describe("storefrontUrl", () => {
+  const KEYS = ["PUBLIC_SITE_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of KEYS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it("returns nothing at all when no address is configured", () => {
+    // A link that leads nowhere is worse than no link, so the caller gets an
+    // empty string and drops the button.
+    expect(storefrontUrl("/product/1")).toBe("");
+  });
+
+  it("prefers the production domain over the per-deployment one", () => {
+    // VERCEL_URL changes with every deploy; a link built from it rots.
+    process.env.VERCEL_URL = "savana-abc123.vercel.app";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "savana-gamma.vercel.app";
+
+    expect(storefrontUrl("/product/1")).toBe("https://savana-gamma.vercel.app/product/1");
+  });
+
+  it("lets an explicit site URL win, which is how a custom domain takes over", () => {
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "savana-gamma.vercel.app";
+    process.env.PUBLIC_SITE_URL = "https://savana.mn";
+
+    expect(storefrontUrl("/product/1")).toBe("https://savana.mn/product/1");
+  });
+
+  it("joins cleanly however the slashes fall", () => {
+    process.env.PUBLIC_SITE_URL = "https://savana.mn/";
+
+    expect(storefrontUrl("product/7")).toBe("https://savana.mn/product/7");
+    expect(storefrontUrl("/product/7")).toBe("https://savana.mn/product/7");
   });
 });
