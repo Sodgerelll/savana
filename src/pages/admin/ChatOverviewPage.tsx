@@ -27,7 +27,7 @@ const COPY = {
     setupHint:
       "Бот унтраалттай байна — Чат тохиргоо хэсгээс асааж, Facebook хуудсаа холбоно уу. Туршилтын чат тохиргооноос үл хамааран ажиллана.",
     panelHint:
-      "Энэ чат зөвхөн танд харагдана. Каталог, хямдрал, FAQ-аас угсарсан ЖИНХЭНЭ prompt-оор ажиллана — хэрэглэгчийн авах хариу яг ийм байна.",
+      "Энэ чат зөвхөн танд харагдана. Каталог, хямдрал, FAQ-аас угсарсан ЖИНХЭНЭ prompt-оор ажиллана. Гэхдээ энд зөвхөн ТЕКСТ — зурагтай карусель, захиалга шалгах, ажилтан руу шилжүүлэх зэрэг нь Messenger дээр л ажиллана. Тиймээс энд «зураг илгээх боломжгүй» гэвэл зөв, Messenger дээр карусель ирнэ.",
     facebook: "Facebook",
     instagram: "Instagram",
     widget: "Вэб виджет",
@@ -59,7 +59,7 @@ const COPY = {
     setupHint:
       "The bot is switched off — turn it on and connect your Facebook page under Chat settings. The test chat works regardless.",
     panelHint:
-      "Visible only to you. It runs the REAL prompt built from the catalog, discounts and FAQs — this is exactly what a customer gets.",
+      "Visible only to you. It runs the REAL prompt built from the catalog, discounts and FAQs — but text only. Product carousels, order lookup and handover run on Messenger, not here, so “I can’t send pictures” is true of this panel and not of a real thread.",
     facebook: "Facebook",
     instagram: "Instagram",
     widget: "Web widget",

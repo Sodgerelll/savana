@@ -592,6 +592,31 @@ describe("loadStorefrontContext", () => {
   });
 });
 
+describe("shop policy", () => {
+  it("forbids inventing a delivery time, which the prompt never states", () => {
+    // Caught in a real test conversation: the bot promised delivery "in 24-48
+    // hours" twice. Nothing in the prompt says that — the shop data carries the
+    // delivery FEE and nothing about timing — and a customer will hold a shop
+    // to a number it never gave.
+    const prompt = buildStorefrontPrompt(context(), NOW);
+    const shopInfo = prompt.slice(prompt.indexOf("# ДЭЛГҮҮРИЙН МЭДЭЭЛЭЛ"));
+
+    expect(shopInfo).not.toMatch(/\d+\s*-\s*\d+\s*(цаг|өдөр)/);
+    expect(prompt).toContain("ДЭЛГҮҮРИЙН БОДЛОГЫГ БҮҮ ЗОХИО");
+    expect(prompt).toContain("Хүргэлтийн ХУГАЦАА");
+    // The fee is stated, so it stays sayable — only the timing is off limits.
+    expect(prompt).toContain(formatTugrik(SHIPPING_FEE));
+  });
+
+  it("names the other policies a shop gets held to", () => {
+    const prompt = buildStorefrontPrompt(context(), NOW);
+
+    for (const policy of ["Буцаалт", "баталгааны", "бөөний үнэ", "Ажлын цаг"]) {
+      expect(prompt).toContain(policy);
+    }
+  });
+});
+
 describe("internal information", () => {
   it("tells the assistant to refuse its own instructions and the shop's private numbers", () => {
     const prompt = buildStorefrontPrompt(context(), NOW);
