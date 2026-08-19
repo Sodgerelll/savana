@@ -371,9 +371,12 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
   const orderRef = doc(collection(db, ORDERS_COLLECTION));
   const orderNumber = createOrderNumber(orderRef.id);
 
-  // Use the Firestore doc ID as Bonum transactionId so the webhook can look up the order
-  // TEST MODE: fixed 100₮ invoice so real money is not charged during development
-  const bonumResult = await createBonumInvoice(100, orderRef.id);
+  // Use the Firestore doc ID as Bonum transactionId so the webhook can look up the order.
+  // The invoice is for what the basket actually costs. It was pinned at 100₮ during
+  // development so testing charged nobody, and shipping it that way meant every
+  // customer paid 100₮ for whatever they bought while the order recorded the real
+  // total and the webhook marked it paid.
+  const bonumResult = await createBonumInvoice(input.totals.grandTotal, orderRef.id);
 
   const payment: OrderPaymentPayload = {
     method: "bonum",
