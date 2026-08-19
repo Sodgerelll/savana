@@ -10,8 +10,10 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { requirePrivilegedCaller } from './_lib/auth.js';
 import { buildStorefrontPrompt, loadStorefrontContext } from './_lib/buildPrompt.js';
+import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import {
   callGemini,
+  primaryModel,
   geminiErrorToUserMessage,
   type GeminiMessage,
   type GeminiRole,
@@ -94,6 +96,10 @@ export default async function handler(req: any, res: any): Promise<void> {
   // customer will get. Other callers (AI polish, FAQ generation) pass their own
   // narrow prompt instead and never want the catalog attached.
   let systemPrompt = asString(body.systemPrompt).slice(0, MAX_SYSTEM_PROMPT_LENGTH);
+  // Held beyond the block below because the prompt cache handle lives in
+  // Firestore, and only the storefront branch has a reason to open it.
+  let db: any = null;
+
   if (body.useStorefrontPrompt === true) {
     const dbPromise = getAdminFirestore();
     if (!dbPromise) {
@@ -101,8 +107,8 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
     try {
-      const context = await loadStorefrontContext(await dbPromise, new Date());
-      systemPrompt = buildStorefrontPrompt(context, new Date());
+      db = await dbPromise;
+      systemPrompt = buildStorefrontPrompt(await loadStorefrontContext(db, new Date()), new Date());
     } catch (err) {
       console.error('[chat/assistant] prompt build failed:', (err as Error).message);
       res.status(503).json({ error: 'Каталогийг уншиж чадсангүй. Дахин оролдоно уу.' });
@@ -111,8 +117,18 @@ export default async function handler(req: any, res: any): Promise<void> {
   }
 
   try {
+    // Only the storefront prompt is long enough to cache; a one-off admin
+    // prompt falls under the API floor and getOrCreatePromptCache says so by
+    // returning null, which costs nothing but a comparison.
+    const cacheOptions = { model: primaryModel(asString(body.model) || undefined), systemPrompt };
+    const cache = db
+      ? await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions)
+      : null;
+
     const reply = await callGemini({
       systemPrompt,
+      cache,
+      onCacheRejected: () => db && void forgetPromptCache(db, cacheOptions),
       history: sanitizeHistory(body.history),
       message,
       imageBase64: hasImage ? imageBase64 : undefined,

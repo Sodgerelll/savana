@@ -30,7 +30,13 @@ import {
   sendText,
   sendTypingOn,
 } from './_lib/facebook.js';
-import { callGemini, callGeminiAgent, geminiErrorToUserMessage } from './_lib/gemini.js';
+import {
+  callGemini,
+  callGeminiAgent,
+  geminiErrorToUserMessage,
+  primaryModel,
+} from './_lib/gemini.js';
+import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { sweepStaleLeads } from './_lib/followUp.js';
 import { checkRateLimit, markEventProcessed, releaseEvent } from './_lib/guards.js';
 import {
@@ -440,13 +446,25 @@ async function replyToEvent(
   let toolName: string | null = null;
 
   try {
-    const result = await callGeminiAgent({
+    // The prompt is the same ~15,600 characters on every turn, so it is sent
+    // once to a context cache and referenced thereafter at a tenth of the
+    // price. A null handle simply means paying full price this time.
+    const cacheOptions = {
+      model: primaryModel(settings.model || undefined),
       systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+      tools: CHAT_TOOLS,
+    };
+    const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
+
+    const result = await callGeminiAgent({
+      systemPrompt: cacheOptions.systemPrompt,
       history: priorHistory,
       message: text || String(postbackPayload ?? ''),
       tools: CHAT_TOOLS,
       model: settings.model || undefined,
       temperature: settings.temperature,
+      cache,
+      onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
     });
 
     if (result.functionCall) {

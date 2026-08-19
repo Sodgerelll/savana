@@ -84,6 +84,14 @@ export interface GeminiCallOptions {
   temperature?: number;
   maxOutputTokens?: number;
   tools?: GeminiTool[];
+  /**
+   * A cachedContents handle covering the system prompt and tools. Applied
+   * only to the model it was built for — a cache is tied to one model — and
+   * dropped silently the moment the API stops honouring it.
+   */
+  cache?: { name: string; model: string } | null;
+  /** Called when the API rejects the handle, so the caller can rebuild it. */
+  onCacheRejected?: () => void;
 }
 
 /** Either the model answered in prose, or it decided to call one of the tools. */
@@ -213,6 +221,31 @@ function configForModel(body: Record<string, unknown>, model: string): Record<st
   return { ...body, generationConfig };
 }
 
+/**
+ * Replaces the system prompt and tools with the cache handle that already
+ * holds them. A cache belongs to exactly one model, so a request going to a
+ * fallback model keeps the full prompt — the alternative is a 400 from every
+ * model after the first.
+ */
+function applyCache(
+  body: Record<string, unknown>,
+  model: string,
+  cache: { name: string; model: string } | null | undefined,
+): Record<string, unknown> {
+  if (!cache || cache.model !== model) {
+    return body;
+  }
+
+  // Both now live inside the cache; sending them alongside it is an error.
+  const { system_instruction: _prompt, tools: _tools, ...rest } = body;
+  return { ...rest, cachedContent: cache.name };
+}
+
+/** A handle the API no longer honours — expired, deleted, or from another key. */
+function looksLikeCacheRejection(message: string): boolean {
+  return /cachedcontent|cached_content|cache/i.test(message);
+}
+
 async function postToModel(
   apiKey: string,
   model: string,
@@ -276,12 +309,27 @@ async function generateParts(
   apiKey: string,
   body: Record<string, unknown>,
   requestedModel?: string,
+  cache?: { name: string; model: string } | null,
+  onCacheRejected?: () => void,
 ): Promise<any[]> {
   let lastError = new GeminiError('Gemini API дуудлага амжилтгүй');
+  // Cleared the first time the API refuses the handle, so the rest of the
+  // chain — and the retry on this very model — carries the full prompt.
+  let liveCache = cache;
 
   for (const model of resolveModelChain(requestedModel)) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
-      const result = await postToModel(apiKey, model, body);
+      const usedCache = Boolean(liveCache && liveCache.model === model);
+      const result = await postToModel(apiKey, model, applyCache(body, model, liveCache));
+
+      // A rejected handle is not a broken model. Drop it and let the retry
+      // below go out at full price rather than failing the customer's turn.
+      if (!result.ok && usedCache && looksLikeCacheRejection(result.message)) {
+        console.warn(`[chat/gemini] cache rejected, falling back: ${result.message}`);
+        liveCache = null;
+        onCacheRejected?.();
+        continue;
+      }
 
       if (result.ok) {
         const candidate = result.data?.candidates?.[0];
@@ -342,7 +390,7 @@ function firstText(parts: any[]): string | null {
 export async function callGemini(options: GeminiCallOptions): Promise<string> {
   const apiKey = readApiKey();
   const body = buildRequestBody(options);
-  const parts = await generateParts(apiKey, body, options.model);
+  const parts = await generateParts(apiKey, body, options.model, options.cache, options.onCacheRejected);
   const text = firstText(parts);
 
   if (!text) {
@@ -363,7 +411,7 @@ export async function callGemini(options: GeminiCallOptions): Promise<string> {
 export async function callGeminiAgent(options: GeminiCallOptions): Promise<GeminiAgentResult> {
   const apiKey = readApiKey();
   const body = buildRequestBody(options);
-  const parts = await generateParts(apiKey, body, options.model);
+  const parts = await generateParts(apiKey, body, options.model, options.cache, options.onCacheRejected);
 
   const call = parts.find((entry) => entry?.functionCall)?.functionCall;
   if (call && typeof call.name === 'string') {
@@ -394,4 +442,14 @@ export function geminiErrorToUserMessage(err: unknown): string {
     }
   }
   return 'Хариу авч чадсангүй. Дахин оролдоно уу.';
+}
+
+/**
+ * The model a request will actually be sent to first.
+ *
+ * A context cache belongs to one model, so the caller has to build it for the
+ * head of the chain rather than guessing at the default.
+ */
+export function primaryModel(requested?: string): string {
+  return resolveModelChain(requested)[0];
 }

@@ -19,7 +19,8 @@ import {
   readRecentMessages,
   setConversationStatus,
 } from './_lib/conversation.js';
-import { callGeminiAgent, geminiErrorToUserMessage } from './_lib/gemini.js';
+import { callGeminiAgent, geminiErrorToUserMessage, primaryModel } from './_lib/gemini.js';
+import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { checkRateLimit } from './_lib/guards.js';
 import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead } from './_lib/leads.js';
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
@@ -145,13 +146,24 @@ export default async function handler(req: any, res: any): Promise<void> {
     let toolName: string | null = null;
 
     try {
-      const result = await callGeminiAgent({
+      // Same cache the Messenger webhook uses: identical prompt, identical
+      // tools, so both channels share one cached copy.
+      const cacheOptions = {
+        model: primaryModel(settings.model || undefined),
         systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+        tools: CHAT_TOOLS,
+      };
+      const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
+
+      const result = await callGeminiAgent({
+        systemPrompt: cacheOptions.systemPrompt,
         history: priorHistory,
         message,
         tools: CHAT_TOOLS,
         model: settings.model || undefined,
         temperature: settings.temperature,
+        cache,
+        onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
 
       if (result.functionCall) {

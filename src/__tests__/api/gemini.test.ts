@@ -42,6 +42,7 @@ interface ParsedRequestBody {
   safetySettings: unknown;
   system_instruction?: unknown;
   tools?: unknown;
+  cachedContent?: string;
   __model?: unknown;
 }
 
@@ -216,6 +217,75 @@ describe("callGemini", () => {
     await callGemini({ message: "hi", model: "gpt-4-turbo" });
 
     expect(calls[0].url).toContain("gemini-3.7-flash");
+  });
+});
+
+describe("context cache", () => {
+  const CACHE = { name: "cachedContents/abc", model: "gemini-3.7-flash" };
+
+  it("swaps the prompt and tools for the handle that already holds them", async () => {
+    responders = [() => jsonResponse(textPayload("ok"))];
+
+    await callGemini({
+      message: "hi",
+      systemPrompt: "Та SAVANA-гийн туслах.",
+      tools: [{ functionDeclarations: [] }],
+      cache: CACHE,
+    });
+
+    const sent = requestBody(calls[0]);
+    expect(sent.cachedContent).toBe("cachedContents/abc");
+    // Sending them alongside the handle is an error, not a duplicate.
+    expect(sent.system_instruction).toBeUndefined();
+    expect(sent.tools).toBeUndefined();
+  });
+
+  it("keeps the full prompt for a fallback model the cache does not cover", async () => {
+    // A cache belongs to one model. Carrying the handle down the chain would
+    // turn one model's outage into every model's 400.
+    responders = [
+      () => jsonResponse({ error: { message: "overloaded" } }, 503),
+      () => jsonResponse(textPayload("ok")),
+    ];
+
+    await callGemini({ message: "hi", systemPrompt: "Та SAVANA-гийн туслах.", cache: CACHE });
+
+    expect(calls[1].url).toContain("gemini-3.6-flash");
+    expect(requestBody(calls[1]).cachedContent).toBeUndefined();
+    expect(requestBody(calls[1]).system_instruction).toBeDefined();
+  });
+
+  it("retries the same model at full price when the handle is refused", async () => {
+    // An expired cache must cost a customer nothing but a few hundred
+    // milliseconds — never a dropped answer.
+    responders = [
+      () => jsonResponse({ error: { message: "CachedContent not found" } }, 403),
+      () => jsonResponse(textPayload("answered anyway")),
+    ];
+    const rejected = vi.fn();
+
+    await expect(
+      callGemini({
+        message: "hi",
+        systemPrompt: "Та SAVANA-гийн туслах.",
+        cache: CACHE,
+        onCacheRejected: rejected,
+      }),
+    ).resolves.toBe("answered anyway");
+
+    expect(rejected).toHaveBeenCalledOnce();
+    expect(calls[1].url).toContain("gemini-3.7-flash");
+    expect(requestBody(calls[1]).cachedContent).toBeUndefined();
+    expect(requestBody(calls[1]).system_instruction).toBeDefined();
+  });
+
+  it("sends the prompt as usual when there is no handle", async () => {
+    responders = [() => jsonResponse(textPayload("ok"))];
+
+    await callGemini({ message: "hi", systemPrompt: "Та SAVANA-гийн туслах.", cache: null });
+
+    expect(requestBody(calls[0]).cachedContent).toBeUndefined();
+    expect(requestBody(calls[0]).system_instruction).toBeDefined();
   });
 });
 
