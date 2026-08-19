@@ -57,7 +57,6 @@ function asNumber(value: unknown, fallback: number) {
  */
 export function deserializeChatSettings(data: Record<string, unknown> | undefined): ChatSettingsRecord {
   const source = data ?? {};
-  const facebook = asRecord(source.facebook);
   const widget = asRecord(source.widget);
   const position = asString(widget.position, DEFAULT_CHAT_SETTINGS.widget.position);
 
@@ -72,26 +71,9 @@ export function deserializeChatSettings(data: Record<string, unknown> | undefine
     handoverThreshold: asNumber(source.handoverThreshold, DEFAULT_CHAT_SETTINGS.handoverThreshold),
     model: asString(source.model, DEFAULT_CHAT_SETTINGS.model),
     temperature: asNumber(source.temperature, DEFAULT_CHAT_SETTINGS.temperature),
-    facebook: {
-      isActive: asBoolean(facebook.isActive, DEFAULT_CHAT_SETTINGS.facebook.isActive),
-      pageId: asString(facebook.pageId, DEFAULT_CHAT_SETTINGS.facebook.pageId),
-      pageAccessToken: asString(
-        facebook.pageAccessToken,
-        DEFAULT_CHAT_SETTINGS.facebook.pageAccessToken,
-      ),
-      instagramAccountId: asString(
-        facebook.instagramAccountId,
-        DEFAULT_CHAT_SETTINGS.facebook.instagramAccountId,
-      ),
-      instagramIsActive: asBoolean(
-        facebook.instagramIsActive,
-        DEFAULT_CHAT_SETTINGS.facebook.instagramIsActive,
-      ),
-      replyToComments: asBoolean(
-        facebook.replyToComments,
-        DEFAULT_CHAT_SETTINGS.facebook.replyToComments,
-      ),
-    },
+    // `source.facebook` is read past on purpose: a document written before the
+    // credentials moved into the environment may still carry a page token, and
+    // nothing in the browser has any business holding one.
     widget: {
       isActive: asBoolean(widget.isActive, DEFAULT_CHAT_SETTINGS.widget.isActive),
       primaryColor: asString(widget.primaryColor, DEFAULT_CHAT_SETTINGS.widget.primaryColor),

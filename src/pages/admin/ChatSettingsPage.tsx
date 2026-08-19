@@ -1,7 +1,12 @@
-import { useEffect, useState } from "react";
-import { Check, Facebook, Instagram, Link2, Power, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check, Facebook, Link2, Power, RefreshCw, TriangleAlert } from "lucide-react";
 import { saveChatSettings } from "../../lib/chat/chatSettings";
-import { applyFacebookSetup, ChatApiError } from "../../lib/chat/chatApi";
+import {
+  applyFacebookSetup,
+  ChatApiError,
+  fetchFacebookStatus,
+  type FacebookStatus,
+} from "../../lib/chat/chatApi";
 import type { ChatSettingsRecord } from "../../lib/chat/types";
 import type { AdminCtx } from "./adminShellTypes";
 import "./ChatAdmin.css";
@@ -10,7 +15,7 @@ const COPY = {
   MN: {
     kicker: "AI Chat",
     title: "Чат тохиргоо",
-    text: "Ботыг асаах, Facebook/Instagram холбох, загварын тохиргоо.",
+    text: "Ботыг асаах, мэндчилгээ болон загварын тохиргоо.",
     botSection: "Ерөнхий",
     botActive: "Ботыг асаах",
     botActiveHelp: "Унтраалттай үед ямар ч суваг дээр бот хариулахгүй. Туршилтын чат ажиллана.",
@@ -21,25 +26,20 @@ const COPY = {
     modelAuto: "Автомат (санал болгосон)",
     temperature: "Temperature",
     temperatureHelp: "0 = тогтвортой, 1 = уран сэтгэмжтэй. Дэлгүүрт 0.5-0.7 тохиромжтой.",
-    fbSection: "Facebook + Instagram",
-    fbActive: "Messenger идэвхжүүлэх",
-    igActive: "Instagram Direct идэвхжүүлэх",
-    igHelp: "Instagram Business хаяг Facebook хуудастай холбогдсон байх шаардлагатай.",
-    pageId: "Page ID",
-    pageToken: "Page Access Token",
-    pageTokenHelp:
-      "Facebook Developer Console → Messenger → Access Tokens. 60 хоногийн настай — дуусахаас өмнө шинэчилнэ үү.",
-    tokenStored: "Хадгалагдсан",
-    tokenChange: "Солих",
+    connSection: "Холболт",
+    connText: "Facebook, Instagram, Webhook-ийг серверийн орчинд тохируулсан. Энд оруулах зүйл байхгүй.",
+    connMessenger: "Messenger",
+    connInstagram: "Instagram Direct",
+    connComments: "Сэтгэгдэлд хариулах",
+    connChecking: "Шалгаж байна…",
+    connOn: "Холбогдсон",
+    connOff: "Холбогдоогүй",
+    connBadToken: "Токен хүчингүй — Facebook хүлээж авсангүй",
+    refresh: "Дахин шалгах",
     applySetup: "Facebook-д цэс суулгах",
     applying: "Суулгаж байна…",
     applyHelp:
-      "Хадгалсан token-оор Facebook хуудсанд мэндчилгээ, Get Started, байнгын цэсийг суулгана. Token зөв эсэхийг мөн шалгана.",
-    webhookSection: "Webhook",
-    webhookHelp:
-      "Facebook Developer Console → Webhooks дээр доорх URL болон Verify Token-ыг бүртгэнэ. Verify Token нь Vercel дээрх FB_VERIFY_TOKEN орчны хувьсагчийн утга.",
-    webhookUrl: "Callback URL",
-    webhookFields: "Subscribe хийх талбарууд",
+      "Facebook хуудсанд мэндчилгээ, Get Started, байнгын цэсийг суулгана. Холболт зөв эсэхийг мөн шалгана.",
     save: "Хадгалах",
     saved: "Хадгаллаа",
     saving: "Хадгалж байна…",
@@ -47,7 +47,7 @@ const COPY = {
   EN: {
     kicker: "AI Chat",
     title: "Chat settings",
-    text: "Switch the bot on, connect Facebook/Instagram, and tune the model.",
+    text: "Switch the bot on, set the greeting, and tune the model.",
     botSection: "General",
     botActive: "Enable the bot",
     botActiveHelp: "While off the bot answers on no channel. The test chat still works.",
@@ -58,25 +58,20 @@ const COPY = {
     modelAuto: "Automatic (recommended)",
     temperature: "Temperature",
     temperatureHelp: "0 = consistent, 1 = creative. 0.5–0.7 suits a shop.",
-    fbSection: "Facebook + Instagram",
-    fbActive: "Enable Messenger",
-    igActive: "Enable Instagram Direct",
-    igHelp: "The Instagram Business account must be linked to the Facebook page.",
-    pageId: "Page ID",
-    pageToken: "Page Access Token",
-    pageTokenHelp:
-      "Facebook Developer Console → Messenger → Access Tokens. Valid for 60 days — refresh before it expires.",
-    tokenStored: "Stored",
-    tokenChange: "Replace",
+    connSection: "Connection",
+    connText: "Facebook, Instagram and the webhook are configured in the server environment. Nothing to fill in here.",
+    connMessenger: "Messenger",
+    connInstagram: "Instagram Direct",
+    connComments: "Reply to comments",
+    connChecking: "Checking…",
+    connOn: "Connected",
+    connOff: "Not connected",
+    connBadToken: "Token rejected by Facebook",
+    refresh: "Re-check",
     applySetup: "Install menu on Facebook",
     applying: "Installing…",
     applyHelp:
-      "Uses the saved token to install the greeting, Get Started button and persistent menu — and verifies the token works.",
-    webhookSection: "Webhook",
-    webhookHelp:
-      "Register the URL and verify token below under Facebook Developer Console → Webhooks. The verify token is the FB_VERIFY_TOKEN environment variable on Vercel.",
-    webhookUrl: "Callback URL",
-    webhookFields: "Fields to subscribe",
+      "Installs the greeting, Get Started button and persistent menu on the page — and verifies the connection works.",
     save: "Save",
     saved: "Saved",
     saving: "Saving…",
@@ -103,9 +98,8 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
   const [applying, setApplying] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  // The stored token is never shown; the field only ever carries a new value.
-  const [replacingToken, setReplacingToken] = useState(false);
-  const [tokenDraft, setTokenDraft] = useState("");
+  const [status, setStatus] = useState<FacebookStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
 
   // Adopt server updates only while the form is untouched, so a save from
   // another tab cannot overwrite what is being typed here.
@@ -115,14 +109,25 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
     }
   }, [settings, dirty]);
 
+  const loadStatus = useCallback(async () => {
+    setStatusLoading(true);
+    try {
+      setStatus(await fetchFacebookStatus());
+    } catch {
+      // A connection the server cannot describe is reported as no connection —
+      // there is nothing actionable to say here that the label does not.
+      setStatus(null);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
   function patch(next: Partial<ChatSettingsRecord>) {
     setDraft((current) => ({ ...current, ...next }));
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function patchFacebook(next: Partial<ChatSettingsRecord["facebook"]>) {
-    setDraft((current) => ({ ...current, facebook: { ...current.facebook, ...next } }));
     setDirty(true);
     setSaved(false);
   }
@@ -137,18 +142,9 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
         welcomeMessage: draft.welcomeMessage,
         model: draft.model,
         temperature: draft.temperature,
-        facebook: {
-          ...draft.facebook,
-          // Only overwrite the token when a replacement was actually typed.
-          pageAccessToken: replacingToken && tokenDraft.trim()
-            ? tokenDraft.trim()
-            : settings.facebook.pageAccessToken,
-        },
       });
       setDirty(false);
       setSaved(true);
-      setReplacingToken(false);
-      setTokenDraft("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -162,6 +158,8 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
     setError("");
     try {
       setNotice(await applyFacebookSetup());
+      // The install proves the token works, so refresh the label it feeds.
+      await loadStatus();
     } catch (caught) {
       setError(caught instanceof ChatApiError ? caught.message : "Суулгаж чадсангүй.");
     } finally {
@@ -169,9 +167,15 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
     }
   }
 
-  const webhookUrl =
-    typeof window === "undefined" ? "/api/chat/webhook" : `${window.location.origin}/api/chat/webhook`;
-  const hasStoredToken = settings.facebook.pageAccessToken.length > 0;
+  // "Connected" is only ever claimed on the strength of a page name, which
+  // Facebook returns for a working token and nothing else.
+  const messengerLabel = statusLoading
+    ? copy.connChecking
+    : !status?.connected
+      ? copy.connOff
+      : status.pageName
+        ? `${copy.connOn} — ${status.pageName}`
+        : copy.connBadToken;
 
   return (
     <>
@@ -268,74 +272,34 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
         </div>
       </div>
 
+      {/* Read-only on purpose. The page token, the verify token and the app
+          secret are all deployment configuration; the admin needs to know
+          whether they work, never what they are. */}
       <div className="admin-section-card">
         <div className="admin-section-head">
           <div>
             <h2>
               <Facebook size={17} style={{ verticalAlign: "-3px", marginRight: 6 }} />
-              {copy.fbSection}
+              {copy.connSection}
             </h2>
-            <p>{copy.pageTokenHelp}</p>
+            <p>{copy.connText}</p>
           </div>
+          <button type="button" className="btn" onClick={() => void loadStatus()} disabled={statusLoading}>
+            <RefreshCw size={15} />
+            {copy.refresh}
+          </button>
         </div>
 
-        <label className="admin-field admin-field-toggle">
-          <input
-            type="checkbox"
-            checked={draft.facebook.isActive}
-            onChange={(event) => patchFacebook({ isActive: event.target.checked })}
-          />
-          <span>{copy.fbActive}</span>
-        </label>
-
-        <label className="admin-field admin-field-toggle">
-          <input
-            type="checkbox"
-            checked={draft.facebook.instagramIsActive}
-            onChange={(event) => patchFacebook({ instagramIsActive: event.target.checked })}
-          />
-          <span>
-            <Instagram size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />
-            {copy.igActive}
-          </span>
-        </label>
-        <small style={{ opacity: 0.6 }}>{copy.igHelp}</small>
-
-        <div className="admin-form-grid">
-          <label className="admin-field">
-            <span>{copy.pageId}</span>
-            <input
-              className="admin-input"
-              value={draft.facebook.pageId}
-              onChange={(event) => patchFacebook({ pageId: event.target.value.trim() })}
-              placeholder="1234567890"
-            />
-          </label>
-
-          <label className="admin-field">
-            <span>{copy.pageToken}</span>
-            {hasStoredToken && !replacingToken ? (
-              <div className="chat-token-row">
-                <span className="chat-token-stored">••••••••••••  {copy.tokenStored}</span>
-                <button type="button" className="btn" onClick={() => setReplacingToken(true)}>
-                  {copy.tokenChange}
-                </button>
-              </div>
-            ) : (
-              <input
-                className="admin-input"
-                type="password"
-                autoComplete="off"
-                value={tokenDraft}
-                onChange={(event) => {
-                  setTokenDraft(event.target.value);
-                  setDirty(true);
-                  setSaved(false);
-                }}
-                placeholder="EAAG…"
-              />
-            )}
-          </label>
+        <div className="admin-structure-list">
+          <code>
+            {copy.connMessenger}: {messengerLabel}
+          </code>
+          <code>
+            {copy.connInstagram}: {status?.instagram ? copy.connOn : copy.connOff}
+          </code>
+          <code>
+            {copy.connComments}: {status?.comments ? copy.connOn : copy.connOff}
+          </code>
         </div>
 
         <div className="admin-editor-actions">
@@ -343,30 +307,13 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
             type="button"
             className="btn"
             onClick={() => void runSetup()}
-            disabled={applying || !hasStoredToken}
+            disabled={applying || !status?.connected}
           >
             <Link2 size={15} />
             {applying ? copy.applying : copy.applySetup}
           </button>
         </div>
         <small style={{ opacity: 0.6 }}>{copy.applyHelp}</small>
-      </div>
-
-      <div className="admin-section-card">
-        <div className="admin-section-head">
-          <div>
-            <h2>{copy.webhookSection}</h2>
-            <p>{copy.webhookHelp}</p>
-          </div>
-        </div>
-        <div className="admin-structure-list">
-          <code>
-            {copy.webhookUrl}: {webhookUrl}
-          </code>
-          <code>
-            {copy.webhookFields}: messages, messaging_postbacks
-          </code>
-        </div>
       </div>
     </>
   );

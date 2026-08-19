@@ -138,25 +138,13 @@ export interface ChatSettingsRecord {
   /** Model id from the admin picker; empty means use the server's default chain. */
   model: string;
   temperature: number;
-  facebook: ChatFacebookSettings;
   widget: ChatWidgetSettings;
   updatedAt: string | null;
 }
-
-export interface ChatFacebookSettings {
-  isActive: boolean;
-  pageId: string;
-  /**
-   * Page Access Token. Never read this into the storefront bundle — the
-   * chat_settings read rule is admin-only precisely because of this field.
-   */
-  pageAccessToken: string;
-  /** Instagram Business account id linked to the page, when IG is enabled. */
-  instagramAccountId: string;
-  instagramIsActive: boolean;
-  /** Auto-reply to comments on page posts, not just direct messages. */
-  replyToComments: boolean;
-}
+// Facebook and Instagram are deliberately absent. The page token is a bearer
+// credential that can post as the brand, so it is configured in the deployment
+// environment (FB_PAGE_ACCESS_TOKEN) and read only by api/chat/**. Nothing in
+// the admin bundle stores it, renders it, or can overwrite it.
 
 export interface ChatWidgetSettings {
   isActive: boolean;
@@ -173,14 +161,6 @@ export const DEFAULT_CHAT_SETTINGS: ChatSettingsRecord = {
   handoverThreshold: 2,
   model: "",
   temperature: 0.7,
-  facebook: {
-    isActive: false,
-    pageId: "",
-    pageAccessToken: "",
-    instagramAccountId: "",
-    instagramIsActive: false,
-    replyToComments: false,
-  },
   widget: {
     isActive: false,
     primaryColor: "#3f5d45",

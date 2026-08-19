@@ -57,7 +57,9 @@ Console → **Firestore Database** → **Rules** таб.
     // the browser never creates a conversation, message or lead, so there is no
     // anonymous write surface to forge a "paid" lead or a fake admin reply on.
 
-    // Holds the Facebook Page Access Token — readable by admins only, never public.
+    // Bot behaviour only. The Facebook page token used to live here; it is now
+    // deployment configuration (FB_PAGE_ACCESS_TOKEN), so no credential reaches a
+    // browser at all. Still admin-only: the prompt and welcome text are internal.
     match /chat_settings/{documentId} {
       allow read: if hasPrivilegedProfileRole();
       allow create, update: if hasPrivilegedProfileRole();

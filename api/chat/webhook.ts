@@ -5,9 +5,11 @@
 // the page, Meta delivers its messages to the same webhook with
 // `object: "instagram"`. Everything downstream is channel-agnostic.
 //
-// Required env vars: FB_VERIFY_TOKEN, GEMINI_API_KEY, FIREBASE_SERVICE_ACCOUNT_JSON.
+// Required env vars: FB_VERIFY_TOKEN, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY,
+// FIREBASE_SERVICE_ACCOUNT_JSON. Strongly recommended: FB_APP_SECRET.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { buildStorefrontPrompt, loadStorefrontContext } from './_lib/buildPrompt.js';
 import { handleCommentEvent, parseCommentChange } from './_lib/comments.js';
@@ -42,7 +44,10 @@ import {
 import { canAnswerOnChannel, loadChatSettings, type ServerChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, runTool, TOOL_NAMES, type ToolContext } from './_lib/tools.js';
 
-export const config = { maxDuration: 60 };
+// Body parsing is off so the handler sees the bytes Meta actually sent: the
+// signature covers the raw payload, and re-serialising a parsed object would
+// not reproduce it.
+export const config = { maxDuration: 60, api: { bodyParser: false } };
 
 /** Facebook resends when it does not see a 200 within roughly 20 seconds. */
 const PER_USER_RATE_LIMIT = { max: 12, windowMs: 60_000 };
@@ -71,7 +76,21 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const body = req.body ?? {};
+  const raw = await readRawBody(req);
+  if (!hasValidSignature(req, raw)) {
+    res.status(403).send('Forbidden');
+    return;
+  }
+
+  let body: any;
+  try {
+    body = raw === null ? req.body ?? {} : JSON.parse(raw);
+  } catch {
+    console.warn('[chat/webhook] payload was not JSON');
+    res.status(400).send('Bad request');
+    return;
+  }
+
   if (body.object !== 'page' && body.object !== 'instagram') {
     // Not ours, but acknowledge so Meta stops retrying.
     res.status(200).send('EVENT_RECEIVED');
@@ -88,6 +107,78 @@ export default async function handler(req: any, res: any): Promise<void> {
   }
 
   res.status(200).send('EVENT_RECEIVED');
+}
+
+/**
+ * The exact bytes of the delivery. Meta escapes non-ASCII in its payloads, so a
+ * signature recomputed from `JSON.stringify(req.body)` would fail on every
+ * Mongolian message — the raw stream is the only thing worth hashing.
+ *
+ * Returns null when something upstream already drained the request, which is
+ * the one case the caller cannot verify.
+ */
+async function readRawBody(req: any): Promise<string | null> {
+  if (typeof req.body === 'string') {
+    return req.body;
+  }
+
+  if (Buffer.isBuffer(req.body)) {
+    return req.body.toString('utf8');
+  }
+
+  // Already drained, or not a stream at all: either way the bytes are gone.
+  if (req.readableEnded || req.readable === false || typeof req[Symbol.asyncIterator] !== 'function') {
+    return null;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Meta signs every delivery with the app secret. Without this check anyone who
+ * learns the URL can post fabricated events: the bot would message arbitrary
+ * PSIDs, spend Gemini quota and file leads for customers who never wrote in.
+ *
+ * An unset secret means unverified — the behaviour before this check existed,
+ * and loud in the log — rather than a webhook that silently stops answering
+ * because a variable was never added.
+ */
+function hasValidSignature(req: any, raw: string | null): boolean {
+  const secret = (process.env.FB_APP_SECRET ?? '').trim();
+
+  if (!secret) {
+    console.warn('[chat/webhook] FB_APP_SECRET is not set — deliveries are NOT verified');
+    return true;
+  }
+
+  if (raw === null) {
+    console.error('[chat/webhook] request body was already consumed; cannot verify the signature');
+    return false;
+  }
+
+  const received = Buffer.from(String(req.headers['x-hub-signature-256'] ?? ''));
+  const expected = Buffer.from(
+    `sha256=${createHmac('sha256', secret).update(raw, 'utf8').digest('hex')}`,
+  );
+
+  // timingSafeEqual throws on a length mismatch, and a wrong length is already
+  // a failure, so the comparison is only reached for same-shaped digests.
+  if (received.length !== expected.length) {
+    console.warn('[chat/webhook] signature missing or malformed');
+    return false;
+  }
+
+  if (!timingSafeEqual(received, expected)) {
+    console.warn('[chat/webhook] signature did not match');
+    return false;
+  }
+
+  return true;
 }
 
 function handleVerify(req: any, res: any): void {

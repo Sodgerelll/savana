@@ -84,13 +84,62 @@ export function deserializeServerChatSettings(data: any): ServerChatSettings {
   };
 }
 
+function isEnvTrue(value: string | undefined): boolean {
+  return (value ?? '').trim().toLowerCase() === 'true';
+}
+
+function isEnvFalse(value: string | undefined): boolean {
+  return (value ?? '').trim().toLowerCase() === 'false';
+}
+
+/** True when the deployment, rather than Firestore, supplies the credentials. */
+export function facebookComesFromEnv(): boolean {
+  return (process.env.FB_PAGE_ACCESS_TOKEN ?? '').trim().length > 0;
+}
+
+/**
+ * Overlays the Facebook credentials the deployment supplies.
+ *
+ * A Page Access Token is a bearer credential that can post as the brand, so it
+ * belongs in the environment rather than in Firestore, where every admin-role
+ * account could read it. The admin screen has no field for any of this — the
+ * deployment is the only place Facebook is configured.
+ *
+ * The environment wins whenever it carries a token; otherwise the stored
+ * document is left exactly as it is, so an install configured before this
+ * change keeps answering until its variables are in place.
+ */
+function applyFacebookEnv(settings: ServerChatSettings): ServerChatSettings {
+  const pageAccessToken = (process.env.FB_PAGE_ACCESS_TOKEN ?? '').trim();
+
+  if (!pageAccessToken) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    facebook: {
+      // A configured token *is* the connection — there is no second switch to
+      // forget to turn on. The master `isActive` still gates every channel.
+      isActive: true,
+      pageId: (process.env.FB_PAGE_ID ?? '').trim() || settings.facebook.pageId,
+      pageAccessToken,
+      instagramAccountId: (process.env.IG_ACCOUNT_ID ?? '').trim(),
+      // Instagram Direct arrives on the same page token, so it rides along by
+      // default; a shop with no linked IG account simply never receives one.
+      instagramIsActive: !isEnvFalse(process.env.IG_IS_ACTIVE),
+      replyToComments: isEnvTrue(process.env.FB_REPLY_TO_COMMENTS),
+    },
+  };
+}
+
 export async function loadChatSettings(db: any): Promise<ServerChatSettings> {
   try {
     const snapshot = await db.doc(CHAT_SETTINGS_PATH).get();
-    return deserializeServerChatSettings(snapshot.exists ? snapshot.data() : null);
+    return applyFacebookEnv(deserializeServerChatSettings(snapshot.exists ? snapshot.data() : null));
   } catch (err) {
     console.error('[chat/settings] load failed:', (err as Error).message);
-    return DEFAULT_SERVER_CHAT_SETTINGS;
+    return applyFacebookEnv(DEFAULT_SERVER_CHAT_SETTINGS);
   }
 }
 

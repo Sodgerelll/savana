@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createHmac } from "node:crypto";
+import { Readable } from "node:stream";
 
 const mocks = vi.hoisted(() => ({
   getAdminFirestore: vi.fn(),
@@ -252,6 +254,100 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.FB_VERIFY_TOKEN;
+  delete process.env.FB_APP_SECRET;
+});
+
+// ─── Delivery signatures ──────────────────────────────────────────────────────
+
+/** A request that behaves like the real stream, so the raw bytes are readable. */
+function streamedPost(raw: string, signature?: string) {
+  return {
+    method: "POST",
+    headers: signature ? { "x-hub-signature-256": signature } : {},
+    ...Readable.from([Buffer.from(raw, "utf8")]),
+    [Symbol.asyncIterator]() {
+      return Readable.from([Buffer.from(raw, "utf8")])[Symbol.asyncIterator]();
+    },
+    readable: true,
+    readableEnded: false,
+  };
+}
+
+function sign(raw: string, secret: string) {
+  return `sha256=${createHmac("sha256", secret).update(raw, "utf8").digest("hex")}`;
+}
+
+describe("X-Hub-Signature-256", () => {
+  const raw = JSON.stringify(messageEvent("сайн уу"));
+
+  it("accepts a delivery signed with the app secret", async () => {
+    process.env.FB_APP_SECRET = "app-secret";
+    const { res, captured } = mockRes();
+
+    await handler(streamedPost(raw, sign(raw, "app-secret")), res);
+
+    expect(captured.status).toBe(200);
+    expect(mocks.sendText).toHaveBeenCalled();
+  });
+
+  it("hashes the bytes Meta sent rather than a re-serialised object", async () => {
+    // Meta escapes non-ASCII, so this payload is byte-for-byte different from
+    // JSON.stringify(JSON.parse(escaped)) while parsing to the same object.
+    // Anything that re-serialises before hashing fails every Mongolian message.
+    const escaped = raw.replace(/[-￿]/g, (character) =>
+      `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    );
+    expect(escaped).not.toBe(raw);
+    process.env.FB_APP_SECRET = "app-secret";
+    const { res, captured } = mockRes();
+
+    await handler(streamedPost(escaped, sign(escaped, "app-secret")), res);
+
+    expect(captured.status).toBe(200);
+    expect(mocks.sendText).toHaveBeenCalled();
+  });
+
+  it("rejects a delivery signed with the wrong secret", async () => {
+    process.env.FB_APP_SECRET = "app-secret";
+    const { res, captured } = mockRes();
+
+    await handler(streamedPost(raw, sign(raw, "not-the-secret")), res);
+
+    expect(captured.status).toBe(403);
+    expect(mocks.sendText).not.toHaveBeenCalled();
+  });
+
+  it("rejects a delivery carrying no signature at all", async () => {
+    process.env.FB_APP_SECRET = "app-secret";
+    const { res, captured } = mockRes();
+
+    await handler(streamedPost(raw), res);
+
+    expect(captured.status).toBe(403);
+    expect(mocks.sendText).not.toHaveBeenCalled();
+  });
+
+  it("rejects a delivery whose body was drained before it could be hashed", async () => {
+    process.env.FB_APP_SECRET = "app-secret";
+    const { res, captured } = mockRes();
+
+    await handler(
+      { method: "POST", headers: { "x-hub-signature-256": sign(raw, "app-secret") }, body: JSON.parse(raw) },
+      res,
+    );
+
+    expect(captured.status).toBe(403);
+  });
+
+  it("processes unverified deliveries when no secret is configured", async () => {
+    // Back-compat: a missing variable must not silence the bot, only warn.
+    const { res, captured } = mockRes();
+
+    await handler(streamedPost(raw), res);
+
+    expect(captured.status).toBe(200);
+    expect(mocks.sendText).toHaveBeenCalled();
+  });
 });
 
 // ─── Verification handshake ───────────────────────────────────────────────────

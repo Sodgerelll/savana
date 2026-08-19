@@ -128,3 +128,35 @@ export async function applyFacebookSetup(): Promise<string> {
   const payload = await postToChatApi("/api/chat/setup", {});
   return typeof payload.message === "string" ? payload.message : "Амжилттай.";
 }
+
+export interface FacebookStatus {
+  /** A page token is configured on the server. */
+  connected: boolean;
+  /** The page Meta returned for that token — null means Meta refused it. */
+  pageName: string | null;
+  instagram: boolean;
+  comments: boolean;
+}
+
+/**
+ * Reports the Facebook connection without ever handing the token to the
+ * browser. The settings screen has no fields for these — they are set in the
+ * deployment environment — so this read-only view is all the admin needs.
+ */
+export async function fetchFacebookStatus(): Promise<FacebookStatus> {
+  const authorization = await authorizationHeader();
+  const response = await fetch("/api/chat/setup", { headers: { Authorization: authorization } });
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (!response.ok) {
+    const message = typeof payload.error === "string" ? payload.error : "Төлөв авч чадсангүй.";
+    throw new ChatApiError(message, response.status);
+  }
+
+  return {
+    connected: payload.connected === true,
+    pageName: typeof payload.pageName === "string" ? payload.pageName : null,
+    instagram: payload.instagram === true,
+    comments: payload.comments === true,
+  };
+}

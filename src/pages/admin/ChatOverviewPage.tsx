@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Facebook, Globe, Instagram } from "lucide-react";
 import ChatPanel from "../../components/chat/ChatPanel";
+import { fetchFacebookStatus, type FacebookStatus } from "../../lib/chat/chatApi";
 import { computeChatStats, STATS_WINDOW_DAYS } from "../../lib/chat/chatStats";
 import { CHANNEL_LABELS } from "../../lib/chat/conversationStore";
 import type {
@@ -92,6 +93,24 @@ export default function ChatOverviewPage({ ctx }: { ctx: AdminCtx }) {
     return () => clearInterval(timer);
   }, []);
 
+  // Facebook and Instagram are configured in the server environment, so their
+  // state is not in the settings document the rest of this page reads.
+  const [facebook, setFacebook] = useState<FacebookStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFacebookStatus()
+      .then((result) => {
+        if (!cancelled) setFacebook(result);
+      })
+      .catch(() => {
+        if (!cancelled) setFacebook(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const stats = useMemo(
     () =>
       computeChatStats(
@@ -103,12 +122,12 @@ export default function ChatOverviewPage({ ctx }: { ctx: AdminCtx }) {
   );
 
   const channels = [
-    { key: "facebook", label: copy.facebook, icon: <Facebook size={14} />, on: settings.facebook.isActive },
+    { key: "facebook", label: copy.facebook, icon: <Facebook size={14} />, on: facebook?.connected === true },
     {
       key: "instagram",
       label: copy.instagram,
       icon: <Instagram size={14} />,
-      on: settings.facebook.instagramIsActive,
+      on: facebook?.instagram === true,
     },
     { key: "widget", label: copy.widget, icon: <Globe size={14} />, on: settings.widget.isActive },
   ].filter((channel) => channel.on);

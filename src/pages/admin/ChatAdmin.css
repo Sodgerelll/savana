@@ -170,27 +170,8 @@
   }
 }
 
-/* ── Settings: stored secret ── */
-
-.chat-token-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
 .chat-lead-done {
   display: inline-flex;
   align-items: center;
   color: rgb(90, 81, 3);
-}
-
-.chat-token-stored {
-  flex: 1;
-  font-size: var(--fs-sm, 0.85rem);
-  letter-spacing: 0.06em;
-  opacity: 0.6;
-  background: #fdfcf9;
-  border: 1px solid rgba(183, 185, 167, 0.75);
-  border-radius: 9px;
-  padding: 0.6rem 0.75rem;
 }

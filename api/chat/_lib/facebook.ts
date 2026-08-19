@@ -374,6 +374,33 @@ export async function sendPrivateReply(
 }
 
 /**
+ * The page the token belongs to. The admin screen shows this as the proof that
+ * the connection is live: a name can only come back from a token Meta accepts,
+ * where a configured-looking environment variable proves nothing.
+ */
+export async function getPageName(token: string): Promise<string | null> {
+  if (!token) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${GRAPH_URL}/me?fields=name`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as any;
+    return typeof data?.name === 'string' && data.name ? data.name : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Looks up the sender's display name so an admin sees a person, not a PSID.
  * Instagram and privacy-restricted profiles can refuse this, hence the null.
  */

@@ -30,11 +30,21 @@ describe("deserializeChatSettings", () => {
 
     expect(result.isActive).toBe(true);
     expect(result.botName).toBe("Савана бот");
-    expect(result.facebook.pageId).toBe("12345");
     // Untouched fields fall back rather than becoming undefined.
     expect(result.welcomeMessage).toBe(DEFAULT_CHAT_SETTINGS.welcomeMessage);
-    expect(result.facebook.pageAccessToken).toBe("");
     expect(result.widget).toEqual(DEFAULT_CHAT_SETTINGS.widget);
+  });
+
+  it("leaves a stored Facebook block out of the browser's copy entirely", () => {
+    // Credentials moved to the server environment. A document written by an
+    // older build may still hold a page token, and nothing in the admin bundle
+    // should be able to read, render or re-save it.
+    const result = deserializeChatSettings({
+      facebook: { pageId: "12345", pageAccessToken: "EAAG-secret" },
+    });
+
+    expect(result).not.toHaveProperty("facebook");
+    expect(JSON.stringify(result)).not.toContain("EAAG-secret");
   });
 
   it("ignores fields stored with the wrong type", () => {
@@ -75,7 +85,6 @@ describe("deserializeChatSettings", () => {
   it("survives nested objects stored as the wrong type", () => {
     const result = deserializeChatSettings({ facebook: "not-an-object", widget: 7 });
 
-    expect(result.facebook).toEqual(DEFAULT_CHAT_SETTINGS.facebook);
     expect(result.widget).toEqual(DEFAULT_CHAT_SETTINGS.widget);
   });
 
@@ -99,7 +108,6 @@ describe("deserializeChatSettings", () => {
 
   it("keeps the bot disabled by default so it cannot answer before it is configured", () => {
     expect(DEFAULT_CHAT_SETTINGS.isActive).toBe(false);
-    expect(DEFAULT_CHAT_SETTINGS.facebook.isActive).toBe(false);
     expect(DEFAULT_CHAT_SETTINGS.widget.isActive).toBe(false);
   });
 });
