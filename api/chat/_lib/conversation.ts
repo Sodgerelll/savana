@@ -19,6 +19,17 @@ export const HISTORY_TURNS = 20;
  */
 export const HANDOVER_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * How long the bot stays out of a thread a human has answered.
+ *
+ * A staff reply used to silence the bot for good, which is right for the next
+ * few messages and wrong by the next morning: the customer comes back with an
+ * ordinary question and nobody answers it. Three hours is long enough not to
+ * interrupt a conversation being handled, short enough that a thread does not
+ * stay dead overnight.
+ */
+export const ADMIN_HANDOVER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+
 export type ChatChannel = 'facebook' | 'instagram' | 'widget' | 'admin_test';
 export type ConversationStatus = 'active' | 'handover' | 'admin_active' | 'resolved' | 'abandoned';
 export type MessageRole = 'user' | 'assistant' | 'admin' | 'system';
@@ -29,6 +40,8 @@ export interface ConversationRef {
   messageCount: number;
   customerName: string | null;
   handoverAt: number | null;
+  /** When a human last replied here, which is what the bot's silence is timed from. */
+  adminActiveAt: number | null;
 }
 
 /**
@@ -87,6 +100,7 @@ export async function ensureConversation(
       messageCount: Number(data.messageCount ?? 0),
       customerName: data.customerName ?? params.customerName ?? null,
       handoverAt: typeof data.handoverAt === 'number' ? data.handoverAt : null,
+      adminActiveAt: typeof data.adminActiveAt === 'number' ? data.adminActiveAt : null,
     };
   }
 
@@ -105,6 +119,7 @@ export async function ensureConversation(
     lastMessageAt: now,
     handoverReason: null,
     handoverAt: null,
+    adminActiveAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -121,6 +136,7 @@ export async function ensureConversation(
       messageCount: Number(data.messageCount ?? 0),
       customerName: data.customerName ?? null,
       handoverAt: typeof data.handoverAt === 'number' ? data.handoverAt : null,
+      adminActiveAt: typeof data.adminActiveAt === 'number' ? data.adminActiveAt : null,
     };
   }
 
@@ -130,6 +146,7 @@ export async function ensureConversation(
     messageCount: 0,
     customerName: params.customerName ?? null,
     handoverAt: null,
+    adminActiveAt: null,
   };
 }
 
@@ -227,9 +244,15 @@ export async function setConversationStatus(
     patch.handoverAt = Date.now();
     patch.handoverReason = extra.handoverReason ?? null;
   }
+  if (status === 'admin_active') {
+    // Re-stamped on every staff reply, so the three hours run from the last
+    // thing the human said rather than from the first.
+    patch.adminActiveAt = Date.now();
+  }
   if (status === 'active') {
     patch.handoverAt = null;
     patch.handoverReason = null;
+    patch.adminActiveAt = null;
   }
 
   await db.collection(CONVERSATIONS_COLLECTION).doc(conversationId).set(patch, { merge: true });
@@ -238,13 +261,19 @@ export async function setConversationStatus(
 /**
  * Whether the bot should stay quiet on this thread.
  *
- * It steps aside while a human is handling the conversation, but resumes if a
- * handover has gone unanswered past the timeout — better a bot reply than
- * silence.
+ * It steps aside while a human is handling the conversation, and comes back
+ * once either timeout has run out — better a bot reply than silence. A customer
+ * can also ask for it back at any point, which sets the status directly.
  */
 export function botShouldStaySilent(conversation: ConversationRef, now = Date.now()): boolean {
   if (conversation.status === 'admin_active') {
-    return true;
+    // A thread written before this stamp existed has no way to prove three
+    // hours have passed, so it keeps the old behaviour and waits for a human —
+    // or for the customer to ask for the bot back.
+    return (
+      typeof conversation.adminActiveAt !== 'number' ||
+      now - conversation.adminActiveAt < ADMIN_HANDOVER_TIMEOUT_MS
+    );
   }
   if (conversation.status === 'handover') {
     return conversation.handoverAt !== null && now - conversation.handoverAt < HANDOVER_TIMEOUT_MS;

@@ -67,6 +67,17 @@ const START_QUICK_REPLIES = [
   { title: 'Ажилтантай ярих ☎️', payload: 'TRANSFER_TO_STAFF' },
 ];
 
+/**
+ * Asks for the bot back. Not a tool: it changes who owns the thread, and it has
+ * to be handled before the silence check that would otherwise swallow it.
+ */
+const RESUME_BOT_PAYLOAD = 'RESUME_BOT';
+
+const RESUME_BOT_REPLY = 'Дахин туслахад бэлэн боллоо 🌿 Юу асуух вэ?';
+
+/** Offered whenever the thread is handed to a human, so the way back is visible. */
+const RESUME_QUICK_REPLY = { title: 'Ботруу буцах 🤖', payload: RESUME_BOT_PAYLOAD };
+
 /** Postback payloads the persistent menu and card buttons can produce. */
 const POSTBACK_TO_TOOL: Record<string, string> = {
   SHOW_PRODUCTS: TOOL_NAMES.SHOW_PRODUCTS,
@@ -393,6 +404,15 @@ async function replyToEvent(
     await captureContactDetails(db, conversation.id, text);
   }
 
+  // Checked before the silence rule, which is the whole point: the customer is
+  // asking to be let out of a thread the bot is deliberately quiet in.
+  if (postbackPayload === RESUME_BOT_PAYLOAD) {
+    await setConversationStatus(db, conversation.id, 'active');
+    await sendText(token, senderId, RESUME_BOT_REPLY);
+    await appendMessage(db, conversation.id, { role: 'assistant', content: RESUME_BOT_REPLY });
+    return;
+  }
+
   if (botShouldStaySilent(conversation)) {
     return;
   }
@@ -640,11 +660,17 @@ async function deliverOutcome(
   const conversationId = conversation.id;
   const text = (outcome.text ?? '').trim();
 
+  // A customer handed to staff is about to stop hearing from the bot, so the
+  // way back rides along with the message that says so.
+  const quickReplies = outcome.handoverReason
+    ? [...(outcome.quickReplies ?? []), RESUME_QUICK_REPLY]
+    : outcome.quickReplies;
+
   if (text) {
     if (outcome.buttons && outcome.buttons.length > 0) {
       await sendButtons(token, senderId, text, outcome.buttons);
-    } else if (outcome.quickReplies && outcome.quickReplies.length > 0) {
-      await sendQuickReplies(token, senderId, text, outcome.quickReplies);
+    } else if (quickReplies && quickReplies.length > 0) {
+      await sendQuickReplies(token, senderId, text, quickReplies);
     } else {
       await sendText(token, senderId, text);
     }

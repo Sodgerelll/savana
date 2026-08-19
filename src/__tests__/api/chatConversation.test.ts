@@ -9,6 +9,7 @@ import {
   botShouldStaySilent,
   conversationIdFor,
   ensureConversation,
+  ADMIN_HANDOVER_TIMEOUT_MS,
   HANDOVER_TIMEOUT_MS,
   readRecentMessages,
   setConversationStatus,
@@ -16,7 +17,15 @@ import {
 } from "../../../api/chat/_lib/conversation";
 
 function ref(overrides: Partial<ConversationRef> = {}): ConversationRef {
-  return { id: "c1", status: "active", messageCount: 3, customerName: null, handoverAt: null, ...overrides };
+  return {
+    id: "c1",
+    status: "active",
+    messageCount: 3,
+    customerName: null,
+    handoverAt: null,
+    adminActiveAt: null,
+    ...overrides,
+  };
 }
 
 /** Minimal Firestore stand-in covering the operations this module uses. */
@@ -305,6 +314,26 @@ describe("botShouldStaySilent", () => {
   });
 
   it("stays quiet while an admin is replying", () => {
+    const now = Date.now();
+    expect(
+      botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: now - 60_000 }), now),
+    ).toBe(true);
+  });
+
+  it("takes the thread back three hours after the last staff reply", () => {
+    // A staff reply used to silence the bot for good, so a customer coming back
+    // the next morning with an ordinary question got nobody at all.
+    const now = Date.now();
+    const justUnder = now - (ADMIN_HANDOVER_TIMEOUT_MS - 1000);
+    const justOver = now - (ADMIN_HANDOVER_TIMEOUT_MS + 1000);
+
+    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justUnder }), now)).toBe(true);
+    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justOver }), now)).toBe(false);
+  });
+
+  it("waits for a human on a thread saved before the stamp existed", () => {
+    // Nothing proves three hours have passed, so the old behaviour stands
+    // rather than the bot talking over someone mid-conversation.
     expect(botShouldStaySilent(ref({ status: "admin_active" }))).toBe(true);
   });
 

@@ -20,6 +20,9 @@ const DEFAULT_MENU_ITEMS = [
   { title: 'Бүтээгдэхүүн 🌿', payload: 'SHOW_PRODUCTS' },
   { title: 'Хямдрал 🎁', payload: 'SHOW_PROMOTIONS' },
   { title: 'Ажилтантай ярих ☎️', payload: 'TRANSFER_TO_STAFF' },
+  // Always reachable, because quick replies vanish the moment the customer
+  // types anything and the thread they are stuck in may be hours old.
+  { title: 'Ботруу буцах 🤖', payload: 'RESUME_BOT' },
 ];
 
 const NOT_CONFIGURED = 'Facebook холбогдоогүй байна. FB_PAGE_ACCESS_TOKEN тохируулна уу.';

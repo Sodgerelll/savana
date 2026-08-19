@@ -758,6 +758,54 @@ describe("handover", () => {
     expect(messages).toHaveLength(1);
   });
 
+  it("gives the thread back when the customer asks for the bot", async () => {
+    // The customer is asking to be let out of a thread the bot is deliberately
+    // quiet in, so this has to be answered before the silence rule, not after.
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", {
+      status: "admin_active",
+      messageCount: 4,
+      adminActiveAt: Date.now() - 60_000,
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: postbackEvent("RESUME_BOT") }, res);
+
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).toMatchObject({
+      status: "active",
+    });
+    expect(mocks.sendText).toHaveBeenCalledWith(PAGE_TOKEN, SENDER, expect.stringContaining("бэлэн"));
+    // It is a status change, not a question — the model is not involved.
+    expect(mocks.callGeminiAgent).not.toHaveBeenCalled();
+  });
+
+  it("takes the thread back three hours after the last staff reply", async () => {
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", {
+      status: "admin_active",
+      messageCount: 4,
+      adminActiveAt: Date.now() - 4 * 60 * 60 * 1000,
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
+
+    expect(mocks.callGeminiAgent).toHaveBeenCalled();
+  });
+
+  it("offers the way back on the message that hands the thread over", async () => {
+    // Quick replies are the only thing on screen at that moment; without one
+    // the customer has no idea the bot can be recalled at all.
+    mocks.callGeminiAgent.mockResolvedValue({
+      functionCall: { name: "transfer_to_staff", args: { reason: "гомдол" } },
+      text: null,
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("ажилтантай ярья") }, res);
+
+    const replies = mocks.sendQuickReplies.mock.calls.at(-1)?.[3] ?? [];
+    expect(replies.some((reply: { payload: string }) => reply.payload === "RESUME_BOT")).toBe(true);
+  });
+
   it("resumes after an unanswered handover has timed out", async () => {
     fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", {
       status: "handover",

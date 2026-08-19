@@ -23,6 +23,8 @@ interface WidgetMessage {
   products?: WidgetProduct[];
   /** Bonum's payment page, when this turn produced an order. */
   payUrl?: string;
+  /** The thread is with a human, so the way back to the bot is offered. */
+  handedOver?: boolean;
 }
 
 const SESSION_STORAGE_KEY = "savana.chat.session";
@@ -43,6 +45,7 @@ const COPY = {
     tooFast: "Түр хүлээнэ үү.",
     addToCart: "Сагсанд хийх",
     pay: "Төлбөр төлөх",
+    backToBot: "Ботруу буцах 🤖",
     soldOut: "Дууссан",
     handedOver: "Ажилтан руу шилжүүллээ.",
   },
@@ -58,6 +61,7 @@ const COPY = {
     tooFast: "Please wait a moment.",
     addToCart: "Add to cart",
     pay: "Pay now",
+    backToBot: "Back to the bot 🤖",
     soldOut: "Sold out",
     handedOver: "Handed over to our team.",
   },
@@ -149,6 +153,44 @@ export default function ChatWidget() {
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages, pending]);
 
+  /**
+   * Asks for the bot back. A thread handed to a human otherwise stays that way
+   * for three hours, which is right while someone is answering and wrong the
+   * moment the customer has a different, simpler question.
+   */
+  const resumeBot = useCallback(async () => {
+    if (pending) return;
+
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/chat/widget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionIdRef.current, resume: true }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+      if (!response.ok) {
+        setError(typeof payload.error === "string" ? payload.error : copy.failed);
+        return;
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: nextId(),
+          role: "assistant",
+          content: typeof payload.reply === "string" ? payload.reply : "",
+        },
+      ]);
+    } catch {
+      setError(copy.failed);
+    } finally {
+      setPending(false);
+    }
+  }, [copy.failed, pending]);
+
   const send = useCallback(async () => {
     const message = draft.trim();
     if (!message || pending) return;
@@ -201,6 +243,7 @@ export default function ChatWidget() {
           content: payload.handedOver === true && !reply ? copy.handedOver : reply,
           products,
           payUrl: typeof payload.payUrl === "string" ? payload.payUrl : undefined,
+          handedOver: payload.handedOver === true,
         },
       ]);
     } catch {
@@ -272,6 +315,17 @@ export default function ChatWidget() {
         {messages.map((message) => (
           <div key={message.id} className={`chat-widget-row chat-widget-row-${message.role}`}>
             {message.content && <div className="chat-widget-bubble">{message.content}</div>}
+
+            {message.handedOver && (
+              <button
+                type="button"
+                className="btn chat-widget-pay"
+                disabled={pending}
+                onClick={() => void resumeBot()}
+              >
+                {copy.backToBot}
+              </button>
+            )}
 
             {message.payUrl && (
               <a

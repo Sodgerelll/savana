@@ -34,6 +34,9 @@ const MAX_MESSAGE_LENGTH = 600;
 /** A session id we generated is 24 hex chars; reject anything unlike one. */
 const SESSION_ID_PATTERN = /^[a-z0-9]{16,40}$/i;
 
+/** Mirrors the Messenger wording, so the two channels sound like one shop. */
+const RESUMED_REPLY = 'Дахин туслахад бэлэн боллоо 🌿 Юу асуух вэ?';
+
 const PER_SESSION_LIMIT = { max: 8, windowMs: 60_000 };
 /** Looser than the session cap because a household or office shares one IP. */
 const PER_IP_LIMIT = { max: 24, windowMs: 60_000 };
@@ -77,12 +80,14 @@ export default async function handler(req: any, res: any): Promise<void> {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const sessionId = String(body.sessionId ?? '').trim();
   const message = String(body.message ?? '').trim();
+  /** Asks for the bot back after the thread was handed to a human. */
+  const resume = body.resume === true;
 
   if (!SESSION_ID_PATTERN.test(sessionId)) {
     res.status(400).json({ error: 'Session id буруу байна.' });
     return;
   }
-  if (!message) {
+  if (!resume && !message) {
     res.status(400).json({ error: 'Мессеж хоосон байна.' });
     return;
   }
@@ -119,6 +124,16 @@ export default async function handler(req: any, res: any): Promise<void> {
       externalUserId: sessionId,
       userId: typeof body.userId === 'string' ? body.userId : null,
     });
+
+    // Handled before the message is recorded and before the silence rule, which
+    // is the point: the customer is asking to be let out of a thread the bot is
+    // deliberately quiet in.
+    if (resume) {
+      await setConversationStatus(db, conversation.id, 'active');
+      await appendMessage(db, conversation.id, { role: 'assistant', content: RESUMED_REPLY });
+      res.status(200).json({ reply: RESUMED_REPLY, products: [], handedOver: false });
+      return;
+    }
 
     await appendMessage(db, conversation.id, { role: 'user', content: message });
     await captureContactDetails(db, conversation.id, message);
