@@ -72,6 +72,8 @@ export interface ShopSettings {
    * figure, so the site charged one amount and the copy promised another.
    */
   shippingFee: number;
+  /** Order value at or above which delivery is free. 0 switches the rule off. */
+  freeShippingThreshold: number;
   navigationItems: SiteNavigationItem[];
   journalHeadingEn: string;
   journalHeadingMn: string;
@@ -276,6 +278,8 @@ const defaultSettings: ShopSettings = {
   // Matches what the checkout charged before the fee became a setting, so an
   // install that never touches it keeps billing exactly what it billed before.
   shippingFee: DEFAULT_SHIPPING_FEE,
+  // Off until the shop sets it, so no install starts giving delivery away.
+  freeShippingThreshold: 0,
   navigationItems: defaultNavigationItems,
   journalHeadingEn: "SAVANA Journal",
   journalHeadingMn: "SAVANA сэтгүүл",
@@ -496,6 +500,10 @@ export function normalizeShopSettings(value: Partial<Record<keyof ShopSettings, 
     wholesaleEmail: String(value.wholesaleEmail ?? defaults.wholesaleEmail),
     vatMode: normalizeVatMode(value.vatMode),
     shippingFee: normalizeShippingFee(value.shippingFee, defaults.shippingFee),
+    freeShippingThreshold: normalizeShippingFee(
+      value.freeShippingThreshold,
+      defaults.freeShippingThreshold,
+    ),
     navigationItems: normalizeNavigationItems(value.navigationItems),
     journalHeadingEn: String(value.journalHeadingEn ?? defaults.journalHeadingEn),
     journalHeadingMn: String(value.journalHeadingMn ?? defaults.journalHeadingMn),

@@ -242,23 +242,30 @@ export default function Checkout() {
   const liveTotals = useMemo<CheckoutTotals>(
     () => {
       const subtotal = totalPrice - discountSavings;
+      // Free above the threshold the shop set — which is what its own answer to
+      // "how much is delivery" has always told customers, while the checkout
+      // charged the flat fee regardless. 0 means no such promise was made.
+      const chargedShipping =
+        settings.freeShippingThreshold > 0 && subtotal >= settings.freeShippingThreshold
+          ? 0
+          : shippingFee;
       // НӨАТ follows the shop-wide setting. Catalogue prices are shown to the shopper as
       // they stand, so `included` leaves the charged total alone and only records how much
       // of it is tax, while `added` bills the tax on top. Delivery is billed at cost and
       // stays outside the tax, matching how the Sales module treats it.
       const vatMode = settings.vatMode;
       const vatAmount = calculateVat(subtotal, vatMode);
-      const grandTotal = subtotal + shippingFee + (vatMode === "added" ? vatAmount : 0);
+      const grandTotal = subtotal + chargedShipping + (vatMode === "added" ? vatAmount : 0);
       return {
         subtotal,
-        shippingFee,
+        shippingFee: chargedShipping,
         grandTotal,
         discountTotal: discountSavings,
         vatMode,
         vatAmount,
       };
     },
-    [shippingFee, totalPrice, discountSavings, settings.vatMode],
+    [shippingFee, totalPrice, discountSavings, settings.vatMode, settings.freeShippingThreshold],
   );
   const summaryItems = pendingOrder?.items ?? liveSummaryItems;
   const summaryTotals = pendingOrder?.totals ?? liveTotals;

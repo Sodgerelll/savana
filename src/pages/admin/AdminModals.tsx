@@ -540,6 +540,26 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           />
         </label>
         <label className="admin-field">
+          <span>{copy.freeShippingThreshold}</span>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={settingsModal.draft.freeShippingThreshold}
+            onChange={(event: any) =>
+              setSettingsModal({
+                draft: {
+                  ...settingsModal.draft,
+                  // 0 means the shop makes no free-delivery promise, so the fee
+                  // is charged on every order.
+                  freeShippingThreshold:
+                    Number(event.target.value) >= 0 ? Number(event.target.value) : 0,
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
           <span>{copy.facebookUrl}</span>
           <input
             value={settingsModal.draft.facebookUrl}
