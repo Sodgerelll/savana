@@ -41,7 +41,9 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
       contactPhone: "99119911",
       contactEmail: "hello@savana.mn",
       location: "Улаанбаатар, СБД",
-      storeHoursText: "Даваа-Баасан 10:00-19:00",
+      deliveryPolicy: "Төлбөр баталгаажсанаас хойш хүргэнэ. Амралтын өдөр хүргэлт байхгүй.",
+      responseTime: "24-48 цагийн дотор хүргэнэ.",
+      returnPolicy: "Захиалсан бараанд буцаалт байхгүй.",
       facebookUrl: "https://facebook.com/savana",
       instagramHandle: "@savana.mn",
     },
@@ -101,7 +103,7 @@ describe("buildStorefrontPrompt", () => {
 
     expect(text).toContain("99119911");
     expect(text).toContain("hello@savana.mn");
-    expect(text).toContain("Даваа-Баасан 10:00-19:00");
+    expect(text).toContain("Амралтын өдөр хүргэлт байхгүй.");
   });
 
   it("omits contact lines that are blank rather than printing empty labels", () => {
@@ -593,27 +595,47 @@ describe("loadStorefrontContext", () => {
 });
 
 describe("shop policy", () => {
-  it("forbids inventing a delivery time, which the prompt never states", () => {
-    // Caught in a real test conversation: the bot promised delivery "in 24-48
-    // hours" twice. Nothing in the prompt says that — the shop data carries the
-    // delivery FEE and nothing about timing — and a customer will hold a shop
-    // to a number it never gave.
+  it("passes the shop's own delivery, timing and returns copy through", () => {
+    // These sit in settings/general under names that do not describe them —
+    // the delivery policy lives in `storeHoursText` — and only the first was
+    // reaching the prompt. A customer asking about returns got nothing.
     const prompt = buildStorefrontPrompt(context(), NOW);
-    const shopInfo = prompt.slice(prompt.indexOf("# ДЭЛГҮҮРИЙН МЭДЭЭЛЭЛ"));
 
-    expect(shopInfo).not.toMatch(/\d+\s*-\s*\d+\s*(цаг|өдөр)/);
-    expect(prompt).toContain("ДЭЛГҮҮРИЙН БОДЛОГЫГ БҮҮ ЗОХИО");
-    expect(prompt).toContain("Хүргэлтийн ХУГАЦАА");
-    // The fee is stated, so it stays sayable — only the timing is off limits.
-    expect(prompt).toContain(formatTugrik(SHIPPING_FEE));
+    expect(prompt).toContain("Амралтын өдөр хүргэлт байхгүй.");
+    expect(prompt).toContain("24-48 цагийн дотор хүргэнэ.");
+    expect(prompt).toContain("Захиалсан бараанд буцаалт байхгүй.");
   });
 
-  it("names the other policies a shop gets held to", () => {
+  it("makes the checkout fee the one that wins a disagreement", () => {
+    // The shop's copy quotes 5,000₮ while the checkout charges 8,000₮. Both end
+    // up in the prompt, so the model is told outright which figure a customer
+    // is actually charged rather than being left to pick.
+    const prompt = buildStorefrontPrompt(
+      context({
+        shop: { ...context().shop, deliveryPolicy: "Хүргэлтийн төлбөр 5000₮." },
+      }),
+      NOW,
+    );
+
+    expect(prompt).toContain(formatTugrik(SHIPPING_FEE));
+    expect(prompt).toContain("Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг");
+  });
+
+  it("still refuses to invent a policy the shop never wrote down", () => {
     const prompt = buildStorefrontPrompt(context(), NOW);
 
-    for (const policy of ["Буцаалт", "баталгааны", "бөөний үнэ", "Ажлын цаг"]) {
-      expect(prompt).toContain(policy);
-    }
+    expect(prompt).toContain("ДЭЛГҮҮРИЙН БОДЛОГЫГ БҮҮ ЗОХИО");
+    expect(prompt).toContain("ажилтан маань тодруулж хэлнэ");
+  });
+
+  it("omits a policy heading the shop left empty", () => {
+    const prompt = buildStorefrontPrompt(
+      context({ shop: { ...context().shop, returnPolicy: "", responseTime: "" } }),
+      NOW,
+    );
+
+    expect(prompt).not.toContain("БУЦААЛТ, НӨАТ");
+    expect(prompt).not.toContain("Хүргэлтийн хугацаа:");
   });
 });
 
