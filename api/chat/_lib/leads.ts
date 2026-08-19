@@ -23,6 +23,8 @@ export interface CreateChatLeadInput {
   channel: string;
   customerName: string;
   customerPhone: string;
+  /** Where it goes. Free text as the customer typed it — a chat cannot ask for five fields. */
+  address: string;
   note: string;
   items: ChatLeadItemInput[];
 }
@@ -108,6 +110,7 @@ export async function createChatLead(db: any, input: CreateChatLeadInput): Promi
     channel: input.channel,
     customerName: input.customerName.trim(),
     customerPhone: input.customerPhone.trim(),
+    address: input.address.trim(),
     note: input.note.trim(),
     items: input.items.map((item) => ({
       productId: item.productId,

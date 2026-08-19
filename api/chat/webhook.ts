@@ -732,6 +732,9 @@ async function recordOrderLead(
     // own, which captureContactDetails will not overwrite.
     customerName: conversation.customerName ?? '',
     customerPhone: '',
+    // Filled in as the customer supplies them; a lead raised the moment they
+    // pick a product has neither yet.
+    address: '',
     note: '',
     items: [item],
   });

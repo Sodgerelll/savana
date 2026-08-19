@@ -109,6 +109,8 @@ export interface ChatLeadRecord {
   channel: ChatChannel;
   customerName: string;
   customerPhone: string;
+  /** Delivery address as the customer typed it in the chat. Empty when never asked. */
+  address: string;
   note: string;
   /** Products the customer named in chat — an admin turns these into an order. */
   items: ChatLeadItem[];

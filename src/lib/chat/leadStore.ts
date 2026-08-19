@@ -102,6 +102,7 @@ function deserializeLead(snapshot: QueryDocumentSnapshot<DocumentData>): ChatLea
     channel: asChannel(data.channel),
     customerName: String(data.customerName ?? ""),
     customerPhone: String(data.customerPhone ?? ""),
+    address: String(data.address ?? ""),
     note: String(data.note ?? ""),
     items: deserializeItems(data.items),
     convertedOrderId: typeof data.convertedOrderId === "string" ? data.convertedOrderId : null,
@@ -227,11 +228,14 @@ export async function convertLeadToSale(
       email: null,
       note: lead.note,
     },
+    // The address the customer gave in the chat, kept whole in the field the
+    // delivery note prints. It used to be dropped here, so every converted lead
+    // reached the driver as a bare "Улаанбаатар" and somebody had to ring back.
     address: {
       region: DEFAULT_ADDRESS_REGION,
       districtOrSoum: "",
       khorooOrBag: "",
-      streetAddress: "",
+      streetAddress: lead.address.trim(),
       additionalAddress: "",
     },
     items: priced,

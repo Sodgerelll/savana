@@ -50,6 +50,7 @@ function lead(overrides: Partial<ChatLeadRecord> = {}): ChatLeadRecord {
     channel: "facebook",
     customerName: "Батбаяр",
     customerPhone: "99119911",
+    address: "",
     note: "",
     items: [{ productId: 1, name: "Хужирт саван", variant: null, quantity: 2 }],
     convertedOrderId: null,
@@ -173,6 +174,28 @@ describe("convertLeadToSale", () => {
       phoneNumber: "99119911",
       note: "Оройн цагаар залгана уу",
     });
+  });
+
+  it("carries the chat address onto the sale", async () => {
+    // It used to be dropped, so every converted lead reached the driver as a
+    // bare region and somebody had to ring the customer back for the address.
+    await convertLeadToSale(
+      lead({ address: "СБД, 5-р хороо, 41-р байр 12 тоот" }),
+      CATALOG,
+      actor,
+      SHIPPING_FEE,
+    );
+
+    expect(mocks.createSale.mock.calls[0][0].address).toMatchObject({
+      streetAddress: "СБД, 5-р хороо, 41-р байр 12 тоот",
+    });
+  });
+
+  it("leaves the address blank when the chat never got one", async () => {
+    // Blank is honest; a half-filled address reads as though it were checked.
+    await convertLeadToSale(lead({ address: "   " }), CATALOG, actor, SHIPPING_FEE);
+
+    expect(mocks.createSale.mock.calls[0][0].address.streetAddress).toBe("");
   });
 
   it("records who converted it", async () => {

@@ -30,6 +30,7 @@ const COPY = {
     remove: "Устгах",
     confirmDelete: "Энэ хүсэлтийг устгах уу?",
     missingContact: "Нэр/утас дутуу",
+    missingAddress: "Хаяг дутуу",
     converted: (n: string) => `${n} дугаартай борлуулалт үүслээ.`,
     total: "Нийт хүсэлт",
     pending: "Хүлээгдэж буй",
@@ -66,6 +67,7 @@ const COPY = {
     remove: "Delete",
     confirmDelete: "Delete this request?",
     missingContact: "Name/phone missing",
+    missingAddress: "Address missing",
     converted: (n: string) => `Sale ${n} created.`,
     total: "Requests",
     pending: "Pending",
@@ -260,6 +262,16 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
                             {lead.customerPhone || (
                               <span style={{ color: "var(--color-sale, #d72c0d)" }}>
                                 {copy.missingContact}
+                              </span>
+                            )}
+                          </small>
+                          {/* Shown here because a lead with no address becomes a
+                              sale nobody can deliver, and that was invisible
+                              until the driver rang in. */}
+                          <small>
+                            {lead.address || (
+                              <span style={{ color: "var(--color-sale, #d72c0d)" }}>
+                                {copy.missingAddress}
                               </span>
                             )}
                           </small>

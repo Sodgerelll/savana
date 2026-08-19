@@ -229,6 +229,17 @@ export async function placeChatOrder(
     };
   });
 
+  // Written before the order is attempted: if Bonum is unreachable the customer
+  // still ends up in the admin's queue with everything needed to ring them back,
+  // rather than as a name and a product.
+  if (open) {
+    await updateChatLead(db, open.id, {
+      customerName: details.customerName,
+      customerPhone: details.phone,
+      address: details.address,
+    });
+  }
+
   const order = await createChatOrder(db, {
     channel: conversation.channel,
     conversationId: conversation.id,
@@ -246,9 +257,6 @@ export async function placeChatOrder(
     await updateChatLead(db, open.id, {
       status: 'converted',
       convertedOrderId: order.id,
-      customerName: details.customerName,
-      customerPhone: details.phone,
-      note: details.address,
     });
   }
 

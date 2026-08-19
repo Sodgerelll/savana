@@ -146,6 +146,7 @@ describe("createChatLead", () => {
     channel: "facebook",
     customerName: "  Батбаяр  ",
     customerPhone: "  99119911  ",
+    address: "  СБД 5-р хороо, 41-р байр 12 тоот  ",
     note: "  яаралтай  ",
     items: [{ productId: 7, name: "Хужирт саван", variant: null, quantity: 2 }],
   };
@@ -166,6 +167,7 @@ describe("createChatLead", () => {
     expect(written[0]).toMatchObject({
       customerName: "Батбаяр",
       customerPhone: "99119911",
+      address: "СБД 5-р хороо, 41-р байр 12 тоот",
       note: "яаралтай",
     });
   });

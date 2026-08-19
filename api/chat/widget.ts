@@ -340,6 +340,9 @@ async function recordOrderLead(
     channel: 'widget',
     customerName: '',
     customerPhone: '',
+    // Filled in as the customer supplies them; a lead raised the moment they
+    // pick a product has neither yet.
+    address: '',
     note: '',
     items: [item],
   });
