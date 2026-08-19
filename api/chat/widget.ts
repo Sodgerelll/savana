@@ -19,6 +19,7 @@ import {
   readRecentMessages,
   setConversationStatus,
 } from './_lib/conversation.js';
+import { matchFaq } from './_lib/faqMatch.js';
 import { callGeminiAgent, geminiErrorToUserMessage, primaryModel } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { checkRateLimit } from './_lib/guards.js';
@@ -144,6 +145,19 @@ export default async function handler(req: any, res: any): Promise<void> {
     let products: WidgetProductCard[] = [];
     let handedOver = false;
     let toolName: string | null = null;
+
+    // Served from the knowledge base when the shop has already answered this,
+    // in its own wording and without a model call. The webhook does the same;
+    // the bar for a hit lives in faqMatch and errs towards refusing.
+    const faqHit = matchFaq(message, storefront.faqs, {
+      isFirstTurn: priorHistory.length === 0,
+    });
+
+    if (faqHit) {
+      await appendMessage(db, conversation.id, { role: 'assistant', content: faqHit.answer });
+      res.status(200).json({ reply: faqHit.answer, products: [], handedOver: false });
+      return;
+    }
 
     try {
       // Same cache the Messenger webhook uses: identical prompt, identical

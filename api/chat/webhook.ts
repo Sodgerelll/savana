@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { handleCommentEvent, parseCommentChange } from './_lib/comments.js';
+import { matchFaq } from './_lib/faqMatch.js';
 import {
   appendMessage,
   botShouldStaySilent,
@@ -444,6 +445,20 @@ async function replyToEvent(
 
   let outcome;
   let toolName: string | null = null;
+
+  // A question the shop has already answered is served from the knowledge base
+  // for nothing, in the shop's own approved wording. The bar for a hit is high
+  // on purpose — see faqMatch — and anything short of it falls through to the
+  // model, which is the expensive but always-correct path.
+  const faqHit = text
+    ? matchFaq(text, storefront.faqs, { isFirstTurn: priorHistory.length === 0 })
+    : null;
+
+  if (faqHit) {
+    console.log(`[chat/webhook] answered from FAQ (${faqHit.similarity.toFixed(2)}): ${faqHit.question}`);
+    await deliverOutcome(db, token, senderId, { ...conversation, channel }, { text: faqHit.answer }, null);
+    return;
+  }
 
   try {
     // The prompt is the same ~15,600 characters on every turn, so it is sent

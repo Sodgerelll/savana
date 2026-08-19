@@ -415,6 +415,66 @@ describe("unsupported methods", () => {
 
 // ─── Event acknowledgement ────────────────────────────────────────────────────
 
+// ─── Knowledge-base short circuit ─────────────────────────────────────────────
+
+describe("FAQ short circuit", () => {
+  const FAQ = {
+    question: "Хүргэлт хэдэн хоног вэ?",
+    answer: "УБ дотор 1-2 өдөрт хүргэнэ.",
+    isActive: true,
+    order: 0,
+  };
+
+  async function openConversation() {
+    // The shortcut sits out the opening message, which carries the greeting.
+    await handler({ method: "POST", body: messageEvent("сайн уу", "m_open") }, mockRes().res);
+    mocks.callGeminiAgent.mockClear();
+    mocks.sendText.mockClear();
+  }
+
+  beforeEach(() => {
+    clearStorefrontContextCache();
+    fake = createFakeDb({ "chat_settings/main": activeSettings(), "chat_faqs/faq1": FAQ });
+    mocks.getAdminFirestore.mockReturnValue(Promise.resolve(fake.db));
+  });
+
+  it("answers a repeated question without spending a model call", async () => {
+    await openConversation();
+
+    await handler(
+      { method: "POST", body: messageEvent("Хүргэлт хэдэн хоног вэ?", "m_faq") },
+      mockRes().res,
+    );
+
+    expect(mocks.callGeminiAgent).not.toHaveBeenCalled();
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      expect.anything(),
+      SENDER,
+      "УБ дотор 1-2 өдөрт хүргэнэ.",
+    );
+  });
+
+  it("still reaches the model for anything the knowledge base does not cover", async () => {
+    await openConversation();
+
+    await handler(
+      { method: "POST", body: messageEvent("Саван яаж хийдэг вэ?", "m_other") },
+      mockRes().res,
+    );
+
+    expect(mocks.callGeminiAgent).toHaveBeenCalled();
+  });
+
+  it("lets the model take the opening message even when it matches", async () => {
+    await handler(
+      { method: "POST", body: messageEvent("Хүргэлт хэдэн хоног вэ?", "m_first") },
+      mockRes().res,
+    );
+
+    expect(mocks.callGeminiAgent).toHaveBeenCalled();
+  });
+});
+
 describe("POST acknowledgement", () => {
   it("always answers 200 so Facebook stops retrying", async () => {
     const { res, captured } = mockRes();
