@@ -13,12 +13,18 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Fallback chain — a 4xx/5xx from one model moves on to the next. Ordered
 // cheapest-and-fastest first; every entry must support function calling because
 // the assistant drives carousels and handover through tools.
-const DEFAULT_MODELS = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest'];
+//
+// Every entry is an explicit version rather than a moving alias such as
+// `gemini-flash-latest`: Gemini 3 changed the request format (see
+// `configForModel`), so the body has to be shaped for the generation it is
+// going to, and an alias does not say which generation that is.
+const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
 // Models the caller is allowed to request explicitly (admin model picker). An
 // unknown value is ignored rather than rejected so a stale saved setting cannot
 // break the assistant.
 const ALLOWED_REQUESTED = [
+  'gemini-3.7-flash',
   'gemini-3-flash-preview',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
@@ -154,13 +160,11 @@ function buildRequestBody(options: GeminiCallOptions): Record<string, unknown> {
 
   const body: Record<string, unknown> = {
     contents,
+    // Generation-neutral. The per-model half is filled in by `configForModel`
+    // once the chain has picked which model the request is actually going to.
     generationConfig: {
-      temperature: clampTemperature(options.temperature),
       maxOutputTokens: clampMaxOutputTokens(options.maxOutputTokens),
-      topP: 0.9,
-      // Thinking off: replies stay short, fast and cheap, and long thinking
-      // budgets were the main cause of truncated answers on gemini-2.5+.
-      thinkingConfig: { thinkingBudget: 0 },
+      temperature: clampTemperature(options.temperature),
     },
     safetySettings: SAFETY_SETTINGS,
   };
@@ -175,11 +179,46 @@ function buildRequestBody(options: GeminiCallOptions): Record<string, unknown> {
   return body;
 }
 
+/** Gemini 3 and later. The `.` in `gemini-3.7-flash` is part of the version. */
+function isGemini3OrLater(model: string): boolean {
+  const generation = /^gemini-(\d+)/.exec(model);
+  return generation ? Number(generation[1]) >= 3 : false;
+}
+
+/**
+ * Shapes the request for the generation it is being sent to.
+ *
+ * Gemini 3 dropped `temperature`/`topP`/`topK` and replaced the numeric
+ * thinking budget with a three-step level, so one body cannot serve both: sent
+ * as-is, a 2.5-shaped request is rejected by 3.x and the chain silently falls
+ * back to an older model. `low` is the level here for the same reason thinking
+ * used to be off — a shop assistant wants short, quick answers, and a long
+ * deliberation was what truncated replies on 2.5.
+ */
+function configForModel(body: Record<string, unknown>, model: string): Record<string, unknown> {
+  const generationConfig = { ...((body.generationConfig ?? {}) as Record<string, unknown>) };
+
+  if (isGemini3OrLater(model)) {
+    delete generationConfig.temperature;
+    delete generationConfig.topP;
+    delete generationConfig.topK;
+    // 'minimal' is rejected by 3.7 — 'low' is as short as the model will go.
+    generationConfig.thinkingLevel = 'low';
+  } else {
+    delete generationConfig.thinkingLevel;
+    generationConfig.topP = 0.9;
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
+  return { ...body, generationConfig };
+}
+
 async function postToModel(
   apiKey: string,
   model: string,
-  body: Record<string, unknown>,
+  requestBody: Record<string, unknown>,
 ): Promise<{ ok: true; data: any } | { ok: false; status: number | null; message: string }> {
+  const body = configForModel(requestBody, model);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 

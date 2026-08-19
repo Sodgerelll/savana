@@ -25,7 +25,8 @@ const COPY = {
     model: "Загвар",
     modelAuto: "Автомат (санал болгосон)",
     temperature: "Temperature",
-    temperatureHelp: "0 = тогтвортой, 1 = уран сэтгэмжтэй. Дэлгүүрт 0.5-0.7 тохиромжтой.",
+    temperatureHelp:
+      "0 = тогтвортой, 1 = уран сэтгэмжтэй. Дэлгүүрт 0.5-0.7 тохиромжтой. Gemini 3 загварууд энэ утгыг хүлээж авдаггүй тул зөвхөн 2.5-д үйлчилнэ.",
     connSection: "Холболт",
     connText: "Facebook, Instagram, Webhook-ийг серверийн орчинд тохируулсан. Энд оруулах зүйл байхгүй.",
     connMessenger: "Messenger",
@@ -57,7 +58,8 @@ const COPY = {
     model: "Model",
     modelAuto: "Automatic (recommended)",
     temperature: "Temperature",
-    temperatureHelp: "0 = consistent, 1 = creative. 0.5–0.7 suits a shop.",
+    temperatureHelp:
+      "0 = consistent, 1 = creative. 0.5–0.7 suits a shop. Gemini 3 models reject this field, so it only applies to 2.5.",
     connSection: "Connection",
     connText: "Facebook, Instagram and the webhook are configured in the server environment. Nothing to fill in here.",
     connMessenger: "Messenger",
@@ -80,6 +82,7 @@ const COPY = {
 
 const MODEL_OPTIONS = [
   "",
+  "gemini-3.7-flash",
   "gemini-3-flash-preview",
   "gemini-2.5-flash",
   "gemini-2.5-pro",

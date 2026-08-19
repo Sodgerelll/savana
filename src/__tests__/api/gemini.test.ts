@@ -109,7 +109,7 @@ describe("callGemini", () => {
 
     await expect(callGemini({ message: "hi" })).resolves.toBe("second model answered");
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toContain("gemini-3-flash-preview");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
     expect(calls[1].url).toContain("gemini-2.5-flash");
   });
 
@@ -187,7 +187,7 @@ describe("callGemini", () => {
 
     await callGemini({ message: "hi", model: "gpt-4-turbo" });
 
-    expect(calls[0].url).toContain("gemini-3-flash-preview");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 });
 
@@ -241,13 +241,20 @@ describe("request body", () => {
   });
 
   it("clamps temperature outside 0..2 back to the 0.7 default", async () => {
-    responders = [() => jsonResponse(textPayload("ok")), () => jsonResponse(textPayload("ok"))];
+    // Gemini 3 refuses the sampling knobs, so the assertion has to look at a
+    // 2.5 call: the first model 400s and the chain moves on to gemini-2.5-flash.
+    responders = [
+      () => jsonResponse({ error: "bad request" }, 400),
+      () => jsonResponse(textPayload("ok")),
+      () => jsonResponse({ error: "bad request" }, 400),
+      () => jsonResponse(textPayload("ok")),
+    ];
 
     await callGemini({ message: "hi", temperature: 9 });
-    expect(requestBody(calls[0]).generationConfig.temperature).toBe(0.7);
+    expect(requestBody(calls[1]).generationConfig.temperature).toBe(0.7);
 
     await callGemini({ message: "hi", temperature: 0.2 });
-    expect(requestBody(calls[1]).generationConfig.temperature).toBe(0.2);
+    expect(requestBody(calls[3]).generationConfig.temperature).toBe(0.2);
   });
 
   it("caps maxOutputTokens at 4000 and floors it at the 800 default", async () => {
@@ -260,12 +267,44 @@ describe("request body", () => {
     expect(requestBody(calls[1]).generationConfig.maxOutputTokens).toBe(800);
   });
 
-  it("disables thinking so replies stay short and are never truncated mid-sentence", async () => {
+  it("keeps thinking at its shortest on Gemini 3, where the budget became a level", async () => {
     responders = [() => jsonResponse(textPayload("ok"))];
 
     await callGemini({ message: "hi" });
 
-    expect(requestBody(calls[0]).generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    const config = requestBody(calls[0]).generationConfig;
+    expect(config.thinkingLevel).toBe("low");
+    // The 2.5 spelling alongside it would be an unknown field to 3.x.
+    expect(config.thinkingConfig).toBeUndefined();
+  });
+
+  it("drops the sampling fields Gemini 3 rejects", async () => {
+    responders = [() => jsonResponse(textPayload("ok"))];
+
+    await callGemini({ message: "hi", temperature: 0.4 });
+
+    const config = requestBody(calls[0]).generationConfig;
+    expect(config.temperature).toBeUndefined();
+    expect(config.topP).toBeUndefined();
+    // maxOutputTokens survives — that one did not change.
+    expect(config.maxOutputTokens).toBe(800);
+  });
+
+  it("still speaks 2.5 to a 2.5 model rather than reusing the Gemini 3 body", async () => {
+    // Shaping the body once for the whole chain would send `thinkingLevel` to a
+    // model that has never heard of it, and every fallback would fail too.
+    responders = [
+      () => jsonResponse({ error: "bad request" }, 400),
+      () => jsonResponse(textPayload("ok")),
+    ];
+
+    await callGemini({ message: "hi" });
+
+    const config = requestBody(calls[1]).generationConfig;
+    expect(calls[1].url).toContain("gemini-2.5-flash");
+    expect(config.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    expect(config.thinkingLevel).toBeUndefined();
+    expect(config.topP).toBe(0.9);
   });
 
   it("attaches the system prompt as system_instruction, and omits it when absent", async () => {
