@@ -80,14 +80,10 @@ const COPY = {
   },
 } as const;
 
-const MODEL_OPTIONS = [
-  "",
-  "gemini-3.7-flash",
-  "gemini-3-flash-preview",
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash-lite",
-];
+// Mirrors ALLOWED_REQUESTED in api/chat/_lib/gemini.ts. The 2.5 line is gone:
+// those models 404 for keys issued after their deprecation, so offering them
+// here would only let an admin pick a model that cannot answer.
+const MODEL_OPTIONS = ["", "gemini-3.7-flash", "gemini-3.6-flash"];
 
 export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
   const { language, chatSettings, chatSettingsError } = ctx;

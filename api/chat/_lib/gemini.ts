@@ -18,19 +18,18 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // `gemini-flash-latest`: Gemini 3 changed the request format (see
 // `configForModel`), so the body has to be shaped for the generation it is
 // going to, and an alias does not say which generation that is.
-const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+//
+// No 2.5 anywhere. Those models answer 404 to keys issued after their
+// deprecation, so a chain that fell back to them fell back to nothing — and a
+// freshly issued key is exactly the case where the old fallback was already
+// dead on arrival.
+const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 
 // Models the caller is allowed to request explicitly (admin model picker). An
 // unknown value is ignored rather than rejected so a stale saved setting cannot
-// break the assistant.
-const ALLOWED_REQUESTED = [
-  'gemini-3.7-flash',
-  'gemini-3-flash-preview',
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.5-flash-lite',
-];
+// break the assistant — which is also what stops a settings document still
+// naming "gemini-2.5-flash" from pinning the bot to a model it cannot reach.
+const ALLOWED_REQUESTED = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 
 const TIMEOUT_MS = 25_000;
 const MAX_ATTEMPTS_PER_MODEL = 2;
@@ -202,10 +201,11 @@ function configForModel(body: Record<string, unknown>, model: string): Record<st
     delete generationConfig.temperature;
     delete generationConfig.topP;
     delete generationConfig.topK;
-    // 'minimal' is rejected by 3.7 — 'low' is as short as the model will go.
-    generationConfig.thinkingLevel = 'low';
+    // Still inside thinkingConfig — only the field within it changed. Putting
+    // thinkingLevel directly on generationConfig is a 400, not an ignored field.
+    // 'minimal' is rejected by 3.7; 'low' is as short as the model will go.
+    generationConfig.thinkingConfig = { thinkingLevel: 'low' };
   } else {
-    delete generationConfig.thinkingLevel;
     generationConfig.topP = 0.9;
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
@@ -236,7 +236,20 @@ async function postToModel(
     });
 
     if (!res.ok) {
-      return { ok: false, status: res.status, message: `Gemini ${model} ${res.status}` };
+      // The status alone does not say whether the model is gone, the key is
+      // unauthorised, or a field in the body is wrong — and those need very
+      // different fixes. Google puts the reason in the body, so it goes in the
+      // message; the key is never echoed there.
+      const detail = await res
+        .json()
+        .then((body: any) => body?.error?.message ?? '')
+        .catch(() => '');
+
+      return {
+        ok: false,
+        status: res.status,
+        message: `Gemini ${model} ${res.status}${detail ? `: ${detail}` : ''}`,
+      };
     }
 
     return { ok: true, data: await res.json() };

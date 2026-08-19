@@ -110,7 +110,7 @@ describe("callGemini", () => {
     await expect(callGemini({ message: "hi" })).resolves.toBe("second model answered");
     expect(calls).toHaveLength(2);
     expect(calls[0].url).toContain("gemini-3.7-flash");
-    expect(calls[1].url).toContain("gemini-2.5-flash");
+    expect(calls[1].url).toContain("gemini-3.6-flash");
   });
 
   it("falls through a deterministic 400 rather than aborting the chain", async () => {
@@ -144,8 +144,36 @@ describe("callGemini", () => {
     await expect(callGemini({ message: "hi" })).rejects.toSatisfy((err: unknown) => {
       return err instanceof GeminiError && !err.message.includes(API_KEY);
     });
-    // 3 models × 1 attempt each (HTTP errors do not retry in place).
-    expect(calls).toHaveLength(3);
+    // 2 models × 1 attempt each (HTTP errors do not retry in place).
+    expect(calls).toHaveLength(2);
+  });
+
+  it("carries Google's own reason into the error, not just the status", async () => {
+    // A bare "400" does not say whether the model is gone, the key is
+    // unauthorised or a field is wrong — and those need different fixes. This
+    // cost a round trip through the production logs to work out once already.
+    responders = [
+      () =>
+        jsonResponse(
+          { error: { message: "Unknown name \"thinkingLevel\" at 'generation_config'" } },
+          400,
+        ),
+      () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
+    ];
+
+    await expect(callGemini({ message: "hi" })).rejects.toSatisfy((err: unknown) => {
+      const message = (err as Error).message;
+      return message.includes("404") && message.includes("no longer available");
+    });
+  });
+
+  it("still fails cleanly when the error body is not JSON", async () => {
+    responders = Array.from(
+      { length: 2 },
+      () => () => new Response("<html>502 Bad Gateway</html>", { status: 502 }),
+    );
+
+    await expect(callGemini({ message: "hi" })).rejects.toBeInstanceOf(GeminiError);
   });
 
   it("surfaces a safety block as a terminal BLOCKED error", async () => {
@@ -177,9 +205,9 @@ describe("callGemini", () => {
   it("puts an allow-listed requested model first, keeping the rest as fallback", async () => {
     responders = [() => jsonResponse(textPayload("pro"))];
 
-    await callGemini({ message: "hi", model: "gemini-2.5-pro" });
+    await callGemini({ message: "hi", model: "gemini-3.6-flash" });
 
-    expect(calls[0].url).toContain("gemini-2.5-pro");
+    expect(calls[0].url).toContain("gemini-3.6-flash");
   });
 
   it("ignores an unknown requested model instead of failing", async () => {
@@ -241,20 +269,17 @@ describe("request body", () => {
   });
 
   it("clamps temperature outside 0..2 back to the 0.7 default", async () => {
-    // Gemini 3 refuses the sampling knobs, so the assertion has to look at a
-    // 2.5 call: the first model 400s and the chain moves on to gemini-2.5-flash.
-    responders = [
-      () => jsonResponse({ error: "bad request" }, 400),
-      () => jsonResponse(textPayload("ok")),
-      () => jsonResponse({ error: "bad request" }, 400),
-      () => jsonResponse(textPayload("ok")),
-    ];
+    // Gemini 3 refuses the sampling knobs, and the default chain is all
+    // Gemini 3 — so temperature is only observable on a 2.5 model, which these
+    // days only reaches the wire through a GEMINI_MODELS override.
+    process.env.GEMINI_MODELS = "gemini-2.5-flash";
+    responders = [() => jsonResponse(textPayload("ok")), () => jsonResponse(textPayload("ok"))];
 
     await callGemini({ message: "hi", temperature: 9 });
-    expect(requestBody(calls[1]).generationConfig.temperature).toBe(0.7);
+    expect(requestBody(calls[0]).generationConfig.temperature).toBe(0.7);
 
     await callGemini({ message: "hi", temperature: 0.2 });
-    expect(requestBody(calls[3]).generationConfig.temperature).toBe(0.2);
+    expect(requestBody(calls[1]).generationConfig.temperature).toBe(0.2);
   });
 
   it("caps maxOutputTokens at 4000 and floors it at the 800 default", async () => {
@@ -273,9 +298,10 @@ describe("request body", () => {
     await callGemini({ message: "hi" });
 
     const config = requestBody(calls[0]).generationConfig;
-    expect(config.thinkingLevel).toBe("low");
-    // The 2.5 spelling alongside it would be an unknown field to 3.x.
-    expect(config.thinkingConfig).toBeUndefined();
+    // Still nested inside thinkingConfig — only the field within it changed.
+    // Hoisting thinkingLevel up to generationConfig is a 400, not a field the
+    // model quietly ignores, and it took a production log to find that out.
+    expect(config.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
   it("drops the sampling fields Gemini 3 rejects", async () => {
@@ -291,20 +317,18 @@ describe("request body", () => {
   });
 
   it("still speaks 2.5 to a 2.5 model rather than reusing the Gemini 3 body", async () => {
-    // Shaping the body once for the whole chain would send `thinkingLevel` to a
+    // Shaping the body once for the whole chain would send the level enum to a
     // model that has never heard of it, and every fallback would fail too.
-    responders = [
-      () => jsonResponse({ error: "bad request" }, 400),
-      () => jsonResponse(textPayload("ok")),
-    ];
+    process.env.GEMINI_MODELS = "gemini-2.5-flash";
+    responders = [() => jsonResponse(textPayload("ok"))];
 
     await callGemini({ message: "hi" });
 
-    const config = requestBody(calls[1]).generationConfig;
-    expect(calls[1].url).toContain("gemini-2.5-flash");
+    const config = requestBody(calls[0]).generationConfig;
+    expect(calls[0].url).toContain("gemini-2.5-flash");
     expect(config.thinkingConfig).toEqual({ thinkingBudget: 0 });
-    expect(config.thinkingLevel).toBeUndefined();
     expect(config.topP).toBe(0.9);
+    expect(config.temperature).toBe(0.7);
   });
 
   it("attaches the system prompt as system_instruction, and omits it when absent", async () => {
