@@ -71,6 +71,12 @@ export const CHAT_TOOLS = [
           properties: {
             productName: { type: 'string', description: 'Захиалах бүтээгдэхүүний нэр.' },
             quantity: { type: 'number', description: 'Тоо ширхэг. Тодорхойгүй бол 1.' },
+            variant: {
+              type: 'string',
+              description:
+                'Сонгосон хэмжээ, каталогт бичигдсэн нэрээр яг таг. Хэмжээ бүр өөр үнэтэй тул ' +
+                'хоёроос олон хэмжээтэй бүтээгдэхүүнд ЗААВАЛ аль болохыг нь асуу.',
+            },
           },
           required: ['productName'],
         },
@@ -128,6 +134,8 @@ export interface ToolOutcome {
     productName: string;
     /** Null when the model named a product that is not in the catalogue. */
     productId: number | null;
+    /** Chosen size, when the product is sold in more than one. */
+    variant: string | null;
     quantity: number;
   };
 }
@@ -326,7 +334,17 @@ export async function runTool(
           `${productName} — ${quantity} ширхэг ✅\n\n` +
           'Захиалгыг баталгаажуулахын тулд дараах гурвыг бичиж өгнө үү 📝\n' +
           '• Нэр\n• Утасны дугаар\n• Хүргэлтийн хаяг (дүүрэг, хороо, байр/тоот)',
-        lead: { productName, productId: product?.id ?? null, quantity },
+        lead: {
+          productName,
+          productId: product?.id ?? null,
+          // Matched against the catalogue rather than taken as typed, so a size
+          // the model invented never reaches the order as though it were real.
+          variant:
+            product?.variants.find(
+              (entry) => entry.name.toLowerCase() === String(args.variant ?? '').trim().toLowerCase(),
+            )?.name ?? null,
+          quantity,
+        },
       };
     }
 

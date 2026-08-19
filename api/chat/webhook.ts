@@ -653,7 +653,12 @@ async function deliverOutcome(
     handoverReason?: string;
     buttons?: Array<{ title: string; url: string }>;
     orderId?: string;
-    lead?: { productName: string; productId: number | null; quantity: number };
+    lead?: {
+      productName: string;
+      productId: number | null;
+      variant: string | null;
+      quantity: number;
+    };
   },
   toolName: string | null,
 ): Promise<void> {
@@ -708,12 +713,12 @@ async function deliverOutcome(
 async function recordOrderLead(
   db: any,
   conversation: { id: string; channel: ChatChannel; customerName: string | null },
-  lead: { productName: string; productId: number | null; quantity: number },
+  lead: { productName: string; productId: number | null; variant: string | null; quantity: number },
 ): Promise<void> {
   const item = {
     productId: lead.productId,
     name: lead.productName,
-    variant: null,
+    variant: lead.variant,
     quantity: lead.quantity,
   };
 

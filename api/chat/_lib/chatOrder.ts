@@ -12,6 +12,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { bonumPost } from '../../bonum/_client.js';
+import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
 import { findOpenLead, updateChatLead } from './leads.js';
 import { NothingToOrderError } from './tools.js';
@@ -46,6 +47,19 @@ export interface ChatOrderCustomer {
   note: string;
 }
 
+export type VatMode = 'none' | 'included' | 'added';
+
+/** Matches VAT_RATE in src/lib/vat.ts. */
+const VAT_RATE = 0.1;
+
+/** Mirrors calculateVat in src/lib/vat.ts, so both channels split tax the same way. */
+export function vatFor(base: number, mode: VatMode): number {
+  if (base <= 0) return 0;
+  if (mode === 'included') return Math.round(base - base / (1 + VAT_RATE));
+  if (mode === 'added') return Math.round(base * VAT_RATE);
+  return 0;
+}
+
 export interface CreateChatOrderInput {
   channel: string;
   conversationId: string;
@@ -57,6 +71,8 @@ export interface CreateChatOrderInput {
   shippingFee: number;
   /** Order value at or above which delivery is free. 0 disables the rule. */
   freeShippingThreshold: number;
+  /** Shop-wide НӨАТ policy, stamped on exactly as the storefront checkout stamps it. */
+  vatMode: VatMode;
 }
 
 export interface CreatedChatOrder {
@@ -117,7 +133,11 @@ export async function createChatOrder(
 
   const subtotal = input.items.reduce((sum, item) => sum + item.lineTotal, 0);
   const shippingFee = shippingFeeFor(subtotal, input.shippingFee, input.freeShippingThreshold);
-  const grandTotal = subtotal + shippingFee;
+  // Same arithmetic as the checkout: "included" leaves the charged total alone
+  // and only records how much of it is tax, "added" bills it on top. Delivery
+  // stays outside the tax either way.
+  const vatAmount = vatFor(subtotal, input.vatMode);
+  const grandTotal = subtotal + shippingFee + (input.vatMode === 'added' ? vatAmount : 0);
 
   // The invoice is raised before the order is written: an order that exists
   // with no way to pay for it is worse than one that was never created.
@@ -158,7 +178,7 @@ export async function createChatOrder(
       additionalAddress: '',
     },
     items: input.items,
-    totals: { subtotal, shippingFee, grandTotal, vatMode: 'none', vatAmount: 0 },
+    totals: { subtotal, shippingFee, grandTotal, vatMode: input.vatMode, vatAmount },
     payment: {
       method: 'bonum',
       provider: 'bonum',
@@ -193,7 +213,7 @@ export async function createChatOrder(
  */
 export async function placeChatOrder(
   db: any,
-  storefront: { products: Array<{ id: number; name: string; price: number; category: string }>; shop: { shippingFee: number; freeShippingThreshold: number } },
+  storefront: StorefrontContext,
   conversation: { id: string; channel: ChatChannel; externalUserId: string },
   details: { customerName: string; phone: string; address: string },
 ) {
@@ -215,6 +235,18 @@ export async function placeChatOrder(
       throw new Error(`Каталогоос олдсонгүй: ${name || '?'}`);
     }
 
+    // A size carries its own price, so the base price would be the wrong one
+    // for every product sold in more than one.
+    const wantedVariant = typeof item?.variant === 'string' ? item.variant.trim() : '';
+    const variant = wantedVariant
+      ? product.variants.find((entry) => entry.name.toLowerCase() === wantedVariant.toLowerCase())
+      : undefined;
+
+    // Priced exactly as the storefront prices it: the bot announces the
+    // discount, so charging the list price would contradict what it just said.
+    const listPrice = variant ? variant.price : product.price;
+    const unitPrice = discountedPrice(listPrice, storefront.discounts, product.id);
+
     return {
       productId: product.id,
       name: product.name,
@@ -222,10 +254,10 @@ export async function placeChatOrder(
       // The photo is a data URI in Firestore; the order list resolves it the
       // same way the carousel does, from the product id.
       image: null,
-      variant: typeof item?.variant === 'string' ? item.variant : null,
+      variant: variant?.name ?? null,
       quantity,
-      unitPrice: product.price,
-      lineTotal: product.price * quantity,
+      unitPrice,
+      lineTotal: unitPrice * quantity,
     };
   });
 
@@ -249,6 +281,7 @@ export async function placeChatOrder(
     items,
     shippingFee: storefront.shop.shippingFee,
     freeShippingThreshold: storefront.shop.freeShippingThreshold,
+    vatMode: storefront.shop.vatMode,
   });
 
   // The lead has become an order, so it leaves the admin's queue — otherwise

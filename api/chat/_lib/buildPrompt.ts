@@ -86,7 +86,12 @@ export interface PromptCollection {
 }
 
 export interface PromptDiscount {
+  /** Which product it applies to, so a chat order can price like the site does. */
+  productId: number;
   productName: string;
+  type: 'percent' | 'amount';
+  value: number;
+  /** Ready-made wording for the prompt, e.g. "-20%". */
   label: string;
   endAt: string;
 }
@@ -112,6 +117,8 @@ export interface PromptShopInfo {
   shippingFee: number;
   /** Order value at or above which delivery is free. 0 means there is no such rule. */
   freeShippingThreshold: number;
+  /** Shop-wide НӨАТ policy, stamped on a chat order exactly as checkout stamps it. */
+  vatMode: 'none' | 'included' | 'added';
   facebookUrl: string;
   instagramHandle: string;
 }
@@ -386,6 +393,11 @@ function asString(value: unknown): string {
 }
 
 /** Mirrors normalizeShippingFee in src/data/storefront.ts. */
+/** Mirrors normalizeVatMode in src/data/storefront.ts; anything unknown is "none". */
+function asVatMode(value: unknown): 'none' | 'included' | 'added' {
+  return value === 'included' || value === 'added' ? value : 'none';
+}
+
 /** 0 when unset, which switches the rule off rather than inventing a number. */
 function asThreshold(value: unknown): number {
   const parsed = Number(value);
@@ -469,11 +481,32 @@ function hasStoredImage(images: unknown): boolean {
 
 function describeDiscount(data: any, productName: string): PromptDiscount {
   const value = asNumber(data.value);
+  const type = data.type === 'percent' ? 'percent' : 'amount';
   return {
+    productId: Number(data.productId),
     productName,
-    label: data.type === 'percent' ? `-${value}%` : `-${formatTugrik(value)}`,
+    type,
+    value,
+    label: type === 'percent' ? `-${value}%` : `-${formatTugrik(value)}`,
     endAt: asString(data.endAt),
   };
+}
+
+/**
+ * What a product actually costs today, discount included.
+ *
+ * Mirrors applyDiscount in src/lib/storefrontHelpers.ts. The storefront context
+ * only carries discounts that are live now, so being in the list is the whole
+ * of the test — there is no second date check to get wrong.
+ */
+export function discountedPrice(price: number, discounts: PromptDiscount[], productId: number): number {
+  const discount = discounts.find((entry) => entry.productId === productId);
+  if (!discount) {
+    return price;
+  }
+  return discount.type === 'percent'
+    ? Math.round(price * (1 - discount.value / 100))
+    : Math.max(0, price - discount.value);
 }
 
 /** `YYYY-MM-DD` in Ulaanbaatar, matching how discount windows are stored. */
@@ -626,6 +659,7 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
       returnPolicy: asString(settings?.wholesaleText),
       shippingFee: asShippingFee(settings?.shippingFee),
       freeShippingThreshold: asThreshold(settings?.freeShippingThreshold),
+      vatMode: asVatMode(settings?.vatMode),
       facebookUrl: asString(settings?.facebookUrl),
       instagramHandle: asString(settings?.instagramHandle),
     },

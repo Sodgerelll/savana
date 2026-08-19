@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../../../api/bonum/_client", () => ({ bonumPost: vi.fn() }));
 
-import { orderNumberFromId, shippingFeeFor } from "../../../api/chat/_lib/chatOrder";
+import { orderNumberFromId, shippingFeeFor, vatFor } from "../../../api/chat/_lib/chatOrder";
 
 describe("orderNumberFromId", () => {
   it("matches the series the storefront checkout writes", () => {
@@ -42,5 +42,26 @@ describe("shippingFeeFor", () => {
   it("keeps charging when no threshold is configured", () => {
     // 0 means the shop never promised free delivery, so nothing is given away.
     expect(shippingFeeFor(500_000, 8000, 0)).toBe(8000);
+  });
+});
+
+describe("vatFor", () => {
+  it("adds the tax on top when the shop bills it separately", () => {
+    expect(vatFor(100_000, "added")).toBe(10_000);
+  });
+
+  it("finds the tax already inside the price when it is included", () => {
+    // 110,000 gross carries 10,000 of tax, not 11,000 — the base is what the
+    // tax was charged on, and getting this backwards misstates the ledger.
+    expect(vatFor(110_000, "included")).toBe(10_000);
+  });
+
+  it("is nothing when the shop charges no VAT", () => {
+    expect(vatFor(100_000, "none")).toBe(0);
+  });
+
+  it("is nothing on an empty or negative base", () => {
+    expect(vatFor(0, "added")).toBe(0);
+    expect(vatFor(-500, "added")).toBe(0);
   });
 });

@@ -323,9 +323,14 @@ async function captureContactDetails(db: any, conversationId: string, text: stri
 async function recordOrderLead(
   db: any,
   conversationId: string,
-  lead: { productName: string; quantity: number },
+  lead: { productName: string; productId: number | null; variant: string | null; quantity: number },
 ): Promise<void> {
-  const item = { productId: null, name: lead.productName, variant: null, quantity: lead.quantity };
+  const item = {
+    productId: lead.productId,
+    name: lead.productName,
+    variant: lead.variant,
+    quantity: lead.quantity,
+  };
   const open = await findOpenLead(db, conversationId);
 
   if (open) {

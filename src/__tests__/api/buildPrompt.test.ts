@@ -4,6 +4,7 @@ import {
   buildDateContext,
   buildStorefrontPrompt,
   clearStorefrontContextCache,
+  discountedPrice,
   formatTugrik,
   loadStorefrontContext,
   localDateKey,
@@ -433,8 +434,10 @@ describe("loadStorefrontContext", () => {
 
     const result = await loadStorefrontContext(db, NOW);
 
+    // The rate travels with the label: the bot announces the discount, so the
+    // order it raises has to be able to charge it.
     expect(result.discounts).toEqual([
-      { productName: "Саван", label: "-20%", endAt: "2026-08-31" },
+      { productId: 7, productName: "Саван", type: "percent", value: 20, label: "-20%", endAt: "2026-08-31" },
     ]);
   });
 
@@ -755,5 +758,35 @@ describe("storefrontUrl", () => {
 
     expect(storefrontUrl("product/7")).toBe("https://savana.mn/product/7");
     expect(storefrontUrl("/product/7")).toBe("https://savana.mn/product/7");
+  });
+});
+
+describe("discountedPrice", () => {
+  const discounts = [
+    { productId: 7, productName: "Саван", type: "percent" as const, value: 20, label: "-20%", endAt: "" },
+    { productId: 9, productName: "Тос", type: "amount" as const, value: 3000, label: "-3,000₮", endAt: "" },
+  ];
+
+  it("takes a percentage off", () => {
+    expect(discountedPrice(10_000, discounts, 7)).toBe(8_000);
+  });
+
+  it("takes a fixed amount off", () => {
+    expect(discountedPrice(10_000, discounts, 9)).toBe(7_000);
+  });
+
+  it("leaves a product with no discount at list price", () => {
+    expect(discountedPrice(10_000, discounts, 99)).toBe(10_000);
+    expect(discountedPrice(10_000, [], 7)).toBe(10_000);
+  });
+
+  it("never prices below zero", () => {
+    const huge = [{ productId: 1, productName: "x", type: "amount" as const, value: 50_000, label: "", endAt: "" }];
+    expect(discountedPrice(10_000, huge, 1)).toBe(0);
+  });
+
+  it("rounds a percentage to whole tugrik", () => {
+    // Prices are charged in tugrik, so a fractional one would reach Bonum.
+    expect(discountedPrice(13_333, discounts, 7)).toBe(10_666);
   });
 });
