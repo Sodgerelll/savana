@@ -184,12 +184,85 @@ export function dedupePairs(pairs: QaPair[]): QaPair[] {
   return unique;
 }
 
+/** One thread, as the conversations listing describes it before its contents. */
+interface ThreadRef {
+  id: string;
+  /** The customer's page-scoped id — the handle a per-thread read needs. */
+  psid: string;
+}
+
+/**
+ * The page's threads, with the customer id on each.
+ *
+ * Deliberately asks for `participants` and nothing else. Requesting message
+ * contents here turns the call into a mailbox read, which Meta answers with
+ * `(#298) read_mailbox` — a permission that no longer exists to be granted.
+ */
+async function listThreads(
+  token: string,
+  pageId: string,
+  limit: number,
+): Promise<ThreadRef[]> {
+  let url =
+    `${GRAPH_URL}/${pageId}/conversations` +
+    `?platform=messenger&limit=${CONVERSATIONS_PER_PAGE}&fields=participants`;
+
+  const threads: ThreadRef[] = [];
+
+  while (url && threads.length < limit) {
+    const page = await graphGet(token, url);
+
+    for (const conversation of Array.isArray(page?.data) ? page.data : []) {
+      if (threads.length >= limit) break;
+
+      const participants = conversation?.participants?.data;
+      const customer = (Array.isArray(participants) ? participants : []).find(
+        (person: any) => String(person?.id ?? '') !== pageId,
+      );
+
+      if (customer?.id) {
+        threads.push({ id: String(conversation.id ?? ''), psid: String(customer.id) });
+      }
+    }
+
+    url = typeof page?.paging?.next === 'string' ? page.paging.next : '';
+  }
+
+  return threads;
+}
+
+/**
+ * One thread's messages, addressed by the customer rather than by browsing.
+ *
+ * Reading the whole mailbox is refused; reading the conversation with a named
+ * person is not. Same endpoint, same permissions — the `user_id` filter is what
+ * makes the difference.
+ */
+async function readThread(
+  token: string,
+  pageId: string,
+  psid: string,
+): Promise<any> {
+  const url =
+    `${GRAPH_URL}/${pageId}/conversations` +
+    `?platform=messenger&user_id=${encodeURIComponent(psid)}` +
+    `&fields=messages.limit(${MESSAGES_PER_CONVERSATION})%7Bmessage%2Cfrom%2Ccreated_time%7D`;
+
+  const page = await graphGet(token, url);
+  const conversation = Array.isArray(page?.data) ? page.data[0] : null;
+  return conversation?.messages ?? null;
+}
+
 /**
  * Walks the page's conversations and collects the year's question/answer pairs.
  *
- * `maxConversations` bounds the work: a busy page has thousands of threads and
- * the route has to answer inside its function timeout. What was left unread is
- * reported rather than passed over in silence.
+ * Two passes on purpose: list the threads without their contents, then fetch
+ * each one by customer id. Asking for contents in the listing is a mailbox read
+ * and is refused outright.
+ *
+ * `maxConversations` bounds the work — a busy page has thousands of threads and
+ * the route has to answer inside its timeout. A thread that fails is skipped
+ * rather than taking the whole import down with it.
  */
 export async function scanPageHistory(
   token: string,
@@ -197,32 +270,26 @@ export async function scanPageHistory(
 ): Promise<HistoryScan> {
   const pageId = await fetchPageId(token);
   const limit = options.maxConversations ?? 200;
-
-  let url =
-    `${GRAPH_URL}/me/conversations` +
-    `?platform=messenger&limit=${CONVERSATIONS_PER_PAGE}` +
-    `&fields=messages.limit(${MESSAGES_PER_CONVERSATION})%7Bmessage%2Cfrom%2Ccreated_time%7D`;
+  const threads = await listThreads(token, pageId, limit);
 
   let conversationsScanned = 0;
   let messagesInYear = 0;
   const pairs: QaPair[] = [];
 
-  while (url && conversationsScanned < limit) {
-    const page = await graphGet(token, url);
-    const conversations = Array.isArray(page?.data) ? page.data : [];
+  for (const thread of threads) {
+    conversationsScanned++;
 
-    for (const conversation of conversations) {
-      if (conversationsScanned >= limit) {
-        break;
-      }
-      conversationsScanned++;
-
-      const messages = normaliseMessages(conversation?.messages, pageId);
-      messagesInYear += messages.filter((m) => m.createdAt.startsWith(options.year)).length;
-      pairs.push(...extractPairs(messages, options.year));
+    let raw: any;
+    try {
+      raw = await readThread(token, pageId, thread.psid);
+    } catch (err) {
+      console.warn(`[chat/history] thread ${thread.id} unreadable:`, (err as Error).message);
+      continue;
     }
 
-    url = typeof page?.paging?.next === 'string' ? page.paging.next : '';
+    const messages = normaliseMessages(raw, pageId);
+    messagesInYear += messages.filter((m) => m.createdAt.startsWith(options.year)).length;
+    pairs.push(...extractPairs(messages, options.year));
   }
 
   return { conversationsScanned, messagesInYear, pairs: dedupePairs(pairs) };
