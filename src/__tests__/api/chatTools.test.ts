@@ -79,6 +79,37 @@ function placedOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("check_order without a number", () => {
+  it("lists the orders this conversation placed", async () => {
+    // Scoped to the thread rather than to a phone or a name: order numbers run
+    // in sequence, so any lookup a stranger could type would leak someone else's.
+    const ownOrders = vi.fn(async () => [
+      { orderNumber: "ORD-260819-AAA111", status: "paid", grandTotal: 21_200 },
+      { orderNumber: "ORD-260818-BBB222", status: "delivered", grandTotal: 8_800 },
+    ]);
+
+    const result = await runTool(TOOL_NAMES.CHECK_ORDER, {}, context({ ownOrders }));
+
+    expect(result.text).toContain("ORD-260819-AAA111");
+    expect(result.text).toContain("ORD-260818-BBB222");
+    expect(result.text).toContain("21,200₮");
+  });
+
+  it("asks for the number when this conversation has ordered nothing", async () => {
+    const ownOrders = vi.fn(async () => []);
+
+    const result = await runTool(TOOL_NAMES.CHECK_ORDER, {}, context({ ownOrders }));
+
+    expect(result.text).toContain("дугаараа");
+  });
+
+  it("asks for the number on a channel that cannot list them", async () => {
+    const result = await runTool(TOOL_NAMES.CHECK_ORDER, {}, context());
+
+    expect(result.text).toContain("дугаараа");
+  });
+});
+
 describe("confirm_order", () => {
   const details = {
     customerName: "Ганбат",
@@ -86,12 +117,24 @@ describe("confirm_order", () => {
     address: "СБД, 5-р хороо, 41-р байр 12 тоот",
   };
 
+  it("passes a delivery instruction through when the customer gave one", async () => {
+    const placeOrder = vi.fn(async () => placedOrder());
+
+    await runTool(
+      TOOL_NAMES.CONFIRM_ORDER,
+      { ...details, note: "Үдээс хойш авах боломжтой" },
+      context({ placeOrder }),
+    );
+
+    expect(placeOrder.mock.calls[0][0].note).toBe("Үдээс хойш авах боломжтой");
+  });
+
   it("creates the order and hands back a payment button", async () => {
     const placeOrder = vi.fn(async () => placedOrder());
 
     const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
 
-    expect(placeOrder).toHaveBeenCalledWith(details);
+    expect(placeOrder).toHaveBeenCalledWith({ ...details, note: "" });
     expect(result.text).toContain("ORD-260819-ABC123");
     expect(result.text).toContain("25,600₮");
     expect(result.buttons).toEqual([

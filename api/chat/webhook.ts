@@ -32,7 +32,7 @@ import {
   sendText,
   sendTypingOn,
 } from './_lib/facebook.js';
-import { placeChatOrder } from './_lib/chatOrder.js';
+import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 import {
   callGemini,
   callGeminiAgent,
@@ -432,6 +432,7 @@ async function replyToEvent(
     lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
     placeOrder: (details) =>
       placeChatOrder(db, storefront, { ...conversation, channel, externalUserId: senderId }, details),
+    ownOrders: () => ordersForConversation(db, conversation.id),
   };
 
   // A button press is an explicit instruction — run the tool directly instead

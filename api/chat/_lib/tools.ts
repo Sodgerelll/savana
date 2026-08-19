@@ -46,8 +46,9 @@ export const CHAT_TOOLS = [
       {
         name: TOOL_NAMES.CHECK_ORDER,
         description:
-          'Захиалгын төлөв шалгана. Хэрэглэгч захиалгынхаа явцыг асууж, захиалгын дугаараа хэлсэн үед дууд. ' +
-          'Дугаар хэлээгүй бол эхлээд дугаарыг нь асуу — дуудахгүй.',
+          'Захиалгын төлөв шалгана. Хэрэглэгч захиалгынхаа явцыг асуувал дууд. ' +
+          'Дугаар хэлсэн бол дугаарыг нь дамжуул; хэлээгүй бол дугааргүй дууд — ' +
+          'энэ ярианаас өгсөн захиалгуудыг нь өөрөө олж харуулна.',
         parameters: {
           type: 'object',
           properties: {
@@ -96,6 +97,11 @@ export const CHAT_TOOLS = [
             address: {
               type: 'string',
               description: 'Хүргэлтийн хаяг бүтнээрээ: дүүрэг, хороо, байр, тоот.',
+            },
+            note: {
+              type: 'string',
+              description:
+                'Жолоочид өгөх нэмэлт заавар, байхгүй бол хоосон (жишээ: "Үдээс хойш авах боломжтой").',
             },
           },
           required: ['customerName', 'phone', 'address'],
@@ -214,7 +220,14 @@ export interface ToolContext {
     customerName: string;
     phone: string;
     address: string;
+    note: string;
   }) => Promise<PlacedOrder>;
+  /**
+   * Orders placed from this conversation, newest first. Scoped to the thread
+   * rather than looked up by name or phone, so one customer can never be shown
+   * another's orders by typing their number.
+   */
+  ownOrders?: () => Promise<Array<{ orderNumber: string; status: string; grandTotal: number }>>;
 }
 
 export interface PlacedOrder {
@@ -285,8 +298,22 @@ export async function runTool(
 
     case TOOL_NAMES.CHECK_ORDER: {
       const orderNumber = normalizeOrderNumber(args.orderNumber);
+
+      // No number: show what this conversation itself ordered. Scoped to the
+      // thread on purpose — order numbers run in sequence and a lookup by name
+      // or phone would hand one customer another's business.
       if (!orderNumber) {
-        return { text: 'Захиалгын дугаараа бичиж өгнө үү (жишээ: ORD-2026-00123).' };
+        const mine = context.ownOrders ? await context.ownOrders() : [];
+
+        if (mine.length === 0) {
+          return { text: 'Захиалгын дугаараа бичиж өгнө үү (жишээ: ORD-260819-AB12CD).' };
+        }
+
+        const lines = mine.map((order) => {
+          const label = ORDER_STATUS_LABELS[order.status] ?? order.status;
+          return `• ${order.orderNumber} — ${label} · ${formatTugrik(order.grandTotal)}`;
+        });
+        return { text: `Таны захиалга:\n${lines.join('\n')}` };
       }
 
       const order = await context.lookupOrder(orderNumber);
@@ -355,6 +382,7 @@ export async function runTool(
       // perfectly good eight-digit number, and slicing it would invent one.
       const phone = digits.length === 11 && digits.startsWith('976') ? digits.slice(3) : digits;
       const address = String(args.address ?? '').trim();
+      const note = String(args.note ?? '').trim();
 
       if (!context.placeOrder) {
         return { text: 'Энэ сувгаар захиалга баталгаажуулах боломжгүй байна. Ажилтан руу холбоно уу ☎️' };
@@ -368,7 +396,7 @@ export async function runTool(
       }
 
       try {
-        const order = await context.placeOrder({ customerName, phone, address });
+        const order = await context.placeOrder({ customerName, phone, address, note });
 
         return {
           text:

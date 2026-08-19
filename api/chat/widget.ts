@@ -26,7 +26,7 @@ import { checkRateLimit } from './_lib/guards.js';
 import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead } from './_lib/leads.js';
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, runTool, type ToolContext } from './_lib/tools.js';
-import { placeChatOrder } from './_lib/chatOrder.js';
+import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 
 export const config = { maxDuration: 60 };
 
@@ -164,6 +164,7 @@ export default async function handler(req: any, res: any): Promise<void> {
           { id: conversation.id, channel: 'widget', externalUserId: sessionId },
           details,
         ),
+      ownOrders: () => ordersForConversation(db, conversation.id),
     };
 
     const history = await readRecentMessages(db, conversation.id);

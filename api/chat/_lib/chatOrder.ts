@@ -215,7 +215,7 @@ export async function placeChatOrder(
   db: any,
   storefront: StorefrontContext,
   conversation: { id: string; channel: ChatChannel; externalUserId: string },
-  details: { customerName: string; phone: string; address: string },
+  details: { customerName: string; phone: string; address: string; note: string },
 ) {
   const open = await findOpenLead(db, conversation.id);
   const rawItems = Array.isArray(open?.data.items) ? (open.data.items as any[]) : [];
@@ -269,6 +269,7 @@ export async function placeChatOrder(
       customerName: details.customerName,
       customerPhone: details.phone,
       address: details.address,
+      note: details.note,
     });
   }
 
@@ -276,7 +277,7 @@ export async function placeChatOrder(
     channel: conversation.channel,
     conversationId: conversation.id,
     externalUserId: conversation.externalUserId,
-    customer: { fullName: details.customerName, phoneNumber: details.phone, note: '' },
+    customer: { fullName: details.customerName, phoneNumber: details.phone, note: details.note },
     address: details.address,
     items,
     shippingFee: storefront.shop.shippingFee,
@@ -294,4 +295,38 @@ export async function placeChatOrder(
   }
 
   return order;
+}
+
+/**
+ * Orders placed from one conversation, newest first.
+ *
+ * Deliberately scoped to the thread rather than to a name or a phone number:
+ * order numbers run in sequence and a lookup by anything a stranger could type
+ * would hand one customer another's business. Equality only, sorted here, so no
+ * composite index is needed for what is at most a handful of rows.
+ */
+export async function ordersForConversation(
+  db: any,
+  conversationId: string,
+  limit = 5,
+): Promise<Array<{ orderNumber: string; status: string; grandTotal: number }>> {
+  const snapshot = await db
+    .collection(ORDERS_COLLECTION)
+    .where('chat.conversationId', '==', conversationId)
+    .limit(20)
+    .get();
+
+  return (snapshot.docs ?? [])
+    .map((doc: any) => {
+      const data = doc.data() ?? {};
+      return {
+        orderNumber: String(data.orderNumber ?? doc.id),
+        status: String(data.status ?? 'new'),
+        grandTotal: Number(data.totals?.grandTotal ?? 0),
+        createdAt: data.createdAt?.toDate?.()?.getTime?.() ?? 0,
+      };
+    })
+    .sort((a: any, b: any) => b.createdAt - a.createdAt)
+    .slice(0, limit)
+    .map(({ orderNumber, status, grandTotal }: any) => ({ orderNumber, status, grandTotal }));
 }
