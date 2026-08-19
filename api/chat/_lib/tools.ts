@@ -99,6 +99,8 @@ export interface ToolOutcome {
   /** Set when the customer started an order the admin must follow up. */
   lead?: {
     productName: string;
+    /** Null when the model named a product that is not in the catalogue. */
+    productId: number | null;
     quantity: number;
   };
 }
@@ -243,13 +245,19 @@ export async function runTool(
       // A carousel "Захиалах" button sends the product id; the model sends a
       // name. Resolve the id first so the button path names a real product.
       let productName = String(args.productName ?? '').trim();
-      if (args.productId !== undefined) {
-        const matched = context.storefront.products.find(
-          (entry) => entry.id === Number(args.productId),
+      let product =
+        args.productId === undefined
+          ? undefined
+          : context.storefront.products.find((entry) => entry.id === Number(args.productId));
+      if (product) {
+        productName = product.name;
+      } else if (productName) {
+        // The model names the product, so match it back to the catalogue: a
+        // lead that carries only a name makes an admin re-find it by hand.
+        const wanted = productName.toLowerCase();
+        product = context.storefront.products.find(
+          (entry) => entry.name.toLowerCase() === wanted,
         );
-        if (matched) {
-          productName = matched.name;
-        }
       }
 
       if (!productName) {
@@ -260,7 +268,7 @@ export async function runTool(
         text:
           `${productName} — ${quantity} ширхэг. Захиалгыг баталгаажуулахын тулд ` +
           'нэр болон утасны дугаараа бичиж өгнө үү 📝',
-        lead: { productName, quantity },
+        lead: { productName, productId: product?.id ?? null, quantity },
       };
     }
 

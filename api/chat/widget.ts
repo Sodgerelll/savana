@@ -11,7 +11,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
-import { buildStorefrontPrompt, loadStorefrontContext } from './_lib/buildPrompt.js';
+import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import {
   appendMessage,
   botShouldStaySilent,
@@ -134,7 +134,12 @@ export default async function handler(req: any, res: any): Promise<void> {
     const storefront = await loadStorefrontContext(db, new Date());
     const toolContext: ToolContext = {
       storefront,
-      imageUrlFor: (product) => product.imageUrl || undefined,
+      // A photo stored as a `data:` URI has no host for Facebook to fetch, so
+      // it is served over https instead. Products with no photo at all get no
+      // image rather than a URL that would 404 and break the whole card.
+      imageUrlFor: (product) =>
+        product.imageUrl ||
+        (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
       lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
     };
 

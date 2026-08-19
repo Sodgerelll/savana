@@ -345,7 +345,9 @@ describe("start_order", () => {
       context(),
     );
 
-    expect(result.lead).toEqual({ productName: "Хужирт саван", quantity: 3 });
+    // The id rides along so the admin turning the lead into an order does not
+    // have to find the product by name a second time.
+    expect(result.lead).toEqual({ productName: "Хужирт саван", productId: 1, quantity: 3 });
     expect(result.text).toContain("утасны дугаараа");
   });
 
@@ -392,7 +394,7 @@ describe("start_order", () => {
 
     const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 8 }, ctx);
 
-    expect(result.lead).toEqual({ productName: "Үсний тос", quantity: 1 });
+    expect(result.lead).toEqual({ productName: "Үсний тос", productId: 8, quantity: 1 });
   });
 
   it("prefers a resolved productId over a name the model guessed", async () => {

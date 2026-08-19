@@ -400,7 +400,12 @@ async function replyToEvent(
   const storefront = await loadStorefrontContext(db, new Date());
   const toolContext: ToolContext = {
     storefront,
-    imageUrlFor: (product) => product.imageUrl || undefined,
+    // A photo stored as a `data:` URI has no host for Facebook to fetch, so
+    // it is served over https instead. Products with no photo at all get no
+    // image rather than a URL that would 404 and break the whole card.
+    imageUrlFor: (product) =>
+      product.imageUrl ||
+      (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
     productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
     lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
   };
@@ -622,7 +627,7 @@ async function deliverOutcome(
     cards?: Array<{ title: string; subtitle?: string; imageUrl?: string; buttons?: any[] }>;
     quickReplies?: Array<{ title: string; payload: string }>;
     handoverReason?: string;
-    lead?: { productName: string; quantity: number };
+    lead?: { productName: string; productId: number | null; quantity: number };
   },
   toolName: string | null,
 ): Promise<void> {
@@ -669,10 +674,10 @@ async function deliverOutcome(
 async function recordOrderLead(
   db: any,
   conversation: { id: string; channel: ChatChannel; customerName: string | null },
-  lead: { productName: string; quantity: number },
+  lead: { productName: string; productId: number | null; quantity: number },
 ): Promise<void> {
   const item = {
-    productId: null,
+    productId: lead.productId,
     name: lead.productName,
     variant: null,
     quantity: lead.quantity,

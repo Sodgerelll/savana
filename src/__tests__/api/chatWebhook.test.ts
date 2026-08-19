@@ -1130,7 +1130,7 @@ describe("lead capture", () => {
     expect(leads()).toHaveLength(1);
     expect(leads()[0]).toMatchObject({ type: "order", status: "new", convertedOrderId: null });
     expect(leads()[0].items).toEqual([
-      { productId: null, name: "Хужирт саван", variant: null, quantity: 2 },
+      { productId: 1, name: "Хужирт саван", variant: null, quantity: 2 },
     ]);
   });
 

@@ -73,8 +73,10 @@ export interface PromptProduct {
   variants: Array<{ name: string; price: number; inStock: boolean }>;
   inStock: boolean;
   bestSeller: boolean;
-  /** Primary image, used for Messenger carousel cards. Empty when there is none. */
+  /** Primary image when it is already an https URL. Empty otherwise. */
   imageUrl: string;
+  /** Whether a photo exists at all, including one stored as a `data:` URI. */
+  hasImage: boolean;
 }
 
 export interface PromptCollection {
@@ -402,6 +404,7 @@ function mapProduct(id: string, data: any): PromptProduct {
     inStock,
     bestSeller: data.bestSeller === true,
     imageUrl: firstImageUrl(data.images),
+    hasImage: hasStoredImage(data.images),
   };
 }
 
@@ -418,6 +421,22 @@ function firstImageUrl(images: unknown): string {
     (entry) => typeof entry === 'string' && /^https:\/\//i.test(entry.trim()),
   );
   return typeof found === 'string' ? found.trim() : '';
+}
+
+/**
+ * Whether a photo exists at all, including one stored as a `data:` URI — which
+ * {@link firstImageUrl} refuses on purpose, because Messenger fetches carousel
+ * images itself and cannot fetch those. api/chat/productImage serves them over
+ * https instead, so the card still gets its picture.
+ */
+function hasStoredImage(images: unknown): boolean {
+  return (
+    Array.isArray(images) &&
+    images.some((entry) => {
+      const value = typeof entry === 'string' ? entry.trim().toLowerCase() : '';
+      return value.startsWith('https://') || value.startsWith('data:image/');
+    })
+  );
 }
 
 function describeDiscount(data: any, productName: string): PromptDiscount {
