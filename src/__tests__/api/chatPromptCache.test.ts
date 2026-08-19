@@ -121,7 +121,9 @@ describe("getOrCreatePromptCache", () => {
     expect(sent.model).toBe("models/gemini-3.7-flash");
     expect(sent.system_instruction.parts[0].text).toBe(LONG_PROMPT);
     expect(sent.ttl).toMatch(/^\d+s$/);
-    expect(Date.parse(String(writes[0].expiresAt))).toBeGreaterThan(Date.now());
+    // A Date, not a string — a TTL policy never fires on a string field.
+    expect(writes[0].expireAt).toBeInstanceOf(Date);
+    expect((writes[0].expireAt as Date).getTime()).toBeGreaterThan(Date.now());
   });
 
   it("reuses a stored handle instead of paying to build another", async () => {
@@ -129,7 +131,7 @@ describe("getOrCreatePromptCache", () => {
     const { db } = fakeDb({
       name: "cachedContents/stored",
       model: "gemini-3.7-flash",
-      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      expireAt: new Date(Date.now() + 30 * 60_000),
     });
 
     const cache = await getOrCreatePromptCache(db, API_KEY, {
@@ -141,11 +143,28 @@ describe("getOrCreatePromptCache", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("reads a Firestore Timestamp, not just a Date", async () => {
+    // The Admin SDK hands timestamps back as Timestamp objects, never Dates.
+    const { db } = fakeDb({
+      name: "cachedContents/stamped",
+      model: "gemini-3.7-flash",
+      expireAt: { toDate: () => new Date(Date.now() + 30 * 60_000) },
+    });
+
+    const cache = await getOrCreatePromptCache(db, API_KEY, {
+      model: "gemini-3.7-flash",
+      systemPrompt: LONG_PROMPT,
+    });
+
+    expect(cache?.name).toBe("cachedContents/stamped");
+    expect(calls).toHaveLength(0);
+  });
+
   it("rebuilds a handle that is about to lapse mid-request", async () => {
     const { db } = fakeDb({
       name: "cachedContents/nearly-gone",
       model: "gemini-3.7-flash",
-      expiresAt: new Date(Date.now() + 5_000).toISOString(),
+      expireAt: new Date(Date.now() + 5_000),
     });
 
     const cache = await getOrCreatePromptCache(db, API_KEY, {

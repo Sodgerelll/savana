@@ -515,6 +515,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Gemini context-cache handles. Written by api/chat/** through the Admin
+    // SDK; a client has no use for one and should not be able to read or
+    // clear another install's cache. Grows one document per prompt version,
+    // so it carries a TTL like the other bookkeeping collections.
+    match /chat_prompt_caches/{cacheId} {
+      allow read, write: if false;
+    }
+
     match /chat_rate_limits/{rateLimitId} {
       allow read, write: if false;
     }
