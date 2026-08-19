@@ -319,8 +319,9 @@ export async function runTool(
 
       return {
         text:
-          `${productName} — ${quantity} ширхэг. Захиалгыг баталгаажуулахын тулд ` +
-          'нэр болон утасны дугаараа бичиж өгнө үү 📝',
+          `${productName} — ${quantity} ширхэг ✅\n\n` +
+          'Захиалгыг баталгаажуулахын тулд дараах гурвыг бичиж өгнө үү 📝\n' +
+          '• Нэр\n• Утасны дугаар\n• Хүргэлтийн хаяг (дүүрэг, хороо, байр/тоот)',
         lead: { productName, productId: product?.id ?? null, quantity },
       };
     }

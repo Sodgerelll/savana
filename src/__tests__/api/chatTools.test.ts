@@ -463,7 +463,11 @@ describe("start_order", () => {
     // The id rides along so the admin turning the lead into an order does not
     // have to find the product by name a second time.
     expect(result.lead).toEqual({ productName: "Хужирт саван", productId: 1, quantity: 3 });
-    expect(result.text).toContain("утасны дугаараа");
+    // All three are asked for at once: an order with no address cannot be
+    // delivered, and asking for it later is a message the customer may never
+    // come back for.
+    expect(result.text).toContain("Утасны дугаар");
+    expect(result.text).toContain("Хүргэлтийн хаяг");
   });
 
   it("defaults the quantity to 1", async () => {
