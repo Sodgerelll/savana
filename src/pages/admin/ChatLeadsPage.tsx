@@ -105,7 +105,7 @@ function formatDate(iso: string | null, language: "MN" | "EN"): string {
 }
 
 export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
-  const { language, chatLeads, chatLeadsError, products, user, profile } = ctx;
+  const { language, chatLeads, chatLeadsError, products, user, profile, settings } = ctx;
   const copy = COPY[(language as "MN" | "EN") ?? "MN"] ?? COPY.MN;
   const leads = useMemo(() => (chatLeads ?? []) as ChatLeadRecord[], [chatLeads]);
 
@@ -133,10 +133,15 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
     setError("");
     setNotice("");
     try {
-      const result = await convertLeadToSale(lead, products ?? [], {
-        uid: user?.uid ?? "",
-        name: profile?.displayName ?? profile?.email ?? "Админ",
-      });
+      const result = await convertLeadToSale(
+        lead,
+        products ?? [],
+        {
+          uid: user?.uid ?? "",
+          name: profile?.displayName ?? profile?.email ?? "Админ",
+        },
+        settings.shippingFee,
+      );
       setNotice(copy.converted(result.saleNumber));
     } catch (caught) {
       setError(

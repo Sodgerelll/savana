@@ -63,6 +63,15 @@ export interface ShopSettings {
    * setting existed was treated.
    */
   vatMode: SaleVatMode;
+  /**
+   * Delivery fee charged at checkout, in tugrik.
+   *
+   * The single source of truth: the checkout, a lead converted to a sale, and
+   * the chat assistant all read this one number. It used to be a constant in
+   * src/lib/orders.ts while the shop's own policy text quoted a different
+   * figure, so the site charged one amount and the copy promised another.
+   */
+  shippingFee: number;
   navigationItems: SiteNavigationItem[];
   journalHeadingEn: string;
   journalHeadingMn: string;
@@ -107,6 +116,22 @@ export interface StorefrontData {
 }
 
 export const LEGACY_STOREFRONT_STORAGE_KEY = "savana.storefront.v1";
+/**
+ * Delivery fee an install starts on, before anyone edits the setting.
+ *
+ * Lives here rather than in src/lib/orders.ts because the settings document is
+ * now what decides the fee; this is only the value it falls back to.
+ */
+export const DEFAULT_SHIPPING_FEE = 8000;
+
+/**
+ * A fee has to be a whole, non-negative number of tugrik. A blank, a string or
+ * a negative would otherwise reach the checkout total and charge nonsense.
+ */
+function normalizeShippingFee(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallback;
+}
 export const OFFICIAL_FACEBOOK_URL = "https://www.facebook.com/SavanaOrganica";
 const SYSTEM_COLLECTION_SLUG = "best-sellers";
 const DEFAULT_BANNER_IMAGES = [
@@ -248,6 +273,9 @@ const defaultSettings: ShopSettings = {
     "Байгууллага, хувь хүн, event, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
   wholesaleEmail: "savanaorganica@gmail.com",
   vatMode: "none",
+  // Matches what the checkout charged before the fee became a setting, so an
+  // install that never touches it keeps billing exactly what it billed before.
+  shippingFee: DEFAULT_SHIPPING_FEE,
   navigationItems: defaultNavigationItems,
   journalHeadingEn: "SAVANA Journal",
   journalHeadingMn: "SAVANA сэтгүүл",
@@ -467,6 +495,7 @@ export function normalizeShopSettings(value: Partial<Record<keyof ShopSettings, 
     wholesaleText: String(value.wholesaleText ?? defaults.wholesaleText),
     wholesaleEmail: String(value.wholesaleEmail ?? defaults.wholesaleEmail),
     vatMode: normalizeVatMode(value.vatMode),
+    shippingFee: normalizeShippingFee(value.shippingFee, defaults.shippingFee),
     navigationItems: normalizeNavigationItems(value.navigationItems),
     journalHeadingEn: String(value.journalHeadingEn ?? defaults.journalHeadingEn),
     journalHeadingMn: String(value.journalHeadingMn ?? defaults.journalHeadingMn),

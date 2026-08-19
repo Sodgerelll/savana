@@ -15,7 +15,7 @@ import {
 import { db } from "../firebase";
 import { createSale, type SaleChannel, type SaleItemPayload } from "../sales";
 import { DEFAULT_ADDRESS_REGION } from "../checkoutAddress";
-import { SHIPPING_FEE } from "../orders";
+
 import {
   CHAT_COLLECTIONS,
   type ChatChannel,
@@ -193,6 +193,8 @@ export async function convertLeadToSale(
   lead: ChatLeadRecord,
   products: Array<{ id: number; name: string; price: number; category: string; images: string[] }>,
   actor: { uid: string; name: string },
+  /** From the settings document, so a converted lead is billed like a checkout. */
+  shippingFee: number,
 ): Promise<LeadConversionResult> {
   if (lead.convertedOrderId) {
     throw new LeadConversionError("Энэ хүсэлт аль хэдийн захиалга болсон байна.");
@@ -235,8 +237,8 @@ export async function convertLeadToSale(
     items: priced,
     totals: {
       subtotal,
-      shippingFee: SHIPPING_FEE,
-      grandTotal: subtotal + SHIPPING_FEE,
+      shippingFee,
+      grandTotal: subtotal + shippingFee,
       vatMode: "none",
       vatAmount: 0,
     },

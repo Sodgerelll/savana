@@ -23,7 +23,6 @@ vi.mock("firebase/firestore", () => ({
 
 vi.mock("../../lib/sales", () => ({ createSale: mocks.createSale }));
 vi.mock("../../lib/checkoutAddress", () => ({ DEFAULT_ADDRESS_REGION: "Улаанбаатар" }));
-vi.mock("../../lib/orders", () => ({ SHIPPING_FEE: 8000 }));
 
 import {
   convertLeadToSale,
@@ -32,6 +31,9 @@ import {
   setChatLeadStatus,
 } from "../../lib/chat/leadStore";
 import type { ChatLeadRecord } from "../../lib/chat/types";
+
+/** The settings figure the caller passes in; the module no longer owns it. */
+const SHIPPING_FEE = 8000;
 
 const CATALOG = [
   { id: 1, name: "Хужирт саван", price: 25000, category: "soap", images: ["https://i/1.jpg"] },
@@ -135,7 +137,7 @@ describe("convertLeadToSale", () => {
   const actor = { uid: "admin-1", name: "Сод" };
 
   it("creates an unsettled sale so payment is still confirmed by hand", async () => {
-    await convertLeadToSale(lead(), CATALOG, actor);
+    await convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.createSale.mock.calls[0][0]).toMatchObject({
       status: "new",
@@ -145,13 +147,13 @@ describe("convertLeadToSale", () => {
   });
 
   it("routes an Instagram lead to the instagram sale channel", async () => {
-    await convertLeadToSale(lead({ channel: "instagram" }), CATALOG, actor);
+    await convertLeadToSale(lead({ channel: "instagram" }), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.createSale.mock.calls[0][0].channel).toBe("instagram");
   });
 
   it("totals the priced lines and adds the shipping fee", async () => {
-    await convertLeadToSale(lead(), CATALOG, actor);
+    await convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.createSale.mock.calls[0][0].totals).toEqual({
       subtotal: 50000,
@@ -163,7 +165,7 @@ describe("convertLeadToSale", () => {
   });
 
   it("carries the customer's name, phone and note onto the sale", async () => {
-    await convertLeadToSale(lead({ note: "Оройн цагаар залгана уу" }), CATALOG, actor);
+    await convertLeadToSale(lead({ note: "Оройн цагаар залгана уу" }), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.createSale.mock.calls[0][0].customer).toMatchObject({
       type: "individual",
@@ -174,7 +176,7 @@ describe("convertLeadToSale", () => {
   });
 
   it("records who converted it", async () => {
-    await convertLeadToSale(lead(), CATALOG, actor);
+    await convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.createSale.mock.calls[0][0]).toMatchObject({
       createdByUid: "admin-1",
@@ -183,7 +185,7 @@ describe("convertLeadToSale", () => {
   });
 
   it("marks the lead converted and links the sale", async () => {
-    await convertLeadToSale(lead(), CATALOG, actor);
+    await convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE);
 
     expect(mocks.updateDoc.mock.calls[0][1]).toMatchObject({
       status: "converted",
@@ -192,7 +194,7 @@ describe("convertLeadToSale", () => {
   });
 
   it("returns the new sale id and number", async () => {
-    await expect(convertLeadToSale(lead(), CATALOG, actor)).resolves.toEqual({
+    await expect(convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE)).resolves.toEqual({
       saleId: "sale-1",
       saleNumber: "SL-2026-00001",
     });
@@ -200,21 +202,21 @@ describe("convertLeadToSale", () => {
 
   it("refuses to convert the same lead twice", async () => {
     await expect(
-      convertLeadToSale(lead({ convertedOrderId: "sale-9" }), CATALOG, actor),
+      convertLeadToSale(lead({ convertedOrderId: "sale-9" }), CATALOG, actor, SHIPPING_FEE),
     ).rejects.toBeInstanceOf(LeadConversionError);
 
     expect(mocks.createSale).not.toHaveBeenCalled();
   });
 
   it("refuses to convert without a customer name", async () => {
-    await expect(convertLeadToSale(lead({ customerName: "  " }), CATALOG, actor)).rejects.toThrow(
+    await expect(convertLeadToSale(lead({ customerName: "  " }), CATALOG, actor, SHIPPING_FEE)).rejects.toThrow(
       /дутуу/,
     );
     expect(mocks.createSale).not.toHaveBeenCalled();
   });
 
   it("refuses to convert without a phone number", async () => {
-    await expect(convertLeadToSale(lead({ customerPhone: "" }), CATALOG, actor)).rejects.toThrow(
+    await expect(convertLeadToSale(lead({ customerPhone: "" }), CATALOG, actor, SHIPPING_FEE)).rejects.toThrow(
       /дутуу/,
     );
   });
@@ -224,12 +226,12 @@ describe("convertLeadToSale", () => {
       items: [{ productId: 99, name: "Хуучин саван", variant: null, quantity: 1 }],
     });
 
-    await expect(convertLeadToSale(stale, CATALOG, actor)).rejects.toThrow(/Хуучин саван/);
+    await expect(convertLeadToSale(stale, CATALOG, actor, SHIPPING_FEE)).rejects.toThrow(/Хуучин саван/);
     expect(mocks.createSale).not.toHaveBeenCalled();
   });
 
   it("refuses a lead with no items", async () => {
-    await expect(convertLeadToSale(lead({ items: [] }), CATALOG, actor)).rejects.toThrow(
+    await expect(convertLeadToSale(lead({ items: [] }), CATALOG, actor, SHIPPING_FEE)).rejects.toThrow(
       /бүтээгдэхүүн байхгүй/,
     );
   });
@@ -237,7 +239,7 @@ describe("convertLeadToSale", () => {
   it("does not mark the lead converted when the sale fails", async () => {
     mocks.createSale.mockRejectedValue(new Error("firestore offline"));
 
-    await expect(convertLeadToSale(lead(), CATALOG, actor)).rejects.toThrow();
+    await expect(convertLeadToSale(lead(), CATALOG, actor, SHIPPING_FEE)).rejects.toThrow();
     expect(mocks.updateDoc).not.toHaveBeenCalled();
   });
 });

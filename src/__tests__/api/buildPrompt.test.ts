@@ -7,7 +7,7 @@ import {
   formatTugrik,
   loadStorefrontContext,
   localDateKey,
-  SHIPPING_FEE,
+  DEFAULT_SHIPPING_FEE,
   storefrontUrl,
   type PromptProduct,
   type StorefrontContext,
@@ -44,6 +44,7 @@ function context(overrides: Partial<StorefrontContext> = {}): StorefrontContext 
       deliveryPolicy: "Төлбөр баталгаажсанаас хойш хүргэнэ. Амралтын өдөр хүргэлт байхгүй.",
       responseTime: "24-48 цагийн дотор хүргэнэ.",
       returnPolicy: "Захиалсан бараанд буцаалт байхгүй.",
+      shippingFee: DEFAULT_SHIPPING_FEE,
       facebookUrl: "https://facebook.com/savana",
       instagramHandle: "@savana.mn",
     },
@@ -94,8 +95,20 @@ describe("buildStorefrontPrompt", () => {
     expect(text).toContain("SAVANA туслах");
   });
 
-  it("states the delivery fee taken from the storefront constant", () => {
-    expect(buildStorefrontPrompt(context(), NOW)).toContain(formatTugrik(SHIPPING_FEE));
+  it("states the delivery fee the settings document carries", () => {
+    expect(buildStorefrontPrompt(context(), NOW)).toContain(formatTugrik(DEFAULT_SHIPPING_FEE));
+  });
+
+  it("quotes an edited fee rather than the built-in default", () => {
+    // The whole point of moving the fee into settings: change it in one place
+    // and the checkout, a converted lead and the bot all follow.
+    const text = buildStorefrontPrompt(
+      context({ shop: { ...context().shop, shippingFee: 5000 } }),
+      NOW,
+    );
+
+    expect(text).toContain("5,000₮");
+    expect(text).not.toContain("8,000₮");
   });
 
   it("includes shop contact details when they are set", () => {
@@ -617,7 +630,7 @@ describe("shop policy", () => {
       NOW,
     );
 
-    expect(prompt).toContain(formatTugrik(SHIPPING_FEE));
+    expect(prompt).toContain(formatTugrik(context().shop.shippingFee));
     expect(prompt).toContain("Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг");
   });
 

@@ -14,7 +14,6 @@ import {
 } from "../../lib/productionRecipes";
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
-import { SHIPPING_FEE } from "../../lib/orders";
 import { calculateSaleVat, saleChannelRequiresAddress, type SaleDiscountType } from "../../lib/sales";
 import { calculateVat, normalizeVatMode, type VatMode } from "../../lib/vat";
 import type { CustomerType } from "../../lib/customers";
@@ -196,6 +195,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   const {
     copy,
     language,
+    settings,
     customers,
     products,
     discounts,
@@ -516,6 +516,25 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             onChange={(event: any)=>
               setSettingsModal({
                 draft: { ...settingsModal.draft, responseTime: event.target.value },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
+          <span>{copy.shippingFee}</span>
+          <input
+            type="number"
+            min={0}
+            step={100}
+            value={settingsModal.draft.shippingFee}
+            onChange={(event: any) =>
+              setSettingsModal({
+                draft: {
+                  ...settingsModal.draft,
+                  // Kept as a number: a blank field would otherwise reach the
+                  // checkout total as NaN and bill nothing at all.
+                  shippingFee: Number(event.target.value) >= 0 ? Number(event.target.value) : 0,
+                },
               })
             }
           />
@@ -5126,7 +5145,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 const needsDelivery = saleChannelRequiresAddress(channel);
                 patchDraft({
                   channel,
-                  shippingFee: needsDelivery && !draft.shippingFee ? SHIPPING_FEE : draft.shippingFee,
+                  shippingFee: needsDelivery && !draft.shippingFee ? settings.shippingFee : draft.shippingFee,
                 });
               }}
               required

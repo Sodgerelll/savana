@@ -27,8 +27,12 @@ const DESCRIPTION_CHAR_LIMIT = 180;
 
 const WEEKDAYS_MN = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
 
-/** Storefront checkout fee — mirrors SHIPPING_FEE in src/lib/orders.ts. */
-export const SHIPPING_FEE = 8000;
+/**
+ * Delivery fee an install starts on — mirrors DEFAULT_SHIPPING_FEE in
+ * src/data/storefront.ts. The live figure comes from settings/general; this is
+ * only what a settings document written before the field existed falls back to.
+ */
+export const DEFAULT_SHIPPING_FEE = 8000;
 
 /**
  * Public address of the storefront, for links sent to customers.
@@ -102,6 +106,8 @@ export interface PromptShopInfo {
   responseTime: string;
   /** Returns and VAT terms, from the wholesale copy. */
   returnPolicy: string;
+  /** What the checkout actually adds, from settings/general. */
+  shippingFee: number;
   facebookUrl: string;
   instagramHandle: string;
 }
@@ -302,7 +308,7 @@ function formatShopInfo(shop: PromptShopInfo): string {
   // different figure, and the model has to be able to tell which one a customer
   // will actually be charged — that is the one the checkout computes.
   lines.push(
-    `\nХүргэлтийн төлбөр: ${formatTugrik(SHIPPING_FEE)}. ` +
+    `\nХүргэлтийн төлбөр: ${formatTugrik(shop.shippingFee)}. ` +
       'Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг — дээрх бичвэрт өөр дүн ' +
       'байвал ЭНЭ дүнг хэл.',
   );
@@ -348,6 +354,12 @@ export function buildStorefrontPrompt(context: StorefrontContext, now: Date): st
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** Mirrors normalizeShippingFee in src/data/storefront.ts. */
+function asShippingFee(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : DEFAULT_SHIPPING_FEE;
 }
 
 function asNumber(value: unknown): number {
@@ -560,6 +572,7 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
       deliveryPolicy: asString(settings?.storeHoursText),
       responseTime: asString(settings?.responseTime),
       returnPolicy: asString(settings?.wholesaleText),
+      shippingFee: asShippingFee(settings?.shippingFee),
       facebookUrl: asString(settings?.facebookUrl),
       instagramHandle: asString(settings?.instagramHandle),
     },

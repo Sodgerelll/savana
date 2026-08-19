@@ -9,7 +9,6 @@ import {
   createOrder,
   markOrderAsPaid,
   registerOrderContact,
-  SHIPPING_FEE,
   type OrderItemPayload,
   type OrderPaymentPayload,
   type OrderTotalsPayload,
@@ -213,7 +212,10 @@ export default function Checkout() {
     () => getKhorooOrBagOptions(DEFAULT_ADDRESS_REGION, formState.districtOrSoum),
     [formState.districtOrSoum],
   );
-  const shippingFee = SHIPPING_FEE;
+  // From the settings document, so the fee the shop quotes and the fee it
+  // charges cannot drift apart. Falls back to the default only when the
+  // document predates the setting.
+  const shippingFee = settings.shippingFee;
   const liveSummaryItems = useMemo<OrderItemPayload[]>(
     () =>
       items.map((item) => {
