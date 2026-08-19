@@ -519,6 +519,12 @@ service cloud.firestore {
     // SDK; a client has no use for one and should not be able to read or
     // clear another install's cache. Grows one document per prompt version,
     // so it carries a TTL like the other bookkeeping collections.
+    // The resolved Facebook page token. Server-only, like every other
+    // credential the chat holds — a client must never read or clear it.
+    match /chat_page_tokens/{tokenId} {
+      allow read, write: if false;
+    }
+
     match /chat_prompt_caches/{cacheId} {
       allow read, write: if false;
     }

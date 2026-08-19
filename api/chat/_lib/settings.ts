@@ -5,6 +5,7 @@
 // helpers instead of importing across the runtime boundary.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { resolvePageToken } from './pageToken.js';
 
 export const CHAT_SETTINGS_PATH = 'chat_settings/main';
 
@@ -133,10 +134,41 @@ function applyFacebookEnv(settings: ServerChatSettings): ServerChatSettings {
   };
 }
 
+/**
+ * Swaps in the page token when the deployment was handed a user token.
+ *
+ * Meta's own tools hand you both, they look identical, and only one can send
+ * a message as the shop — so the code works out which it was given rather
+ * than assuming. The answer is cached, so this is one Firestore read.
+ */
+async function withPageToken(db: any, settings: ServerChatSettings): Promise<ServerChatSettings> {
+  if (!settings.facebook.pageAccessToken) {
+    return settings;
+  }
+
+  const resolved = await resolvePageToken(db, settings.facebook.pageAccessToken, {
+    pageId: settings.facebook.pageId || undefined,
+  });
+
+  if (!resolved || resolved.token === settings.facebook.pageAccessToken) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    facebook: {
+      ...settings.facebook,
+      pageAccessToken: resolved.token,
+      pageId: resolved.pageId || settings.facebook.pageId,
+    },
+  };
+}
+
 export async function loadChatSettings(db: any): Promise<ServerChatSettings> {
   try {
     const snapshot = await db.doc(CHAT_SETTINGS_PATH).get();
-    return applyFacebookEnv(deserializeServerChatSettings(snapshot.exists ? snapshot.data() : null));
+    const settings = applyFacebookEnv(deserializeServerChatSettings(snapshot.exists ? snapshot.data() : null));
+    return await withPageToken(db, settings);
   } catch (err) {
     console.error('[chat/settings] load failed:', (err as Error).message);
     return applyFacebookEnv(DEFAULT_SERVER_CHAT_SETTINGS);

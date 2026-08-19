@@ -24,6 +24,13 @@ function fakeDb(stored: Record<string, unknown> | null) {
     doc: () => ({
       get: async () => ({ exists: stored !== null, data: () => stored }),
     }),
+    // loadChatSettings resolves the page token through this collection.
+    collection: () => ({
+      doc: () => ({
+        get: async () => ({ exists: false, data: () => null }),
+        set: async () => undefined,
+      }),
+    }),
   };
 }
 
@@ -42,10 +49,15 @@ const LEGACY_DOC = {
 beforeEach(() => {
   for (const key of FACEBOOK_ENV) delete process.env[key];
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  // No page-token exchange here: a refused exchange leaves the configured
+  // token standing, which is exactly what these tests assert about.
+  vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: 400 })));
 });
 
 afterEach(() => {
   for (const key of FACEBOOK_ENV) delete process.env[key];
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
