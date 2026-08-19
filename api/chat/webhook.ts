@@ -26,11 +26,13 @@ import {
   fetchImageAsBase64,
   firstImageAttachmentUrl,
   getUserName,
+  sendButtons,
   sendCarousel,
   sendQuickReplies,
   sendText,
   sendTypingOn,
 } from './_lib/facebook.js';
+import { placeChatOrder } from './_lib/chatOrder.js';
 import {
   callGemini,
   callGeminiAgent,
@@ -408,6 +410,8 @@ async function replyToEvent(
       (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
     productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
     lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
+    placeOrder: (details) =>
+      placeChatOrder(db, storefront, { ...conversation, channel, externalUserId: senderId }, details),
   };
 
   // A button press is an explicit instruction — run the tool directly instead
@@ -627,6 +631,8 @@ async function deliverOutcome(
     cards?: Array<{ title: string; subtitle?: string; imageUrl?: string; buttons?: any[] }>;
     quickReplies?: Array<{ title: string; payload: string }>;
     handoverReason?: string;
+    buttons?: Array<{ title: string; url: string }>;
+    orderId?: string;
     lead?: { productName: string; productId: number | null; quantity: number };
   },
   toolName: string | null,
@@ -635,7 +641,9 @@ async function deliverOutcome(
   const text = (outcome.text ?? '').trim();
 
   if (text) {
-    if (outcome.quickReplies && outcome.quickReplies.length > 0) {
+    if (outcome.buttons && outcome.buttons.length > 0) {
+      await sendButtons(token, senderId, text, outcome.buttons);
+    } else if (outcome.quickReplies && outcome.quickReplies.length > 0) {
       await sendQuickReplies(token, senderId, text, outcome.quickReplies);
     } else {
       await sendText(token, senderId, text);

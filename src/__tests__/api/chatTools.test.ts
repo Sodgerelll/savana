@@ -4,6 +4,7 @@ import {
   buildProductCards,
   CHAT_TOOLS,
   normalizeOrderNumber,
+  NothingToOrderError,
   runTool,
   TOOL_NAMES,
   type ToolContext,
@@ -62,12 +63,126 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+/** A placeOrder that succeeds, standing in for Firestore plus Bonum. */
+function placedOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "order-1",
+    orderNumber: "ORD-260819-ABC123",
+    subtotal: 17_600,
+    shippingFee: 8000,
+    grandTotal: 25_600,
+    payUrl: "https://ecommerce.bonum.mn/ecommerce?invoiceId=abc",
+    ...overrides,
+  };
+}
+
+describe("confirm_order", () => {
+  const details = {
+    customerName: "Ганбат",
+    phone: "99119911",
+    address: "СБД, 5-р хороо, 41-р байр 12 тоот",
+  };
+
+  it("creates the order and hands back a payment button", async () => {
+    const placeOrder = vi.fn(async () => placedOrder());
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(placeOrder).toHaveBeenCalledWith(details);
+    expect(result.text).toContain("ORD-260819-ABC123");
+    expect(result.text).toContain("25,600₮");
+    expect(result.buttons).toEqual([
+      { title: "Төлбөр төлөх", url: "https://ecommerce.bonum.mn/ecommerce?invoiceId=abc" },
+    ]);
+    expect(result.orderId).toBe("order-1");
+  });
+
+  it("says delivery is free rather than printing 0₮", async () => {
+    const placeOrder = vi.fn(async () => placedOrder({ shippingFee: 0, grandTotal: 96_000 }));
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.text).toContain("Хүргэлт: Үнэгүй");
+    expect(result.text).not.toContain("Хүргэлт: 0₮");
+  });
+
+  it("accepts a number the customer spaced out or prefixed", async () => {
+    // The same leniency the phone rule in the prompt promises; refusing a
+    // perfectly good number over punctuation is how an order gets abandoned.
+    const placeOrder = vi.fn(async () => placedOrder());
+
+    await runTool(
+      TOOL_NAMES.CONFIRM_ORDER,
+      { ...details, phone: "+976 9911 9911" },
+      context({ placeOrder }),
+    );
+
+    expect(placeOrder.mock.calls[0][0].phone).toBe("99119911");
+  });
+
+  it("asks again rather than ordering on a number that cannot be one", async () => {
+    const placeOrder = vi.fn(async () => placedOrder());
+
+    const result = await runTool(
+      TOOL_NAMES.CONFIRM_ORDER,
+      { ...details, phone: "12345" },
+      context({ placeOrder }),
+    );
+
+    expect(placeOrder).not.toHaveBeenCalled();
+    expect(result.text).toContain("8 оронтой");
+  });
+
+  it("will not order without an address", async () => {
+    const placeOrder = vi.fn(async () => placedOrder());
+
+    const result = await runTool(
+      TOOL_NAMES.CONFIRM_ORDER,
+      { ...details, address: "   " },
+      context({ placeOrder }),
+    );
+
+    expect(placeOrder).not.toHaveBeenCalled();
+    expect(result.text).toContain("хаяг");
+  });
+
+  it("asks what to order when the model skipped straight to the details", async () => {
+    // A missing question, not a fault — nobody should be paged for it.
+    const placeOrder = vi.fn(async () => {
+      throw new NothingToOrderError("no items");
+    });
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.text).toContain("Аль бүтээгдэхүүнийг");
+    expect(result.handoverReason).toBeUndefined();
+  });
+
+  it("escalates when the order genuinely could not be created", async () => {
+    const placeOrder = vi.fn(async () => {
+      throw new Error("Bonum unreachable");
+    });
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.handoverReason).toContain("Bonum unreachable");
+    expect(result.buttons).toBeUndefined();
+  });
+
+  it("says so plainly on a channel that cannot take orders", async () => {
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context());
+
+    expect(result.text).toContain("боломжгүй");
+  });
 });
 
 describe("CHAT_TOOLS declarations", () => {
   const declarations = CHAT_TOOLS[0].functionDeclarations;
 
-  it("declares exactly the five tools the webhook implements", () => {
+  it("declares exactly the tools the webhook implements", () => {
     expect(declarations.map((d) => d.name).sort()).toEqual(
       Object.values(TOOL_NAMES).slice().sort(),
     );

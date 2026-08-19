@@ -15,6 +15,8 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Messenger caps a text message near 2000 chars; stay clear of the edge. */
 export const TEXT_LIMIT = 1900;
+/** Messenger's cap on the text above a button template. */
+const BUTTON_TEXT_LIMIT = 640;
 /** Messenger shows at most 13 quick replies, each title at most 20 chars. */
 const MAX_QUICK_REPLIES = 13;
 const QUICK_REPLY_TITLE_LIMIT = 20;
@@ -232,6 +234,51 @@ export async function sendQuickReplies(
  * Product carousel (generic template). Cards without an image still render, so
  * a product with no photo is shown rather than skipped.
  */
+/**
+ * A message with buttons under it — used to hand a customer a payment link.
+ *
+ * A bare URL in a text message is a link the customer has to notice and trust;
+ * a button is the one thing on screen to press, and Messenger opens it in its
+ * own browser so they never leave the conversation.
+ */
+export async function sendButtons(
+  token: string,
+  recipientId: string,
+  text: string,
+  buttons: CarouselButton[],
+): Promise<void> {
+  if (!token || !recipientId) return;
+
+  const rendered = (buttons ?? []).slice(0, 3).map((button) => {
+    const title = String(button.title).slice(0, CARD_BUTTON_TITLE_LIMIT);
+    return button.url
+      ? { type: 'web_url', title, url: button.url }
+      : { type: 'postback', title, payload: button.payload };
+  });
+
+  // Messenger rejects a button template with no buttons, so the words still go
+  // out on their own rather than the whole message being lost.
+  if (rendered.length === 0) {
+    await sendText(token, recipientId, text);
+    return;
+  }
+
+  await graphPost(token, '/me/messages', {
+    recipient: { id: recipientId },
+    message: {
+      attachment: {
+        type: 'template',
+        payload: {
+          template_type: 'button',
+          text: String(text ?? '').slice(0, BUTTON_TEXT_LIMIT) || '—',
+          buttons: rendered,
+        },
+      },
+    },
+    ...messagingType(),
+  });
+}
+
 export async function sendCarousel(
   token: string,
   recipientId: string,

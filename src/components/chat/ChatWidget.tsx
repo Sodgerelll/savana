@@ -21,6 +21,8 @@ interface WidgetMessage {
   role: "user" | "assistant";
   content: string;
   products?: WidgetProduct[];
+  /** Bonum's payment page, when this turn produced an order. */
+  payUrl?: string;
 }
 
 const SESSION_STORAGE_KEY = "savana.chat.session";
@@ -40,6 +42,7 @@ const COPY = {
     failed: "Хариу авч чадсангүй. Дахин оролдоно уу.",
     tooFast: "Түр хүлээнэ үү.",
     addToCart: "Сагсанд хийх",
+    pay: "Төлбөр төлөх",
     soldOut: "Дууссан",
     handedOver: "Ажилтан руу шилжүүллээ.",
   },
@@ -54,6 +57,7 @@ const COPY = {
     failed: "Could not get a reply. Please try again.",
     tooFast: "Please wait a moment.",
     addToCart: "Add to cart",
+    pay: "Pay now",
     soldOut: "Sold out",
     handedOver: "Handed over to our team.",
   },
@@ -196,6 +200,7 @@ export default function ChatWidget() {
           role: "assistant",
           content: payload.handedOver === true && !reply ? copy.handedOver : reply,
           products,
+          payUrl: typeof payload.payUrl === "string" ? payload.payUrl : undefined,
         },
       ]);
     } catch {
@@ -267,6 +272,17 @@ export default function ChatWidget() {
         {messages.map((message) => (
           <div key={message.id} className={`chat-widget-row chat-widget-row-${message.role}`}>
             {message.content && <div className="chat-widget-bubble">{message.content}</div>}
+
+            {message.payUrl && (
+              <a
+                className="btn btn-primary chat-widget-pay"
+                href={message.payUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {copy.pay}
+              </a>
+            )}
 
             {message.products && message.products.length > 0 && (
               <div className="chat-widget-cards">

@@ -26,6 +26,7 @@ import { checkRateLimit } from './_lib/guards.js';
 import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead } from './_lib/leads.js';
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, runTool, type ToolContext } from './_lib/tools.js';
+import { placeChatOrder } from './_lib/chatOrder.js';
 
 export const config = { maxDuration: 60 };
 
@@ -141,6 +142,13 @@ export default async function handler(req: any, res: any): Promise<void> {
         product.imageUrl ||
         (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
       lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
+      placeOrder: (details) =>
+        placeChatOrder(
+          db,
+          storefront,
+          { id: conversation.id, channel: 'widget', externalUserId: sessionId },
+          details,
+        ),
     };
 
     const history = await readRecentMessages(db, conversation.id);
@@ -150,6 +158,8 @@ export default async function handler(req: any, res: any): Promise<void> {
     let products: WidgetProductCard[] = [];
     let handedOver = false;
     let toolName: string | null = null;
+    /** Bonum's payment page, when the turn produced an order. */
+    let payUrl = '';
 
     // Served from the knowledge base when the shop has already answered this,
     // in its own wording and without a model call. The webhook does the same;
@@ -204,6 +214,9 @@ export default async function handler(req: any, res: any): Promise<void> {
         if (outcome.lead) {
           await recordOrderLead(db, conversation.id, outcome.lead);
         }
+        // The widget draws its own button rather than sending a Messenger
+        // template, so the link is returned as data like the cards are.
+        payUrl = outcome.buttons?.find((button) => button.url)?.url ?? '';
       } else {
         text = result.text ?? '';
       }
@@ -220,7 +233,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       });
     }
 
-    res.status(200).json({ reply: text, products, handedOver });
+    res.status(200).json({ reply: text, products, handedOver, payUrl });
   } catch (err) {
     console.error('[chat/widget] failed:', (err as Error).message);
     res.status(500).json({ error: 'Хариу авч чадсангүй. Дахин оролдоно уу.' });

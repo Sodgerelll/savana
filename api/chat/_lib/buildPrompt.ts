@@ -110,6 +110,8 @@ export interface PromptShopInfo {
   returnPolicy: string;
   /** What the checkout actually adds, from settings/general. */
   shippingFee: number;
+  /** Order value at or above which delivery is free. 0 means there is no such rule. */
+  freeShippingThreshold: number;
   facebookUrl: string;
   instagramHandle: string;
 }
@@ -152,6 +154,16 @@ const BEHAVIOUR_RULES = `# ХЭЛ, ӨНГӨ АЯС
 (тоо ширхэг, үнэ) байгаа нь дугаарыг буруу болгохгүй — дотроос нь 8 оронтойг ялга.
 Нэр эсвэл утас аль нэг нь дутуу бол ЗӨВХӨН дутуугаа асуу. Аль хэдийн өгсөн зүйлийг дахин
 бүү асуу ("Дугаарыг тэмдэглэлээ ✅ Одоо нэрээ бичнэ үү" гэх мэт).
+
+# 🛒 ЗАХИАЛГА АВАХ ДАРААЛАЛ
+1. Хэрэглэгч тодорхой бүтээгдэхүүн авах хүсэлтэй бол — ЭХЛЭЭД start_order-ыг дууд
+   (бүтээгдэхүүний нэр, тоо ширхэг). Үүнгүйгээр захиалга бүртгэгдэхгүй.
+2. Дараа нь ГУРВЫГ цуглуул: **нэр**, **8 оронтой утас**, **хүргэлтийн хаяг**
+   (дүүрэг, хороо, байр/тоот). Аль хэдийн өгсөнийг дахин бүү асуу — дутуугаа л асуу.
+3. Гурав бүрэн болмогц — confirm_order-ыг дууд. Захиалга үүсгэж, төлбөрийн товч илгээнэ.
+
+⛔ Захиалгын дугаар, нийт дүн, төлбөрийн холбоосыг ӨӨРӨӨ бүү зохио. Тэдгээрийг зөвхөн
+confirm_order буцаана. "Захиалга баталгаажлаа" гэж хэрэгсэл дуудалгүйгээр бүү хэл.
 
 # 🕐 БҮХ ЦАГТ ХАРИУЛНА
 7 хоногийн 24 цагт хариулна. "Ажлын цаг дууссан", "маргааш холбогдоно", "ажилтан байхгүй"
@@ -316,6 +328,9 @@ function formatShopInfo(shop: PromptShopInfo): string {
   // will actually be charged — that is the one the checkout computes.
   lines.push(
     `\nХүргэлтийн төлбөр: ${formatTugrik(shop.shippingFee)}. ` +
+      (shop.freeShippingThreshold > 0
+        ? `${formatTugrik(shop.freeShippingThreshold)}-өөс дээш дүнтэй захиалгад хүргэлт үнэгүй. `
+        : '') +
       'Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг — дээрх бичвэрт өөр дүн ' +
       'байвал ЭНЭ дүнг хэл.',
   );
@@ -364,6 +379,12 @@ function asString(value: unknown): string {
 }
 
 /** Mirrors normalizeShippingFee in src/data/storefront.ts. */
+/** 0 when unset, which switches the rule off rather than inventing a number. */
+function asThreshold(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+}
+
 function asShippingFee(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : DEFAULT_SHIPPING_FEE;
@@ -597,6 +618,7 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
       responseTime: asString(settings?.responseTime),
       returnPolicy: asString(settings?.wholesaleText),
       shippingFee: asShippingFee(settings?.shippingFee),
+      freeShippingThreshold: asThreshold(settings?.freeShippingThreshold),
       facebookUrl: asString(settings?.facebookUrl),
       instagramHandle: asString(settings?.instagramHandle),
     },

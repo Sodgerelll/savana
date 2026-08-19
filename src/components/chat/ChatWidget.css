@@ -251,3 +251,11 @@
     transition: none;
   }
 }
+
+/* The payment link the bot hands back after an order — an anchor rather than a
+   button because it leaves for Bonum's page, styled to match the cards' CTA. */
+.chat-widget-pay {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  text-decoration: none;
+}

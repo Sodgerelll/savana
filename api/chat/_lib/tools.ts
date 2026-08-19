@@ -13,6 +13,7 @@ export const TOOL_NAMES = {
   SHOW_PROMOTIONS: 'show_promotions',
   CHECK_ORDER: 'check_order',
   START_ORDER: 'start_order',
+  CONFIRM_ORDER: 'confirm_order',
   TRANSFER_TO_STAFF: 'transfer_to_staff',
 } as const;
 
@@ -73,6 +74,24 @@ export const CHAT_TOOLS = [
         },
       },
       {
+        name: TOOL_NAMES.CONFIRM_ORDER,
+        description:
+          'Захиалгыг баталгаажуулж, төлбөрийн холбоос үүсгэнэ. Нэр, утас, хүргэлтийн хаяг ГУРВЫГ БҮГДИЙГ ' +
+          'хэрэглэгч өгсөн үед л дууд. Аль нэг нь дутуу бол бүү дууд — дутуугаа эелдэгээр асуу.',
+        parameters: {
+          type: 'object',
+          properties: {
+            customerName: { type: 'string', description: 'Захиалагчийн бүтэн нэр.' },
+            phone: { type: 'string', description: '8 оронтой утасны дугаар.' },
+            address: {
+              type: 'string',
+              description: 'Хүргэлтийн хаяг бүтнээрээ: дүүрэг, хороо, байр, тоот.',
+            },
+          },
+          required: ['customerName', 'phone', 'address'],
+        },
+      },
+      {
         name: TOOL_NAMES.TRANSFER_TO_STAFF,
         description:
           'Ажилтан руу шилжүүлнэ. Хэрэглэгч хүнтэй ярихыг хүсэх, гомдол мэдүүлэх, эсвэл асуултын хариу ' +
@@ -96,6 +115,10 @@ export interface ToolOutcome {
   quickReplies?: QuickReply[];
   /** Set when the bot handed the thread to a human. */
   handoverReason?: string;
+  /** Buttons under the text — so far, the one that opens the payment page. */
+  buttons?: Array<{ title: string; url: string }>;
+  /** An order was created; the webhook records it against the conversation. */
+  orderId?: string;
   /** Set when the customer started an order the admin must follow up. */
   lead?: {
     productName: string;
@@ -170,7 +193,37 @@ export interface ToolContext {
     status: string;
     grandTotal: number;
   } | null>;
+  /**
+   * Turns what the customer has asked for into a real order with a payment
+   * link. Injected rather than done here, the same way lookupOrder is, so this
+   * module stays a pure translation of tool call to reply.
+   */
+  placeOrder?: (details: {
+    customerName: string;
+    phone: string;
+    address: string;
+  }) => Promise<PlacedOrder>;
 }
+
+export interface PlacedOrder {
+  id: string;
+  orderNumber: string;
+  subtotal: number;
+  shippingFee: number;
+  grandTotal: number;
+  payUrl: string;
+}
+
+/**
+ * Thrown when confirm_order is reached without the conversation ever having
+ * established what is being bought — the model skipping straight to the
+ * contact details. That is a missing question, not a failure worth waking a
+ * human for, so it is distinguished from every other way an order can fail.
+ */
+export class NothingToOrderError extends Error {}
+
+/** Mongolian mobile numbers are eight digits starting 6, 7, 8 or 9. */
+const PHONE_PATTERN = /^[6-9][0-9]{7}$/;
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   new: 'Хүлээн авсан, төлбөр хүлээгдэж байна',
@@ -270,6 +323,57 @@ export async function runTool(
           'нэр болон утасны дугаараа бичиж өгнө үү 📝',
         lead: { productName, productId: product?.id ?? null, quantity },
       };
+    }
+
+    case TOOL_NAMES.CONFIRM_ORDER: {
+      const customerName = String(args.customerName ?? '').trim();
+      const digits = String(args.phone ?? '').replace(/[^0-9]/g, '');
+      // A country code only when the length says so: 97612345 is itself a
+      // perfectly good eight-digit number, and slicing it would invent one.
+      const phone = digits.length === 11 && digits.startsWith('976') ? digits.slice(3) : digits;
+      const address = String(args.address ?? '').trim();
+
+      if (!context.placeOrder) {
+        return { text: 'Энэ сувгаар захиалга баталгаажуулах боломжгүй байна. Ажилтан руу холбоно уу ☎️' };
+      }
+      if (!customerName || !address) {
+        return { text: 'Захиалга баталгаажуулахад нэр болон хүргэлтийн хаяг хэрэгтэй 📝' };
+      }
+      if (!PHONE_PATTERN.test(phone)) {
+        // Said plainly, because the model will otherwise invent a reason.
+        return { text: 'Утасны дугаар 8 оронтой байх ёстой. Дахин бичиж өгнө үү 📱' };
+      }
+
+      try {
+        const order = await context.placeOrder({ customerName, phone, address });
+
+        return {
+          text:
+            `Захиалга үүслээ ✅ Дугаар: ${order.orderNumber}
+
+` +
+            `Барааны дүн: ${formatTugrik(order.subtotal)}
+` +
+            `Хүргэлт: ${order.shippingFee === 0 ? 'Үнэгүй' : formatTugrik(order.shippingFee)}
+` +
+            `Нийт төлөх: ${formatTugrik(order.grandTotal)}
+
+` +
+            'Доорх товчоор төлбөрөө төлнө үү. Төлбөр орсон даруйд захиалга баталгаажна 📦',
+          buttons: [{ title: 'Төлбөр төлөх', url: order.payUrl }],
+          orderId: order.id,
+        };
+      } catch (err) {
+        if (err instanceof NothingToOrderError) {
+          return { text: 'Аль бүтээгдэхүүнийг захиалах вэ? Нэрийг нь хэлж өгөөч 🌿' };
+        }
+
+        console.error('[chat/tools] confirm_order failed:', (err as Error).message);
+        return {
+          text: 'Захиалга үүсгэж чадсангүй. Ажилтан руу холбоно уу ☎️',
+          handoverReason: `Захиалга үүсгэхэд алдаа гарсан: ${(err as Error).message}`,
+        };
+      }
     }
 
     case TOOL_NAMES.TRANSFER_TO_STAFF: {
