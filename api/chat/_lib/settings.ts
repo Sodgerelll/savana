@@ -65,9 +65,10 @@ export function deserializeServerChatSettings(data: any): ServerChatSettings {
   const facebook = typeof source.facebook === 'object' && source.facebook !== null ? source.facebook : {};
   const widget = typeof source.widget === 'object' && source.widget !== null ? source.widget : {};
   const defaults = DEFAULT_SERVER_CHAT_SETTINGS;
+  const isActive = asBoolean(source.isActive, defaults.isActive);
 
   return {
-    isActive: asBoolean(source.isActive, defaults.isActive),
+    isActive,
     botName: asString(source.botName, defaults.botName),
     welcomeMessage: asString(source.welcomeMessage, defaults.welcomeMessage),
     handoverThreshold: asNumber(source.handoverThreshold, defaults.handoverThreshold),
@@ -81,7 +82,13 @@ export function deserializeServerChatSettings(data: any): ServerChatSettings {
       instagramIsActive: asBoolean(facebook.instagramIsActive, defaults.facebook.instagramIsActive),
       replyToComments: asBoolean(facebook.replyToComments, defaults.facebook.replyToComments),
     },
-    widget: { isActive: asBoolean(widget.isActive, defaults.widget.isActive) },
+    // The site widget needs no credential, so a switch of its own is one more
+    // thing to forget — the same reasoning that gave Facebook no second switch.
+    // A document saved before this field existed carries no `widget` key at all,
+    // and those installs follow the master switch, which is the only deliberate
+    // act there was. A fresh install still answers nobody: the master switch
+    // starts off too.
+    widget: { isActive: asBoolean(widget.isActive, isActive) },
   };
 }
 

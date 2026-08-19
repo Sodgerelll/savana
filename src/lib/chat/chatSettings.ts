@@ -59,9 +59,10 @@ export function deserializeChatSettings(data: Record<string, unknown> | undefine
   const source = data ?? {};
   const widget = asRecord(source.widget);
   const position = asString(widget.position, DEFAULT_CHAT_SETTINGS.widget.position);
+  const isActive = asBoolean(source.isActive, DEFAULT_CHAT_SETTINGS.isActive);
 
   return {
-    isActive: asBoolean(source.isActive, DEFAULT_CHAT_SETTINGS.isActive),
+    isActive,
     botName: asString(source.botName, DEFAULT_CHAT_SETTINGS.botName),
     welcomeMessage: asString(source.welcomeMessage, DEFAULT_CHAT_SETTINGS.welcomeMessage),
     basePrompt: asString(source.basePrompt, DEFAULT_CHAT_SETTINGS.basePrompt),
@@ -75,7 +76,10 @@ export function deserializeChatSettings(data: Record<string, unknown> | undefine
     // credentials moved into the environment may still carry a page token, and
     // nothing in the browser has any business holding one.
     widget: {
-      isActive: asBoolean(widget.isActive, DEFAULT_CHAT_SETTINGS.widget.isActive),
+      // Mirrors api/chat/_lib/settings.ts: a document saved before this field
+      // existed follows the master switch, so the form shows what the server
+      // will actually do rather than an off switch the server ignores.
+      isActive: asBoolean(widget.isActive, isActive),
       primaryColor: asString(widget.primaryColor, DEFAULT_CHAT_SETTINGS.widget.primaryColor),
       position: position === "bottom-left" ? "bottom-left" : "bottom-right",
     },

@@ -19,6 +19,9 @@ const COPY = {
     botSection: "Ерөнхий",
     botActive: "Ботыг асаах",
     botActiveHelp: "Унтраалттай үед ямар ч суваг дээр бот хариулахгүй. Туршилтын чат ажиллана.",
+    webChat: "Вэб сайтын чат",
+    webChatHelp:
+      "Дэлгүүрийн сайт дээрх чат цонх. Унтраавал Messenger, Instagram дээр хэвээр хариулна.",
     botName: "Ботын нэр",
     welcome: "Мэндчилгээ",
     welcomeHelp: "Get Started товч дарсан хэрэглэгчид харагдана. Facebook-д мөн энэ бичигдэнэ.",
@@ -52,6 +55,8 @@ const COPY = {
     botSection: "General",
     botActive: "Enable the bot",
     botActiveHelp: "While off the bot answers on no channel. The test chat still works.",
+    webChat: "Website chat",
+    webChatHelp: "The chat bubble on the storefront. Off leaves Messenger and Instagram answering.",
     botName: "Bot name",
     welcome: "Welcome message",
     welcomeHelp: "Shown after Get Started, and installed as the Facebook greeting.",
@@ -141,6 +146,7 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
         welcomeMessage: draft.welcomeMessage,
         model: draft.model,
         temperature: draft.temperature,
+        widget: draft.widget,
       });
       setDirty(false);
       setSaved(true);
@@ -219,6 +225,17 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
             onChange={(event) => patch({ isActive: event.target.checked })}
           />
           <span>{copy.botActive}</span>
+        </label>
+
+        <label className="admin-field admin-field-toggle">
+          <input
+            type="checkbox"
+            checked={draft.widget.isActive}
+            disabled={!draft.isActive}
+            onChange={(event) => patch({ widget: { ...draft.widget, isActive: event.target.checked } })}
+          />
+          <span>{copy.webChat}</span>
+          <small>{copy.webChatHelp}</small>
         </label>
 
         <div className="admin-form-grid">

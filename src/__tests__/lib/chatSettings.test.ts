@@ -32,7 +32,22 @@ describe("deserializeChatSettings", () => {
     expect(result.botName).toBe("Савана бот");
     // Untouched fields fall back rather than becoming undefined.
     expect(result.welcomeMessage).toBe(DEFAULT_CHAT_SETTINGS.welcomeMessage);
-    expect(result.widget).toEqual(DEFAULT_CHAT_SETTINGS.widget);
+    expect(result.widget.primaryColor).toBe(DEFAULT_CHAT_SETTINGS.widget.primaryColor);
+    expect(result.widget.position).toBe(DEFAULT_CHAT_SETTINGS.widget.position);
+  });
+
+  it("lets the site widget follow the master switch when it was never saved", () => {
+    // The settings page shipped without a widget switch, so every document it
+    // wrote carries no `widget` key. Reading that as "off" left the storefront
+    // bubble dark with nothing in the admin able to light it, while the owner
+    // had already switched the bot on and reasonably expected one bot.
+    expect(deserializeChatSettings({ isActive: true }).widget.isActive).toBe(true);
+    expect(deserializeChatSettings({ isActive: false }).widget.isActive).toBe(false);
+  });
+
+  it("obeys a widget switch that was saved on purpose", () => {
+    const off = deserializeChatSettings({ isActive: true, widget: { isActive: false } });
+    expect(off.widget.isActive).toBe(false);
   });
 
   it("leaves a stored Facebook block out of the browser's copy entirely", () => {

@@ -161,4 +161,26 @@ describe("Facebook credentials from the environment", () => {
     expect(facebookComesFromEnv()).toBe(false);
     expect(canAnswerOnChannel(settings, "facebook")).toBe(false);
   });
+
+  it("answers on the site widget once the bot itself is switched on", async () => {
+    // Unlike Facebook the widget has no credential to configure, so the master
+    // switch is the only deliberate act there is. Documents written before the
+    // settings page grew a widget switch have no `widget` key at all, and
+    // reading those as "off" made the storefront bubble unreachable.
+    const settings = await loadChatSettings(fakeDb({ isActive: true }));
+
+    expect(canAnswerOnChannel(settings, "widget")).toBe(true);
+  });
+
+  it("keeps the site widget shut while the bot is switched off", async () => {
+    const settings = await loadChatSettings(fakeDb({ isActive: false }));
+
+    expect(canAnswerOnChannel(settings, "widget")).toBe(false);
+  });
+
+  it("obeys a widget switch that was saved on purpose", async () => {
+    const settings = await loadChatSettings(fakeDb({ isActive: true, widget: { isActive: false } }));
+
+    expect(canAnswerOnChannel(settings, "widget")).toBe(false);
+  });
 });
