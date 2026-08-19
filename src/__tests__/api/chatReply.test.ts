@@ -81,7 +81,7 @@ describe("POST /api/chat/reply", () => {
 
     expect(captured.status).toBe(200);
     expect(mocks.sendText).toHaveBeenCalledWith(PAGE_TOKEN, "PSID-1", "Сайн байна уу", {
-      tag: "HUMAN_AGENT",
+      fallbackTag: "HUMAN_AGENT",
     });
     expect(mocks.appendMessage).toHaveBeenCalledWith(expect.anything(), "c1", {
       role: "admin",
@@ -98,12 +98,48 @@ describe("POST /api/chat/reply", () => {
     expect(mocks.setConversationStatus).toHaveBeenCalledWith(expect.anything(), "c1", "admin_active");
   });
 
-  it("uses the HUMAN_AGENT tag so it can write outside the 24-hour window", async () => {
+  it("holds the HUMAN_AGENT tag back as a fallback rather than leading with it", async () => {
+    // The tag reopens a thread outside the 24-hour window, but it needs a
+    // permission only App Review grants — so sending it first fails every reply
+    // an unreviewed app makes, which is the state every shop starts in.
     const { res } = mockRes();
 
     await handler(post({ conversationId: "c1", message: "hi" }), res);
 
-    expect(mocks.sendText.mock.calls[0][3]).toEqual({ tag: "HUMAN_AGENT" });
+    expect(mocks.sendText.mock.calls[0][3]).toEqual({ fallbackTag: "HUMAN_AGENT" });
+  });
+
+  it("hands the thread back to the bot without sending anything", async () => {
+    const { res, captured } = mockRes();
+
+    await handler(post({ conversationId: "c1", handBack: true }), res);
+
+    expect(captured.status).toBe(200);
+    expect(mocks.setConversationStatus).toHaveBeenCalledWith(expect.anything(), "c1", "active");
+    expect(mocks.sendText).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+  });
+
+  it("still requires a message when it is not a hand-back", async () => {
+    const { res, captured } = mockRes();
+
+    await handler(post({ conversationId: "c1", message: "  " }), res);
+
+    expect(captured.status).toBe(400);
+  });
+
+  it("passes Facebook's own refusal through to the admin", async () => {
+    // "Could not send" alone left nobody anything to act on; the reason a send
+    // was refused is the whole of what an admin needs.
+    mocks.sendText.mockRejectedValueOnce(
+      new Error("Facebook рүү илгээж чадсангүй: (#10) message tag not allowed"),
+    );
+    const { res, captured } = mockRes();
+
+    await handler(post({ conversationId: "c1", message: "hi" }), res);
+
+    expect(captured.status).toBe(502);
+    expect(String(captured.body?.error)).toContain("message tag not allowed");
   });
 
   it("falls back to the caller's email when they have no display name", async () => {
@@ -127,7 +163,9 @@ describe("POST /api/chat/reply", () => {
     await handler(post({ conversationId: "c1", message: "hi" }), res);
 
     expect(captured.status).toBe(200);
-    expect(mocks.sendText).toHaveBeenCalledWith(PAGE_TOKEN, "IGSID-1", "hi", { tag: "HUMAN_AGENT" });
+    expect(mocks.sendText).toHaveBeenCalledWith(PAGE_TOKEN, "IGSID-1", "hi", {
+      fallbackTag: "HUMAN_AGENT",
+    });
   });
 
   it("records a widget reply without calling Facebook", async () => {

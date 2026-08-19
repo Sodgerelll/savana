@@ -158,17 +158,30 @@ export async function sendText(
   token: string,
   recipientId: string,
   text: string,
-  options: { tag?: string } = {},
+  options: { tag?: string; fallbackTag?: string } = {},
 ): Promise<void> {
   if (!token) throw new Error('Page access token тохируулаагүй байна.');
   if (!recipientId) throw new Error('Хүлээн авагчийн ID байхгүй.');
 
   for (const chunk of splitText(text)) {
-    await graphPost(token, '/me/messages', {
-      recipient: { id: recipientId },
-      message: { text: chunk },
-      ...messagingType(options.tag),
-    });
+    const payload = { recipient: { id: recipientId }, message: { text: chunk } };
+
+    try {
+      await graphPost(token, '/me/messages', { ...payload, ...messagingType(options.tag) });
+    } catch (err) {
+      if (!options.fallbackTag) {
+        throw err;
+      }
+      // Inside the 24-hour window a plain RESPONSE is the correct send and a
+      // tag is not merely unnecessary — HUMAN_AGENT needs a permission granted
+      // only by App Review, so leading with it fails every reply an unreviewed
+      // app makes. The tag is what reopens a thread outside the window, so it
+      // is worth one retry and nothing more.
+      await graphPost(token, '/me/messages', {
+        ...payload,
+        ...messagingType(options.fallbackTag),
+      });
+    }
   }
 }
 

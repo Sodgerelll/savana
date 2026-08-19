@@ -6,7 +6,8 @@
 // words as its own.
 //
 // Sending also flips the conversation to `admin_active`, which silences the bot
-// on that thread until an admin hands it back.
+// on that thread until an admin hands it back — which is what `handBack` does,
+// and the only way back: chat_conversations is not writable from the browser.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
@@ -20,8 +21,11 @@ export const config = { maxDuration: 30 };
 const MAX_REPLY_LENGTH = 2000;
 
 /**
- * Meta requires a message tag to write outside the 24-hour window. A human
- * answering a customer enquiry is exactly what HUMAN_AGENT covers.
+ * Meta requires a message tag to write outside the 24-hour window, and a human
+ * answering a customer enquiry is exactly what HUMAN_AGENT covers. It is passed
+ * as a fallback rather than as the send: the tag needs a permission granted
+ * only by App Review, while almost every admin reply happens minutes after the
+ * customer wrote and needs no tag at all.
  */
 const HUMAN_AGENT_TAG = 'HUMAN_AGENT';
 
@@ -40,12 +44,14 @@ export default async function handler(req: any, res: any): Promise<void> {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const conversationId = String(body.conversationId ?? '').trim();
   const message = String(body.message ?? '').trim();
+  /** Returns the thread to the bot instead of sending anything. */
+  const handBack = body.handBack === true;
 
   if (!conversationId) {
     res.status(400).json({ error: 'conversationId шаардлагатай.' });
     return;
   }
-  if (!message) {
+  if (!handBack && !message) {
     res.status(400).json({ error: 'Мессеж хоосон байна.' });
     return;
   }
@@ -73,6 +79,14 @@ export default async function handler(req: any, res: any): Promise<void> {
     const channel = String(conversation.channel ?? 'facebook');
     const externalUserId = String(conversation.externalUserId ?? '');
 
+    if (handBack) {
+      // 'active' also clears the handover reason and timestamp, so the thread
+      // reads as an ordinary bot conversation again rather than a stale escalation.
+      await setConversationStatus(db, conversationId, 'active');
+      res.status(200).json({ ok: true, status: 'active' });
+      return;
+    }
+
     if (channel === 'facebook' || channel === 'instagram') {
       if (!externalUserId) {
         res.status(409).json({ error: 'Энэ ярианд хүлээн авагчийн ID байхгүй байна.' });
@@ -86,7 +100,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       }
 
       await sendText(settings.facebook.pageAccessToken, externalUserId, message, {
-        tag: HUMAN_AGENT_TAG,
+        fallbackTag: HUMAN_AGENT_TAG,
       });
     }
 
@@ -102,7 +116,10 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('[chat/reply] failed:', (err as Error).message);
-    res.status(502).json({ error: 'Мессеж илгээж чадсангүй. Дахин оролдоно уу.' });
+    // Facebook's own wording reaches the admin: "could not send" alone gave
+    // nobody anything to act on, and this endpoint is already admin-only.
+    const detail = (err as Error).message;
+    console.error('[chat/reply] failed:', detail);
+    res.status(502).json({ error: detail || 'Мессеж илгээж чадсангүй. Дахин оролдоно уу.' });
   }
 }

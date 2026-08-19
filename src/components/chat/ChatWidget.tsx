@@ -25,6 +25,8 @@ interface WidgetMessage {
 
 const SESSION_STORAGE_KEY = "savana.chat.session";
 const MAX_MESSAGE_LENGTH = 600;
+/** Longer than any real answer takes, short enough to be a failure and not a hang. */
+const REQUEST_TIMEOUT_MS = 45_000;
 
 const COPY = {
   MN: {
@@ -159,6 +161,12 @@ export default function ChatWidget() {
     setError("");
     setPending(true);
 
+    // Without this the "typing…" bubble is permanent when a request stalls:
+    // nothing else ever clears `pending`, and the visitor is left with no reply
+    // and no way to try again. Generous, because a model turn is not quick.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     try {
       const response = await fetch("/api/chat/widget", {
         method: "POST",
@@ -168,6 +176,7 @@ export default function ChatWidget() {
           message,
           userId: user?.uid ?? null,
         }),
+        signal: controller.signal,
       });
 
       const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -192,6 +201,7 @@ export default function ChatWidget() {
     } catch {
       setError(copy.failed);
     } finally {
+      clearTimeout(timer);
       setPending(false);
     }
   }, [copy.failed, copy.handedOver, copy.tooFast, draft, pending, user]);

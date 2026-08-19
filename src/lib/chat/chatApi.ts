@@ -134,6 +134,15 @@ export async function sendAdminReply(conversationId: string, message: string): P
   await postToChatApi("/api/chat/reply", { conversationId, message });
 }
 
+/**
+ * Hands a thread back to the bot after a human has been answering it. Replying
+ * silences the bot for good otherwise — chat_conversations is server-write-only,
+ * so there is no way to undo it from the browser.
+ */
+export async function handConversationBackToBot(conversationId: string): Promise<void> {
+  await postToChatApi("/api/chat/reply", { conversationId, handBack: true });
+}
+
 /** Installs the greeting and persistent menu on the connected Facebook page. */
 export async function applyFacebookSetup(): Promise<string> {
   const payload = await postToChatApi("/api/chat/setup", {});

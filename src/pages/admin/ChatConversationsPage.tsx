@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Facebook, Globe, Instagram, Send, TriangleAlert, UserCheck } from "lucide-react";
-import { ChatApiError, sendAdminReply } from "../../lib/chat/chatApi";
+import {
+  Bot,
+  Facebook,
+  Globe,
+  Instagram,
+  RotateCcw,
+  Send,
+  TriangleAlert,
+  UserCheck,
+} from "lucide-react";
+import { ChatApiError, handConversationBackToBot, sendAdminReply } from "../../lib/chat/chatApi";
 import { subscribeToChatMessages, STATUS_LABELS } from "../../lib/chat/conversationStore";
 import type {
   ChatChannel,
@@ -33,8 +42,10 @@ const COPY = {
     total: "Нийт яриа",
     awaitingCount: "Хүн хүлээж буй",
     botHandled: "Бот хариулж буй",
+    handBack: "Ботод буцаах",
+    handingBack: "Буцааж байна…",
     replyWarning:
-      "Та хариулмагц бот энэ ярианд дуугүй болно. Ботод буцааж өгөх бол харилцагч дахин бичихийг хүлээнэ.",
+      "Та хариулмагц бот энэ ярианд дуугүй болно. Дуусмагц «Ботод буцаах» дарж бот руу шилжүүлнэ.",
   },
   EN: {
     kicker: "AI Chat",
@@ -56,8 +67,10 @@ const COPY = {
     total: "Conversations",
     awaitingCount: "Awaiting human",
     botHandled: "Bot handling",
+    handBack: "Hand back to bot",
+    handingBack: "Handing back…",
     replyWarning:
-      "Once you reply the bot goes quiet on this thread until the customer writes again.",
+      "Once you reply the bot goes quiet on this thread. Press «Hand back to bot» when you are done.",
   },
 } as const;
 
@@ -101,6 +114,7 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [handingBack, setHandingBack] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const visible = useMemo(
@@ -168,6 +182,20 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
       setSendError(error instanceof ChatApiError ? error.message : "Илгээж чадсангүй.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handBack() {
+    if (!selectedId || handingBack) return;
+
+    setHandingBack(true);
+    setSendError("");
+    try {
+      await handConversationBackToBot(selectedId);
+    } catch (error) {
+      setSendError(error instanceof ChatApiError ? error.message : "Буцааж чадсангүй.");
+    } finally {
+      setHandingBack(false);
     }
   }
 
@@ -250,6 +278,19 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
                     {selected.handoverReason ? ` · ${copy.handoverNote}: ${selected.handoverReason}` : ""}
                   </p>
                 </div>
+                {/* Replying silences the bot for good, so the way back has to be
+                    a control rather than something the admin waits for. */}
+                {selected.status !== "active" && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => void handBack()}
+                    disabled={handingBack}
+                  >
+                    <RotateCcw size={15} />
+                    {handingBack ? copy.handingBack : copy.handBack}
+                  </button>
+                )}
               </div>
 
               <div className="chat-panel-scroll" ref={scrollRef}>

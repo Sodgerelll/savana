@@ -147,6 +147,57 @@ describe("sendText", () => {
     expect(body()).toMatchObject({ messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
   });
 
+  it("retries with the fallback tag only after an untagged send is refused", async () => {
+    // Inside the 24-hour window RESPONSE is the correct send; the tag is what
+    // reopens a thread outside it. Leading with the tag fails on an app that
+    // has no App Review, which is every shop on its first day.
+    responder = () =>
+      calls.length === 1
+        ? jsonResponse({ error: { message: "(#10) outside allowed window" } }, 400)
+        : jsonResponse({ message_id: "m_1" });
+
+    await sendText(TOKEN, "PSID-1", "hi", { fallbackTag: "HUMAN_AGENT" });
+
+    expect(calls).toHaveLength(2);
+    expect(body(0)).toMatchObject({ messaging_type: "RESPONSE" });
+    expect(body(1)).toMatchObject({ messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
+  });
+
+  it("does not retry when the untagged send succeeds", async () => {
+    await sendText(TOKEN, "PSID-1", "hi", { fallbackTag: "HUMAN_AGENT" });
+
+    expect(calls).toHaveLength(1);
+    expect(body()).toMatchObject({ messaging_type: "RESPONSE" });
+  });
+
+  it("reports the refusal when the tagged retry fails too", async () => {
+    responder = () => jsonResponse({ error: { message: "(#200) permission missing" } }, 400);
+
+    await expect(sendText(TOKEN, "PSID-1", "hi", { fallbackTag: "HUMAN_AGENT" })).rejects.toThrow(
+      "permission missing",
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  it("retries each chunk on its own rather than resending the whole reply", async () => {
+    // A long reply goes out in pieces. Retrying the lot would deliver the first
+    // piece twice, so the fallback is per chunk.
+    let seen = 0;
+    responder = () => {
+      seen += 1;
+      return seen === 1
+        ? jsonResponse({ error: { message: "(#10) outside allowed window" } }, 400)
+        : jsonResponse({ message_id: "m_1" });
+    };
+
+    await sendText(TOKEN, "PSID-1", "а".repeat(TEXT_LIMIT + 500), { fallbackTag: "HUMAN_AGENT" });
+
+    // Chunk one twice (refused, then tagged), chunk two once.
+    expect(calls).toHaveLength(3);
+    expect(body(0).message.text).toBe(body(1).message.text);
+    expect(body(2).message.text).not.toBe(body(0).message.text);
+  });
+
   it("sends nothing for empty text", async () => {
     await sendText(TOKEN, "PSID-1", "");
 
