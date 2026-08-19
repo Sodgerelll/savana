@@ -77,7 +77,17 @@ describe("buildDateContext / localDateKey", () => {
 
     expect(text).toContain("2026 оны 8 сарын 15");
     expect(text).toContain("Бямба"); // 2026-08-15 is a Saturday
-    expect(text).toContain("10:00");
+  });
+
+  it("carries no clock reading, which would cost a cache hit every minute", () => {
+    // The prompt is ~15,000 characters and otherwise identical between calls.
+    // Gemini discounts a cached prefix only on an exact match, and a cache hit
+    // is a tenth of the price, so a ticking clock in here is expensive.
+    const morning = buildDateContext(new Date("2026-08-15T02:00:00.000Z"));
+    const evening = buildDateContext(new Date("2026-08-15T14:30:00.000Z"));
+
+    expect(morning).toBe(evening);
+    expect(morning).not.toMatch(/d{2}:d{2}/);
   });
 
   it("rolls to the next Ulaanbaatar day late in the UTC evening", () => {

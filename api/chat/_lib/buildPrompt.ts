@@ -213,12 +213,17 @@ export function buildDateContext(now: Date): string {
   const month = ub.getUTCMonth() + 1;
   const day = ub.getUTCDate();
   const weekday = WEEKDAYS_MN[ub.getUTCDay()];
-  const hours = String(ub.getUTCHours()).padStart(2, '0');
-  const minutes = String(ub.getUTCMinutes()).padStart(2, '0');
   const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-  return `# ОДООГИЙН ЦАГ (Улаанбаатар)
-Өнөөдөр: ${year} оны ${month} сарын ${day}, ${weekday} гараг, ${hours}:${minutes}.
+  // Deliberately the date and nothing finer. This block sits at the front of a
+  // ~15,000-character prompt that is otherwise byte-identical between requests,
+  // and Gemini only discounts a cached prefix when it matches exactly — a clock
+  // reading here changed the prompt every minute and made every single call a
+  // cache miss, at ten times the price of a hit. The time of day earns nothing
+  // in return: the assistant is told to answer around the clock, and what it
+  // actually needs a calendar for is which discounts have expired.
+  return `# ӨНӨӨДРИЙН ОГНОО (Улаанбаатар)
+Өнөөдөр: ${year} оны ${month} сарын ${day}, ${weekday} гараг.
 ISO: ${iso}. "Өнөөдөр" = ${iso}, "маргааш" = дараагийн өдөр.`;
 }
 
