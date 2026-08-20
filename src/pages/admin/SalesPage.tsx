@@ -440,6 +440,8 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                             ? mn ? "Бэлэн мөнгө" : "Cash"
                             : sale.paymentMethod === "bank_transfer"
                             ? mn ? "Банкны шилжүүлэг" : "Bank transfer"
+                            : sale.paymentMethod === "pos"
+                            ? mn ? "Пос" : "POS"
                             : "Bonum"}
                         </small>
                       </div>

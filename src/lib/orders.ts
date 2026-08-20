@@ -38,7 +38,7 @@ import {
 
 export const ORDERS_COLLECTION = "orders";
 export const ORDER_SCHEMA_VERSION = 1;
-export type OrderPaymentMethod = "bonum" | "cash" | "bank_transfer";
+export type OrderPaymentMethod = "bonum" | "cash" | "bank_transfer" | "pos";
 export type OrderPaymentStatus = "pending" | "paid" | "failed" | "cancelled";
 export type OrderStatus = "new" | "paid" | "delivering" | "delivered";
 export const ORDER_STATUS_VALUES = ["new", "paid", "delivering", "delivered"] as const;

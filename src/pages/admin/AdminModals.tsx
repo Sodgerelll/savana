@@ -5215,6 +5215,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             >
               <option value="cash">{language === "MN" ? "Бэлэн мөнгө" : "Cash"}</option>
               <option value="bank_transfer">{language === "MN" ? "Банкны шилжүүлэг" : "Bank transfer"}</option>
+              <option value="pos">{language === "MN" ? "Пос" : "POS"}</option>
               <option value="bonum">Bonum</option>
             </select>
           </label>

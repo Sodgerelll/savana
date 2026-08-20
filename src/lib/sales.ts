@@ -257,7 +257,7 @@ function normalizeVatMode(value: unknown): SaleVatMode {
 }
 
 function normalizePaymentMethod(value: unknown): SalePaymentMethod {
-  if (value === "bank_transfer" || value === "bonum") {
+  if (value === "bank_transfer" || value === "bonum" || value === "pos") {
     return value;
   }
 
