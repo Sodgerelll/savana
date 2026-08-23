@@ -189,6 +189,8 @@ export interface SaleDraftInput {
   totals: SaleTotalsPayload;
   createdByUid: string;
   createdByName?: string;
+  /** Local YYYY-MM-DD the sale is booked on. Defaults to the server time when omitted. */
+  saleDate?: string;
 }
 
 export interface CreatedSale {
@@ -207,6 +209,27 @@ export function getSalePaymentStatus(sale: Pick<SaleRecord, "status">): SalePaym
 
 function createSaleNumber(): Promise<string> {
   return reserveDocumentNumber("sale");
+}
+
+/** Local (not UTC) YYYY-MM-DD for `date`, matching what an <input type="date"> holds. */
+function toDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Combines a picked YYYY-MM-DD with the current time of day, so a backdated sale still
+ *  sorts chronologically against other sales entered the same day. */
+function saleDateToTimestamp(saleDate: string): string {
+  const now = new Date();
+  const [year, month, day] = saleDate.split("-").map(Number);
+  return new Date(
+    year,
+    (month || 1) - 1,
+    day || 1,
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds(),
+  ).toISOString();
 }
 
 function parseTimestamp(value: unknown): string | null {
@@ -517,7 +540,7 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
     createdByUid: input.createdByUid,
     createdByName: input.createdByName ?? "",
     journalEntryId,
-    createdAt: serverTimestamp(),
+    createdAt: input.saleDate ? saleDateToTimestamp(input.saleDate) : serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
@@ -536,7 +559,7 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
  */
 export async function updateSale(
   id: string,
-  previous: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "paidAt" | "status" | "items">,
+  previous: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "paidAt" | "status" | "items" | "createdAt">,
   input: SaleDraftInput,
 ): Promise<void> {
   const wasSettled = isSaleSettled(previous.status);
@@ -583,6 +606,14 @@ export async function updateSale(
     journalEntryId = entryRef.id;
   }
 
+  // The sale date only moves when it was actually changed — otherwise editing an unrelated
+  // field would nudge createdAt to "now" and reorder the sale in every list sorted by it.
+  const previousSaleDate = previous.createdAt ? toDateInputValue(new Date(previous.createdAt)) : null;
+  const createdAtUpdate =
+    input.saleDate && input.saleDate !== previousSaleDate
+      ? { createdAt: saleDateToTimestamp(input.saleDate) }
+      : {};
+
   batch.update(doc(db, SALES_COLLECTION, id), {
     status: input.status,
     channel: input.channel,
@@ -593,6 +624,7 @@ export async function updateSale(
     paymentMethod: input.paymentMethod,
     paidAt: settled ? (previous.paidAt ?? new Date().toISOString()) : null,
     journalEntryId,
+    ...createdAtUpdate,
     updatedAt: serverTimestamp(),
   });
 

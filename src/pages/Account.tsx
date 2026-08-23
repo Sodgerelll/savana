@@ -343,6 +343,8 @@ interface SaleDraft {
   customer: SaleCustomerPayload;
   address: SaleRecord["address"];
   items: OrderItemPayload[];
+  /** Local YYYY-MM-DD the sale is booked on, shown/edited via an <input type="date">. */
+  saleDate: string;
   shippingFee: number;
   /** Whether the 10% НӨАТ sits inside the typed prices, on top of them, or not at all. */
   vatMode: SaleVatMode;
@@ -2718,12 +2720,17 @@ export default function Account() {
   // it from the UI meant the write could fail after the ledger entry had already landed,
   // and it wrote the whole product document back from a possibly stale local snapshot.
 
+  /** Local (not UTC) YYYY-MM-DD for `date`, matching what an <input type="date"> holds. */
+  const toDateInputValue = (date: Date): string =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
   const createEmptySaleDraft = (): SaleDraft => ({
     id: "",
     saleNumber: "",
     status: "delivered",
     channel: "store",
     paymentMethod: "cash",
+    saleDate: toDateInputValue(new Date()),
     customer: {
       type: "individual",
       fullName: "",
@@ -2764,6 +2771,7 @@ export default function Account() {
         status: previous.status,
         channel: previous.channel,
         paymentMethod: previous.paymentMethod,
+        saleDate: previous.createdAt ? toDateInputValue(new Date(previous.createdAt)) : toDateInputValue(new Date()),
         customer: { ...previous.customer },
         address: { ...previous.address },
         items: previous.items.map((item) => ({ ...item })),
@@ -2882,6 +2890,7 @@ export default function Account() {
         totals,
         createdByUid: user?.uid ?? "",
         createdByName: profile?.displayName ?? user?.email ?? "",
+        saleDate: draft.saleDate,
       };
 
       // createSale/updateSale move stock themselves, in the same batch as the journal

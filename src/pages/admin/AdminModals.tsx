@@ -5188,6 +5188,16 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           </label>
 
           <label className="admin-field">
+            <span>{language === "MN" ? "Огноо" : "Date"}</span>
+            <input
+              type="date"
+              value={draft.saleDate}
+              onChange={(event: any) => patchDraft({ saleDate: event.target.value })}
+              required
+            />
+          </label>
+
+          <label className="admin-field">
             <span>{copy.status}</span>
             <select value={draft.status} onChange={(event: any) => patchDraft({ status: event.target.value })}>
               {orderStatusOptions.map((statusOption: any) => (
