@@ -119,6 +119,8 @@ export interface PromptShopInfo {
   freeShippingThreshold: number;
   /** Shop-wide НӨАТ policy, stamped on a chat order exactly as checkout stamps it. */
   vatMode: 'none' | 'included' | 'added';
+  /** Smallest order the shop will deliver. 0 means it delivers any order. */
+  minOrderForDelivery: number;
   facebookUrl: string;
   instagramHandle: string;
 }
@@ -344,6 +346,9 @@ function formatShopInfo(shop: PromptShopInfo): string {
     `\nХүргэлтийн төлбөр: ${formatTugrik(shop.shippingFee)}. ` +
       (shop.freeShippingThreshold > 0
         ? `${formatTugrik(shop.freeShippingThreshold)}-өөс дээш дүнтэй захиалгад хүргэлт үнэгүй. `
+        : '') +
+      (shop.minOrderForDelivery > 0
+        ? `Хүргэлт ${formatTugrik(shop.minOrderForDelivery)}-өөс дээш захиалгад хийгдэнэ. `
         : '') +
       'Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг — дээрх бичвэрт өөр дүн ' +
       'байвал ЭНЭ дүнг хэл.',
@@ -660,6 +665,7 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
       shippingFee: asShippingFee(settings?.shippingFee),
       freeShippingThreshold: asThreshold(settings?.freeShippingThreshold),
       vatMode: asVatMode(settings?.vatMode),
+      minOrderForDelivery: asThreshold(settings?.minOrderForDelivery),
       facebookUrl: asString(settings?.facebookUrl),
       instagramHandle: asString(settings?.instagramHandle),
     },

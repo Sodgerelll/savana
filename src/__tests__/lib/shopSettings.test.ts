@@ -15,6 +15,14 @@ describe("normalizeShopSettings — delivery", () => {
     expect(normalizeShopSettings({}).shippingFee).toBe(DEFAULT_SHIPPING_FEE);
   });
 
+  it("delivers any order until a minimum is configured", () => {
+    // The shop's page says delivery starts above a figure, but an install that
+    // has never been told the figure must not start refusing orders.
+    expect(normalizeShopSettings({}).minOrderForDelivery).toBe(0);
+    expect(normalizeShopSettings({ minOrderForDelivery: 40_000 }).minOrderForDelivery).toBe(40_000);
+    expect(normalizeShopSettings({ minOrderForDelivery: "олон" }).minOrderForDelivery).toBe(0);
+  });
+
   it("keeps a threshold the shop configured", () => {
     expect(normalizeShopSettings({ freeShippingThreshold: 80_000 }).freeShippingThreshold).toBe(
       80_000,

@@ -581,6 +581,25 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           />
         </label>
         <label className="admin-field">
+          <span>{copy.minOrderForDelivery}</span>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={settingsModal.draft.minOrderForDelivery}
+            onChange={(event: any) =>
+              setSettingsModal({
+                draft: {
+                  ...settingsModal.draft,
+                  // 0 means the shop delivers any order, however small.
+                  minOrderForDelivery:
+                    Number(event.target.value) >= 0 ? Number(event.target.value) : 0,
+                },
+              })
+            }
+          />
+        </label>
+        <label className="admin-field">
           <span>{copy.facebookUrl}</span>
           <input
             value={settingsModal.draft.facebookUrl}

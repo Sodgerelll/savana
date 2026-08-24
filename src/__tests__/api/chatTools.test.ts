@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   buildProductCards,
   CHAT_TOOLS,
+  BelowDeliveryMinimumError,
   normalizeOrderNumber,
   NothingToOrderError,
   runTool,
@@ -202,6 +203,20 @@ describe("confirm_order", () => {
 
     expect(result.text).toContain("Аль бүтээгдэхүүнийг");
     expect(result.handoverReason).toBeUndefined();
+  });
+
+  it("quotes the shop's delivery minimum instead of raising an order it will not fulfil", async () => {
+    // The shop's page says it delivers above a figure. An order below it is a
+    // rule the customer has not been told yet, not a fault worth paging anyone.
+    const placeOrder = vi.fn(async () => {
+      throw new BelowDeliveryMinimumError("40000");
+    });
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.text).toContain("40,000₮");
+    expect(result.handoverReason).toBeUndefined();
+    expect(result.buttons).toBeUndefined();
   });
 
   it("escalates when the order genuinely could not be created", async () => {

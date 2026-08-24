@@ -15,7 +15,7 @@ import { bonumPost } from '../../bonum/_client.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
 import { findOpenLead, updateChatLead } from './leads.js';
-import { NothingToOrderError } from './tools.js';
+import { BelowDeliveryMinimumError, NothingToOrderError } from './tools.js';
 
 
 const ORDERS_COLLECTION = 'orders';
@@ -73,7 +73,10 @@ export interface CreateChatOrderInput {
   freeShippingThreshold: number;
   /** Shop-wide НӨАТ policy, stamped on exactly as the storefront checkout stamps it. */
   vatMode: VatMode;
+  /** Smallest order the shop will deliver. 0 means it delivers any order. */
+  minOrderForDelivery: number;
 }
+
 
 export interface CreatedChatOrder {
   id: string;
@@ -132,6 +135,13 @@ export async function createChatOrder(
   const orderNumber = orderNumberFromId(ref.id, now);
 
   const subtotal = input.items.reduce((sum, item) => sum + item.lineTotal, 0);
+
+  // Checked before the invoice exists, not after: the shop says it delivers
+  // above a figure, and an order it will not fulfil is worse than none.
+  if (input.minOrderForDelivery > 0 && subtotal < input.minOrderForDelivery) {
+    throw new BelowDeliveryMinimumError(String(input.minOrderForDelivery));
+  }
+
   const shippingFee = shippingFeeFor(subtotal, input.shippingFee, input.freeShippingThreshold);
   // Same arithmetic as the checkout: "included" leaves the charged total alone
   // and only records how much of it is tax, "added" bills it on top. Delivery
@@ -283,6 +293,7 @@ export async function placeChatOrder(
     shippingFee: storefront.shop.shippingFee,
     freeShippingThreshold: storefront.shop.freeShippingThreshold,
     vatMode: storefront.shop.vatMode,
+    minOrderForDelivery: storefront.shop.minOrderForDelivery,
   });
 
   // The lead has become an order, so it leaves the admin's queue — otherwise

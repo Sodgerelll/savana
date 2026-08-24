@@ -74,6 +74,8 @@ export interface ShopSettings {
   shippingFee: number;
   /** Order value at or above which delivery is free. 0 switches the rule off. */
   freeShippingThreshold: number;
+  /** Smallest order the shop will deliver at all. 0 means it delivers any order. */
+  minOrderForDelivery: number;
   navigationItems: SiteNavigationItem[];
   journalHeadingEn: string;
   journalHeadingMn: string;
@@ -280,6 +282,8 @@ const defaultSettings: ShopSettings = {
   shippingFee: DEFAULT_SHIPPING_FEE,
   // Off until the shop sets it, so no install starts giving delivery away.
   freeShippingThreshold: 0,
+  // Off until the shop sets it, so no install starts refusing orders.
+  minOrderForDelivery: 0,
   navigationItems: defaultNavigationItems,
   journalHeadingEn: "SAVANA Journal",
   journalHeadingMn: "SAVANA сэтгүүл",
@@ -503,6 +507,10 @@ export function normalizeShopSettings(value: Partial<Record<keyof ShopSettings, 
     freeShippingThreshold: normalizeShippingFee(
       value.freeShippingThreshold,
       defaults.freeShippingThreshold,
+    ),
+    minOrderForDelivery: normalizeShippingFee(
+      value.minOrderForDelivery,
+      defaults.minOrderForDelivery,
     ),
     navigationItems: normalizeNavigationItems(value.navigationItems),
     journalHeadingEn: String(value.journalHeadingEn ?? defaults.journalHeadingEn),

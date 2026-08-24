@@ -247,6 +247,12 @@ export interface PlacedOrder {
  */
 export class NothingToOrderError extends Error {}
 
+/**
+ * Thrown when a basket is below the value the shop will deliver. Carries the
+ * figure as its message, so the reply can quote the shop's own rule.
+ */
+export class BelowDeliveryMinimumError extends Error {}
+
 /** Mongolian mobile numbers are eight digits starting 6, 7, 8 or 9. */
 const PHONE_PATTERN = /^[6-9][0-9]{7}$/;
 
@@ -415,6 +421,16 @@ export async function runTool(
           orderId: order.id,
         };
       } catch (err) {
+        if (err instanceof BelowDeliveryMinimumError) {
+          // The shop's own rule, said in the shop's own terms — not an error
+          // and not something to wake a human for.
+          return {
+            text:
+              `Хүргэлт ${formatTugrik(Number(err.message))}-өөс дээш дүнтэй захиалгад хийгддэг 📦
+` +
+              'Өөр бүтээгдэхүүн нэмэх үү?',
+          };
+        }
         if (err instanceof NothingToOrderError) {
           return { text: 'Аль бүтээгдэхүүнийг захиалах вэ? Нэрийг нь хэлж өгөөч 🌿' };
         }
