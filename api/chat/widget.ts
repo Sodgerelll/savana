@@ -20,7 +20,12 @@ import {
   setConversationStatus,
 } from './_lib/conversation.js';
 import { matchFaq } from './_lib/faqMatch.js';
-import { callGeminiAgent, geminiErrorToUserMessage, primaryModel } from './_lib/gemini.js';
+import {
+  callGeminiAgent,
+  geminiErrorToUserMessage,
+  looksLikeOurOwnInstructions,
+  primaryModel,
+} from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { checkRateLimit } from './_lib/guards.js';
 import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead } from './_lib/leads.js';
@@ -33,6 +38,14 @@ export const config = { maxDuration: 60 };
 const MAX_MESSAGE_LENGTH = 600;
 /** A session id we generated is 24 hex chars; reject anything unlike one. */
 const SESSION_ID_PATTERN = /^[a-z0-9]{16,40}$/i;
+
+/**
+ * What a customer is told when the model reads its own instructions back. Rare,
+ * and worth one awkward turn: the alternative is internal material on a screen
+ * the shop does not control.
+ */
+const LEAKED_INSTRUCTION_REPLY =
+  'Уучлаарай, сүүлийн мессежийг маань үл ойшооно уу 🌿 Та юу хүсэж байгаагаа дахин бичиж өгөхгүй юу?';
 
 /** Mirrors the Messenger wording, so the two channels sound like one shop. */
 const RESUMED_REPLY = 'Дахин туслахад бэлэн боллоо 🌿 Юу асуух вэ?';
@@ -232,6 +245,10 @@ export default async function handler(req: any, res: any): Promise<void> {
         payUrl = outcome.buttons?.find((button) => button.url)?.url ?? '';
       } else {
         text = result.text ?? '';
+        if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
+          console.error('[chat/widget] model echoed its own instructions; reply withheld');
+          text = LEAKED_INSTRUCTION_REPLY;
+        }
       }
     } catch (err) {
       console.error('[chat/widget] generation failed:', (err as Error).message);

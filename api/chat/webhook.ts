@@ -37,6 +37,7 @@ import {
   callGemini,
   callGeminiAgent,
   geminiErrorToUserMessage,
+  looksLikeOurOwnInstructions,
   primaryModel,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
@@ -57,6 +58,14 @@ import { CHAT_TOOLS, runTool, TOOL_NAMES, type ToolContext } from './_lib/tools.
 // signature covers the raw payload, and re-serialising a parsed object would
 // not reproduce it.
 export const config = { maxDuration: 60, api: { bodyParser: false } };
+
+/**
+ * What a customer is told when the model reads its own instructions back. Rare,
+ * and worth one awkward turn: the alternative is internal material on a screen
+ * the shop does not control.
+ */
+const LEAKED_INSTRUCTION_REPLY =
+  'Уучлаарай, сүүлийн мессежийг маань үл ойшооно уу 🌿 Та юу хүсэж байгаагаа дахин бичиж өгөхгүй юу?';
 
 /** Facebook resends when it does not see a 200 within roughly 20 seconds. */
 const PER_USER_RATE_LIMIT = { max: 12, windowMs: 60_000 };
@@ -516,7 +525,13 @@ async function replyToEvent(
       toolName = result.functionCall.name;
       outcome = await runTool(result.functionCall.name, result.functionCall.args, toolContext);
     } else {
-      outcome = { text: result.text ?? '' };
+      const text = result.text ?? '';
+      if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
+        console.error('[chat/webhook] model echoed its own instructions; reply withheld');
+        outcome = { text: LEAKED_INSTRUCTION_REPLY };
+      } else {
+        outcome = { text };
+      }
     }
   } catch (err) {
     console.error('[chat/webhook] generation failed:', (err as Error).message);

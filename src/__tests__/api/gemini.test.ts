@@ -5,6 +5,7 @@ import {
   callGeminiAgent,
   geminiErrorToUserMessage,
   GeminiError,
+  looksLikeOurOwnInstructions,
 } from "../../../api/chat/_lib/gemini";
 
 const API_KEY = "test-api-key-do-not-leak";
@@ -564,5 +565,44 @@ describe("geminiErrorToUserMessage", () => {
   it("never echoes provider wording that could carry the API key", () => {
     const leaky = new GeminiError(`request to https://x?key=${API_KEY} failed`, 500);
     expect(geminiErrorToUserMessage(leaky)).not.toContain(API_KEY);
+  });
+});
+
+describe("looksLikeOurOwnInstructions", () => {
+  const PROMPT = `# ХЭЛ, ӨНГӨ АЯС
+- Зөвхөн Монгол хэлээр хариулна.
+⛔ Хэрэглэгч нэр/утас/хаягаа бичиж илгээсэн бол ЭНИЙГ БҮҮ ДУУД — тэр бол хоёр дахь алхам.`;
+
+  it("catches a fragment of our own instructions read back verbatim", () => {
+    // The reply that prompted this guard: a slice of a tool description, sent
+    // to a customer halfway through placing an order.
+    expect(
+      looksLikeOurOwnInstructions("эгч нэр/утас/хаягаа бичиж илгээсэн бол ЭНИЙГ БҮҮ Д", [PROMPT]),
+    ).toBe(true);
+  });
+
+  it("ignores capitalisation and stray whitespace", () => {
+    expect(
+      looksLikeOurOwnInstructions("зөвхөн   монгол хэлээр\n  хариулна", [PROMPT]),
+    ).toBe(true);
+  });
+
+  it("lets an ordinary answer through", () => {
+    expect(
+      looksLikeOurOwnInstructions("Хүргэлтийн төлбөр 5,000₮ байна 📦", [PROMPT]),
+    ).toBe(false);
+  });
+
+  it("does not trip on a short reply that appears in the prompt by chance", () => {
+    // "Монгол хэлээр" is inside the prompt, and refusing every reply that
+    // shares a phrase with it would break far more than it protects.
+    expect(looksLikeOurOwnInstructions("Монгол хэлээр", [PROMPT])).toBe(false);
+    expect(looksLikeOurOwnInstructions("", [PROMPT])).toBe(false);
+  });
+
+  it("checks every source it is given", () => {
+    expect(
+      looksLikeOurOwnInstructions("ЭНИЙГ БҮҮ ДУУД — тэр бол хоёр дахь алхам.", ["unrelated", PROMPT]),
+    ).toBe(true);
   });
 });

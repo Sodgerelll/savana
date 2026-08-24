@@ -450,6 +450,34 @@ export function geminiErrorToUserMessage(err: unknown): string {
  * A context cache belongs to one model, so the caller has to build it for the
  * head of the chain rather than guessing at the default.
  */
+/**
+ * Whether a reply is really a piece of our own instructions, read back.
+ *
+ * A model asked not to reveal its instructions will still occasionally emit one
+ * — the reply that prompted this was a verbatim fragment of a tool description,
+ * sent to a customer in the middle of placing an order. The shop's rule is that
+ * internal material never reaches a customer, and a rule that depends only on
+ * the model obeying it is not a rule. Verbatim echoes are what happens in
+ * practice and are what this catches; a paraphrase would still get through.
+ *
+ * Short replies are exempt: "Тийм ээ" appears inside any long prompt by chance,
+ * and refusing those would break ordinary answers to catch nothing.
+ */
+export function looksLikeOurOwnInstructions(reply: string, sources: string[]): boolean {
+  const needle = normaliseForLeakCheck(reply);
+  if (needle.length < 25) {
+    return false;
+  }
+  return sources.some((source) => normaliseForLeakCheck(source).includes(needle));
+}
+
+function normaliseForLeakCheck(value: string): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function primaryModel(requested?: string): string {
   return resolveModelChain(requested)[0];
 }
