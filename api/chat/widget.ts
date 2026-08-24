@@ -250,8 +250,8 @@ export default async function handler(req: any, res: any): Promise<void> {
             handoverReason: outcome.handoverReason,
           });
         }
-        if (outcome.lead) {
-          await recordOrderLead(db, conversation.id, outcome.lead);
+        if (outcome.leads && outcome.leads.length > 0) {
+          await recordOrderLead(db, conversation.id, outcome.leads);
         }
         // The widget draws its own button rather than sending a Messenger
         // template, so the link is returned as data like the cards are.
@@ -359,19 +359,24 @@ async function captureContactDetails(db: any, conversationId: string, text: stri
 async function recordOrderLead(
   db: any,
   conversationId: string,
-  lead: { productName: string; productId: number | null; variant: string | null; quantity: number },
+  leads: Array<{
+    productName: string;
+    productId: number | null;
+    variant: string | null;
+    quantity: number;
+  }>,
 ): Promise<void> {
-  const item = {
+  const items = leads.map((lead) => ({
     productId: lead.productId,
     name: lead.productName,
     variant: lead.variant,
     quantity: lead.quantity,
-  };
+  }));
   const open = await findOpenLead(db, conversationId);
 
   if (open) {
-    const items = Array.isArray(open.data.items) ? open.data.items : [];
-    await updateChatLead(db, open.id, { items: [...items, item] });
+    const existing = Array.isArray(open.data.items) ? open.data.items : [];
+    await updateChatLead(db, open.id, { items: [...existing, ...items] });
     return;
   }
 
@@ -385,7 +390,7 @@ async function recordOrderLead(
     // pick a product has neither yet.
     address: '',
     note: '',
-    items: [item],
+    items,
   });
 }
 

@@ -71,16 +71,28 @@ export const CHAT_TOOLS = [
         parameters: {
           type: 'object',
           properties: {
-            productName: { type: 'string', description: 'Захиалах бүтээгдэхүүний нэр.' },
-            quantity: { type: 'number', description: 'Тоо ширхэг. Тодорхойгүй бол 1.' },
-            variant: {
-              type: 'string',
+            items: {
+              type: 'array',
               description:
-                'Сонгосон хэмжээ, каталогт бичигдсэн нэрээр яг таг. Хэмжээ бүр өөр үнэтэй тул ' +
-                'хоёроос олон хэмжээтэй бүтээгдэхүүнд ЗААВАЛ аль болохыг нь асуу.',
+                'Захиалах бүтээгдэхүүнүүд. Хэрэглэгч нэг мессежид хэд хэдэн бараа нэрлэсэн бол ' +
+                'БҮГДИЙГ энэ жагсаалтад оруулна — тус бүрд тусад нь дуудахгүй.',
+              items: {
+                type: 'object',
+                properties: {
+                  productName: { type: 'string', description: 'Захиалах бүтээгдэхүүний нэр.' },
+                  quantity: { type: 'number', description: 'Тоо ширхэг. Тодорхойгүй бол 1.' },
+                  variant: {
+                    type: 'string',
+                    description:
+                      'Сонгосон хэмжээ, каталогт бичигдсэн нэрээр яг таг. Хэмжээ бүр өөр үнэтэй ' +
+                      'тул хоёроос олон хэмжээтэй бүтээгдэхүүнд аль болохыг нь асууна.',
+                  },
+                },
+                required: ['productName'],
+              },
             },
           },
-          required: ['productName'],
+          required: ['items'],
         },
       },
       {
@@ -142,15 +154,18 @@ export interface ToolOutcome {
   buttons?: Array<{ title: string; url: string }>;
   /** An order was created; the webhook records it against the conversation. */
   orderId?: string;
-  /** Set when the customer started an order the admin must follow up. */
-  lead?: {
+  /**
+   * Lines the customer added to an order. A list because one message can name
+   * several products, and reading only the first quietly got the order wrong.
+   */
+  leads?: Array<{
     productName: string;
     /** Null when the model named a product that is not in the catalogue. */
     productId: number | null;
     /** Chosen size, when the product is sold in more than one. */
     variant: string | null;
     quantity: number;
-  };
+  }>;
 }
 
 function matchesQuery(product: PromptProduct, query: string): boolean {
@@ -252,6 +267,9 @@ export interface PlacedOrder {
  * contact details. That is a missing question, not a failure worth waking a
  * human for, so it is distinguished from every other way an order can fail.
  */
+/** Products one message may add to an order. More than this is a confused model. */
+const MAX_ORDER_LINES = 6;
+
 /** Asked once per turn, however many products the customer just named. */
 export const ORDER_DETAILS_ASK =
   'Захиалгыг баталгаажуулахын тулд дараах гурвыг бичиж өгнө үү 📝\n' +
@@ -358,54 +376,67 @@ export async function runTool(
     }
 
     case TOOL_NAMES.START_ORDER: {
-      const rawQuantity = Number(args.quantity);
-      const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? Math.floor(rawQuantity) : 1;
+      // A carousel "Захиалах" button names one product by id; the model sends a
+      // list, because one message can name several. Both arrive here.
+      const requested = Array.isArray(args.items) && args.items.length > 0
+        ? (args.items as Array<Record<string, unknown>>)
+        : [{ productName: args.productName, quantity: args.quantity, variant: args.variant }];
 
-      // A carousel "Захиалах" button sends the product id; the model sends a
-      // name. Resolve the id first so the button path names a real product.
-      let productName = String(args.productName ?? '').trim();
-      let product =
-        args.productId === undefined
-          ? undefined
-          : context.storefront.products.find((entry) => entry.id === Number(args.productId));
-      if (product) {
-        productName = product.name;
-      } else if (productName) {
-        // The model names the product, so match it back to the catalogue: a
-        // lead that carries only a name makes an admin re-find it by hand.
-        const wanted = productName.toLowerCase();
-        product = context.storefront.products.find(
-          (entry) => entry.name.toLowerCase() === wanted,
-        );
-      }
+      const lines: string[] = [];
+      const leads: NonNullable<ToolOutcome['leads']> = [];
 
-      if (!productName) {
-        return { text: 'Аль бүтээгдэхүүнийг захиалах вэ?' };
-      }
+      for (const entry of requested.slice(0, MAX_ORDER_LINES)) {
+        const rawQuantity = Number(entry?.quantity);
+        const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? Math.floor(rawQuantity) : 1;
 
-      // Caught here as well as at confirm_order: asking a customer for their
-      // name, phone and address and only then saying the product is gone is a
-      // worse conversation than saying so now.
-      if (product && !product.inStock) {
-        return {
-          text: `Уучлаарай, "${product.name}" одоогоор дууссан байна 🌿 Өөр бүтээгдэхүүн санал болгох уу?`,
-        };
-      }
+        let productName = String(entry?.productName ?? '').trim();
+        let product =
+          args.productId === undefined
+            ? undefined
+            : context.storefront.products.find((p) => p.id === Number(args.productId));
+        if (product) {
+          productName = product.name;
+        } else if (productName) {
+          // Matched back to the catalogue: a line carrying only a name makes an
+          // admin find the product by hand all over again.
+          const wanted = productName.toLowerCase();
+          product = context.storefront.products.find((p) => p.name.toLowerCase() === wanted);
+        }
 
-      return {
-        text: `${productName} — ${quantity} ширхэг ✅`,
-        needsOrderDetails: true,
-        lead: {
+        if (!productName) {
+          continue;
+        }
+
+        // Caught here as well as at confirm_order: asking for a name, a phone
+        // and an address and only then saying the product is gone is a worse
+        // conversation than saying so now.
+        if (product && !product.inStock) {
+          lines.push(`Уучлаарай, "${product.name}" одоогоор дууссан байна 🌿`);
+          continue;
+        }
+
+        lines.push(`${productName} — ${quantity} ширхэг ✅`);
+        leads.push({
           productName,
           productId: product?.id ?? null,
           // Matched against the catalogue rather than taken as typed, so a size
           // the model invented never reaches the order as though it were real.
           variant:
             product?.variants.find(
-              (entry) => entry.name.toLowerCase() === String(args.variant ?? '').trim().toLowerCase(),
+              (v) => v.name.toLowerCase() === String(entry?.variant ?? '').trim().toLowerCase(),
             )?.name ?? null,
           quantity,
-        },
+        });
+      }
+
+      if (lines.length === 0) {
+        return { text: 'Аль бүтээгдэхүүнийг захиалах вэ?' };
+      }
+
+      return {
+        text: lines.join('\n'),
+        needsOrderDetails: leads.length > 0,
+        leads,
       };
     }
 

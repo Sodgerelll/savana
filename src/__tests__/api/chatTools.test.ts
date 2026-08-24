@@ -85,6 +85,77 @@ function placedOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("start_order with several products", () => {
+  const catalogue = {
+    storefront: storefront({
+      products: [
+        product({ id: 1, name: "Хужирт саван", price: 8800 }),
+        product({ id: 2, name: "Ванны сүү", price: 13200 }),
+      ],
+    }),
+  };
+
+  it("records every product named in one message", async () => {
+    // The model used to be relied on to call the tool once per product, and it
+    // did not always: the second product vanished without anyone being told,
+    // which is a wrong order rather than a missing feature.
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      {
+        items: [
+          { productName: "Хужирт саван", quantity: 3 },
+          { productName: "Ванны сүү", quantity: 2 },
+        ],
+      },
+      context(catalogue),
+    );
+
+    expect(result.leads).toEqual([
+      { productName: "Хужирт саван", productId: 1, variant: null, quantity: 3 },
+      { productName: "Ванны сүү", productId: 2, variant: null, quantity: 2 },
+    ]);
+    expect(result.text).toBe("Хужирт саван — 3 ширхэг ✅\nВанны сүү — 2 ширхэг ✅");
+  });
+
+  it("still accepts the single product a carousel button names", async () => {
+    // The "Захиалах" button sends a product id and no list at all.
+    const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 2 }, context(catalogue));
+
+    expect(result.leads).toEqual([
+      { productName: "Ванны сүү", productId: 2, variant: null, quantity: 1 },
+    ]);
+  });
+
+  it("keeps the products that are available when one of them is gone", async () => {
+    const ctx = context({
+      storefront: storefront({
+        products: [
+          product({ id: 1, name: "Байгаа", inStock: true }),
+          product({ id: 2, name: "Дууссан", inStock: false }),
+        ],
+      }),
+    });
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { items: [{ productName: "Байгаа" }, { productName: "Дууссан" }] },
+      ctx,
+    );
+
+    expect(result.leads).toHaveLength(1);
+    expect(result.leads?.[0].productName).toBe("Байгаа");
+    expect(result.text).toContain("дууссан");
+  });
+
+  it("caps how many products one message can add", async () => {
+    const items = Array.from({ length: 12 }, () => ({ productName: "Хужирт саван" }));
+
+    const result = await runTool(TOOL_NAMES.START_ORDER, { items }, context(catalogue));
+
+    expect(result.leads?.length).toBeLessThanOrEqual(6);
+  });
+});
+
 describe("start_order and stock", () => {
   it("says a sold-out product is gone before asking for any details", async () => {
     // Collecting a name, a phone and an address and only then saying the
@@ -96,7 +167,7 @@ describe("start_order and stock", () => {
     const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 3 }, ctx);
 
     expect(result.text).toContain("дууссан");
-    expect(result.lead).toBeUndefined();
+    expect(result.leads ?? []).toHaveLength(0);
   });
 
   it("still starts an order for a product that is in stock", async () => {
@@ -106,7 +177,7 @@ describe("start_order and stock", () => {
 
     const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 3 }, ctx);
 
-    expect(result.lead).toMatchObject({ productName: "Байгаа саван", productId: 3 });
+    expect(result.leads?.[0]).toMatchObject({ productName: "Байгаа саван", productId: 3 });
   });
 });
 
@@ -314,9 +385,12 @@ describe("CHAT_TOOLS declarations", () => {
     expect(checkOrder?.parameters?.required).toEqual(["orderNumber"]);
   });
 
-  it("requires a product name for start_order", () => {
+  it("requires a list of products for start_order", () => {
     const startOrder = declarations.find((d) => d.name === TOOL_NAMES.START_ORDER);
-    expect(startOrder?.parameters?.required).toEqual(["productName"]);
+    // One call carries every product the customer named, so the list is what is
+    // required; a name lives on each entry inside it.
+    expect(startOrder?.parameters?.required).toEqual(["items"]);
+    expect(startOrder?.parameters?.properties?.items?.items?.required).toEqual(["productName"]);
   });
 
   it("tells the model not to call show_products for a single-product question", () => {
@@ -577,7 +651,7 @@ describe("start_order", () => {
 
     // The id rides along so the admin turning the lead into an order does not
     // have to find the product by name a second time.
-    expect(result.lead).toEqual({
+    expect(result.leads?.[0]).toEqual({
       productName: "Хужирт саван",
       productId: 1,
       variant: null,
@@ -595,7 +669,7 @@ describe("start_order", () => {
   it("defaults the quantity to 1", async () => {
     const result = await runTool(TOOL_NAMES.START_ORDER, { productName: "Саван" }, context());
 
-    expect(result.lead?.quantity).toBe(1);
+    expect(result.leads?.[0]?.quantity).toBe(1);
   });
 
   it("ignores a zero, negative or non-numeric quantity", async () => {
@@ -605,7 +679,7 @@ describe("start_order", () => {
         { productName: "Саван", quantity },
         context(),
       );
-      expect(result.lead?.quantity).toBe(1);
+      expect(result.leads?.[0]?.quantity).toBe(1);
     }
   });
 
@@ -616,13 +690,13 @@ describe("start_order", () => {
       context(),
     );
 
-    expect(result.lead?.quantity).toBe(2);
+    expect(result.leads?.[0]?.quantity).toBe(2);
   });
 
   it("asks which product when none was named, and captures no lead", async () => {
     const result = await runTool(TOOL_NAMES.START_ORDER, {}, context());
 
-    expect(result.lead).toBeUndefined();
+    expect(result.leads ?? []).toHaveLength(0);
     expect(result.text).toContain("Аль бүтээгдэхүүн");
   });
 
@@ -635,7 +709,7 @@ describe("start_order", () => {
 
     const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 8 }, ctx);
 
-    expect(result.lead).toEqual({
+    expect(result.leads?.[0]).toEqual({
       productName: "Үсний тос",
       productId: 8,
       variant: null,
@@ -654,7 +728,7 @@ describe("start_order", () => {
       ctx,
     );
 
-    expect(result.lead?.productName).toBe("Ванны давс");
+    expect(result.leads?.[0]?.productName).toBe("Ванны давс");
   });
 
   it("keeps the given name when the productId matches nothing", async () => {
@@ -664,13 +738,13 @@ describe("start_order", () => {
       context(),
     );
 
-    expect(result.lead?.productName).toBe("Хужирт саван");
+    expect(result.leads?.[0]?.productName).toBe("Хужирт саван");
   });
 
   it("asks which product when an unknown id arrives with no name", async () => {
     const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 999 }, context());
 
-    expect(result.lead).toBeUndefined();
+    expect(result.leads ?? []).toHaveLength(0);
   });
 });
 

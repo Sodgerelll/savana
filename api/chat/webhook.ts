@@ -711,12 +711,12 @@ async function deliverOutcome(
     handoverReason?: string;
     buttons?: Array<{ title: string; url: string }>;
     orderId?: string;
-    lead?: {
+    leads?: Array<{
       productName: string;
       productId: number | null;
       variant: string | null;
       quantity: number;
-    };
+    }>;
   },
   toolName: string | null,
 ): Promise<void> {
@@ -757,8 +757,8 @@ async function deliverOutcome(
     });
   }
 
-  if (outcome.lead) {
-    await recordOrderLead(db, conversation, outcome.lead);
+  if (outcome.leads && outcome.leads.length > 0) {
+    await recordOrderLead(db, conversation, outcome.leads);
   }
 }
 
@@ -771,19 +771,24 @@ async function deliverOutcome(
 async function recordOrderLead(
   db: any,
   conversation: { id: string; channel: ChatChannel; customerName: string | null },
-  lead: { productName: string; productId: number | null; variant: string | null; quantity: number },
+  leads: Array<{
+    productName: string;
+    productId: number | null;
+    variant: string | null;
+    quantity: number;
+  }>,
 ): Promise<void> {
-  const item = {
+  const items = leads.map((lead) => ({
     productId: lead.productId,
     name: lead.productName,
     variant: lead.variant,
     quantity: lead.quantity,
-  };
+  }));
 
   const open = await findOpenLead(db, conversation.id);
   if (open) {
-    const items = Array.isArray(open.data.items) ? open.data.items : [];
-    await updateChatLead(db, open.id, { items: [...items, item] });
+    const existing = Array.isArray(open.data.items) ? open.data.items : [];
+    await updateChatLead(db, open.id, { items: [...existing, ...items] });
     return;
   }
 
@@ -799,7 +804,7 @@ async function recordOrderLead(
     // pick a product has neither yet.
     address: '',
     note: '',
-    items: [item],
+    items,
   });
 }
 
