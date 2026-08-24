@@ -132,6 +132,12 @@ export interface ToolOutcome {
   quickReplies?: QuickReply[];
   /** Set when the bot handed the thread to a human. */
   handoverReason?: string;
+  /**
+   * The turn added something to an order and still needs the customer's
+   * details. Set rather than said, because two products named in one message
+   * produce two of these and the question is asked once.
+   */
+  needsOrderDetails?: boolean;
   /** Buttons under the text — so far, the one that opens the payment page. */
   buttons?: Array<{ title: string; url: string }>;
   /** An order was created; the webhook records it against the conversation. */
@@ -246,6 +252,11 @@ export interface PlacedOrder {
  * contact details. That is a missing question, not a failure worth waking a
  * human for, so it is distinguished from every other way an order can fail.
  */
+/** Asked once per turn, however many products the customer just named. */
+export const ORDER_DETAILS_ASK =
+  'Захиалгыг баталгаажуулахын тулд дараах гурвыг бичиж өгнө үү 📝\n' +
+  '• Нэр\n• Утасны дугаар\n• Хүргэлтийн хаяг (дүүрэг, хороо, байр/тоот)';
+
 export class NothingToOrderError extends Error {}
 
 /**
@@ -382,10 +393,8 @@ export async function runTool(
       }
 
       return {
-        text:
-          `${productName} — ${quantity} ширхэг ✅\n\n` +
-          'Захиалгыг баталгаажуулахын тулд дараах гурвыг бичиж өгнө үү 📝\n' +
-          '• Нэр\n• Утасны дугаар\n• Хүргэлтийн хаяг (дүүрэг, хороо, байр/тоот)',
+        text: `${productName} — ${quantity} ширхэг ✅`,
+        needsOrderDetails: true,
         lead: {
           productName,
           productId: product?.id ?? null,

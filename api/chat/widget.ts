@@ -30,7 +30,7 @@ import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js
 import { checkRateLimit } from './_lib/guards.js';
 import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead } from './_lib/leads.js';
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
-import { CHAT_TOOLS, runTool, type ToolContext } from './_lib/tools.js';
+import { CHAT_TOOLS, ORDER_DETAILS_ASK, runTool, type ToolContext } from './_lib/tools.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 
 export const config = { maxDuration: 60 };
@@ -189,6 +189,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     let toolName: string | null = null;
     /** Bonum's payment page, when the turn produced an order. */
     let payUrl = '';
+    let needsOrderDetails = false;
 
     // Served from the knowledge base when the shop has already answered this,
     // in its own wording and without a model call. The webhook does the same;
@@ -255,6 +256,12 @@ export default async function handler(req: any, res: any): Promise<void> {
         // The widget draws its own button rather than sending a Messenger
         // template, so the link is returned as data like the cards are.
         payUrl = outcome.buttons?.find((button) => button.url)?.url ?? payUrl;
+        needsOrderDetails = needsOrderDetails || outcome.needsOrderDetails === true;
+      }
+
+      // Asked once, however many products the customer just named.
+      if (needsOrderDetails) {
+        text = `${text}\n\n${ORDER_DETAILS_ASK}`.trim();
       }
 
       if (result.functionCalls.length === 0) {

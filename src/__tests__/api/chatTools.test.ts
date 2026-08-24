@@ -7,6 +7,7 @@ import {
   normalizeOrderNumber,
   NotEnoughStockError,
   NothingToOrderError,
+  ORDER_DETAILS_ASK,
   SoldOutError,
   runTool,
   TOOL_NAMES,
@@ -582,11 +583,13 @@ describe("start_order", () => {
       variant: null,
       quantity: 3,
     });
-    // All three are asked for at once: an order with no address cannot be
-    // delivered, and asking for it later is a message the customer may never
-    // come back for.
-    expect(result.text).toContain("Утасны дугаар");
-    expect(result.text).toContain("Хүргэлтийн хаяг");
+    // The tool confirms the line and flags that details are still needed; the
+    // question itself is added once per turn by the caller, so two products
+    // named in one message are not asked for them twice.
+    expect(result.text).toBe("Хужирт саван — 3 ширхэг ✅");
+    expect(result.needsOrderDetails).toBe(true);
+    expect(ORDER_DETAILS_ASK).toContain("Утасны дугаар");
+    expect(ORDER_DETAILS_ASK).toContain("Хүргэлтийн хаяг");
   });
 
   it("defaults the quantity to 1", async () => {

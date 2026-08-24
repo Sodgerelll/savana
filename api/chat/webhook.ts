@@ -52,7 +52,13 @@ import {
   updateChatLead,
 } from './_lib/leads.js';
 import { canAnswerOnChannel, loadChatSettings, type ServerChatSettings } from './_lib/settings.js';
-import { CHAT_TOOLS, runTool, TOOL_NAMES, type ToolContext } from './_lib/tools.js';
+import {
+  CHAT_TOOLS,
+  ORDER_DETAILS_ASK,
+  runTool,
+  TOOL_NAMES,
+  type ToolContext,
+} from './_lib/tools.js';
 
 // Body parsing is off so the handler sees the bytes Meta actually sent: the
 // signature covers the raw payload, and re-serialising a parsed object would
@@ -556,8 +562,24 @@ async function replyToEvent(
     outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
   }
 
+  askForOrderDetailsOnce(outcomes);
+
   for (const entry of outcomes) {
     await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
+  }
+}
+
+/**
+ * Appends the "name, phone, address" question to the last outcome that wants
+ * it. Two products named in one message add two lines to the order and need
+ * the details asked once, which is how a person would answer.
+ */
+function askForOrderDetailsOnce(
+  entries: Array<{ outcome: { text?: string; needsOrderDetails?: boolean } }>,
+): void {
+  const last = entries.filter((entry) => entry.outcome.needsOrderDetails).pop();
+  if (last) {
+    last.outcome.text = `${last.outcome.text ?? ''}\n\n${ORDER_DETAILS_ASK}`.trim();
   }
 }
 
