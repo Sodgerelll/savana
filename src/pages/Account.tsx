@@ -103,11 +103,22 @@ import {
   localDateKey,
 } from "../lib/storefrontHelpers";
 import { uploadStorefrontImage } from "../lib/storageUpload";
-import { subscribeToPackaging, savePackaging, deletePackaging, type PackagingItem } from "../lib/storefrontRepository";
+import {
+  subscribeToPackaging,
+  savePackaging,
+  deletePackaging,
+  addPackagingPurchase,
+  removePackagingPurchase,
+  addPackagingUsage,
+  removePackagingUsage,
+  type PackagingItem,
+} from "../lib/storefrontRepository";
 import {
   addRawMaterialPurchase,
+  addRawMaterialUsage,
   deleteRawMaterial,
   removeRawMaterialPurchase,
+  removeRawMaterialUsage,
   saveRawMaterial,
   subscribeToRawMaterials,
   type RawMaterial,
@@ -369,6 +380,34 @@ interface PackagingModalState {
   draft: PackagingItem;
 }
 
+interface PackagingPurchaseModalState {
+  packagingId: number;
+  packagingName: string;
+  draft: {
+    quantity: number;
+    unitCost: number | null;
+    supplier: string;
+    origin: string;
+    cargo: number;
+    purchasedAt: string;
+    notes: string;
+    /** Money account the purchase settled from — kept so its reversal returns it there. */
+    paymentMethod: string;
+  };
+}
+
+interface PackagingUsageModalState {
+  packagingId: number;
+  packagingName: string;
+  remaining: number;
+  draft: {
+    quantity: number;
+    reason: string;
+    usedAt: string;
+    notes: string;
+  };
+}
+
 interface RawMaterialModalState {
   mode: ModalMode;
   draft: RawMaterial;
@@ -382,10 +421,25 @@ interface RawMaterialPurchaseModalState {
     quantity: number;
     unitCost: number | null;
     supplier: string;
+    origin: string;
+    cargo: number;
     purchasedAt: string;
     notes: string;
     /** Money account the purchase settled from — kept so its reversal returns it there. */
     paymentMethod: string;
+  };
+}
+
+interface RawMaterialUsageModalState {
+  rawMaterialId: number;
+  rawMaterialName: string;
+  unit: string;
+  remaining: number;
+  draft: {
+    quantity: number;
+    reason: string;
+    usedAt: string;
+    notes: string;
   };
 }
 
@@ -586,6 +640,12 @@ export default function Account() {
   const [confirmModalError, setConfirmModalError] = useState<string | null>(null);
   const [packagingItems, setPackagingItems] = useState<PackagingItem[]>([]);
   const [packagingModal, setPackagingModal] = useState<PackagingModalState | null>(null);
+  const [packagingPurchaseModal, setPackagingPurchaseModal] = useState<PackagingPurchaseModalState | null>(null);
+  const [packagingPurchaseSaving, setPackagingPurchaseSaving] = useState(false);
+  const [packagingPurchaseError, setPackagingPurchaseError] = useState<string | null>(null);
+  const [packagingUsageModal, setPackagingUsageModal] = useState<PackagingUsageModalState | null>(null);
+  const [packagingUsageSaving, setPackagingUsageSaving] = useState(false);
+  const [packagingUsageError, setPackagingUsageError] = useState<string | null>(null);
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [rawMaterialModal, setRawMaterialModal] = useState<RawMaterialModalState | null>(null);
   const [rawMaterialSaving, setRawMaterialSaving] = useState(false);
@@ -593,6 +653,9 @@ export default function Account() {
   const [rawMaterialPurchaseModal, setRawMaterialPurchaseModal] = useState<RawMaterialPurchaseModalState | null>(null);
   const [rawMaterialPurchaseSaving, setRawMaterialPurchaseSaving] = useState(false);
   const [rawMaterialPurchaseError, setRawMaterialPurchaseError] = useState<string | null>(null);
+  const [rawMaterialUsageModal, setRawMaterialUsageModal] = useState<RawMaterialUsageModalState | null>(null);
+  const [rawMaterialUsageSaving, setRawMaterialUsageSaving] = useState(false);
+  const [rawMaterialUsageError, setRawMaterialUsageError] = useState<string | null>(null);
   const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>([]);
   const [productionBatchModal, setProductionBatchModal] = useState<ProductionBatchModalState | null>(null);
   const [productionBatchSaving, setProductionBatchSaving] = useState(false);
@@ -3696,6 +3759,22 @@ export default function Account() {
     setDiscountModal,
     openDiscountModal,
     packagingModal,
+    packagingPurchaseModal,
+    setPackagingPurchaseModal,
+    packagingPurchaseSaving,
+    setPackagingPurchaseSaving,
+    packagingPurchaseError,
+    setPackagingPurchaseError,
+    addPackagingPurchase,
+    removePackagingPurchase,
+    packagingUsageModal,
+    setPackagingUsageModal,
+    packagingUsageSaving,
+    setPackagingUsageSaving,
+    packagingUsageError,
+    setPackagingUsageError,
+    addPackagingUsage,
+    removePackagingUsage,
     rawMaterialModal,
     rawMaterialSaving,
     setRawMaterialSaving,
@@ -3707,6 +3786,14 @@ export default function Account() {
     setRawMaterialPurchaseError,
     addRawMaterialPurchase,
     removeRawMaterialPurchase,
+    rawMaterialUsageModal,
+    setRawMaterialUsageModal,
+    rawMaterialUsageSaving,
+    setRawMaterialUsageSaving,
+    rawMaterialUsageError,
+    setRawMaterialUsageError,
+    addRawMaterialUsage,
+    removeRawMaterialUsage,
     productionBatchModal,
     productionBatchSaving,
     setProductionBatchSaving,

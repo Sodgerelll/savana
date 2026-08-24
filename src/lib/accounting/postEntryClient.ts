@@ -21,6 +21,9 @@ export type SourceType =
   | "customerTransaction"
   | "productionBatch"
   | "rawMaterialPurchase"
+  | "rawMaterialUsage"
+  | "packagingPurchase"
+  | "packagingUsage"
   | "financeEntry";
 
 export interface PostJournalEntryMeta {

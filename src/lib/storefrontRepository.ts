@@ -1,4 +1,6 @@
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -7,6 +9,7 @@ import {
   type FirestoreError,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -32,6 +35,13 @@ import {
   type Testimonial,
 } from "../data/storefront";
 import { db, firestoreDatabaseId } from "./firebase";
+import { blendUnitCost } from "./rawMaterials";
+import {
+  buildPackagingPurchaseEntry,
+  buildPackagingWriteOffEntry,
+  buildReversalEntry,
+} from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 export const STOREFRONT_SITE_ID = "main";
 const STOREFRONT_SCHEMA_VERSION = 1;
@@ -49,12 +59,77 @@ const testimonialsRef = collection(db, "sites", STOREFRONT_SITE_ID, "testimonial
 const packagingRef = collection(db, "packaging");
 const discountsRef = collection(db, "sites", STOREFRONT_SITE_ID, "discounts");
 
+export interface PackagingPurchaseEntry {
+  id: string;
+  quantity: number;
+  unitCost: number | null;
+  supplier: string;
+  origin: string;
+  /** Freight/shipping cost paid to land this purchase, in ₮ — separate from the item's own price. */
+  cargo: number;
+  purchasedAt: string;
+  notes: string;
+  createdByUid: string;
+  createdAt: string;
+  /** Money account the purchase settled from, kept so a reversal returns money to the same place. */
+  paymentMethod?: string | null;
+}
+
+export interface PackagingUsageEntry {
+  id: string;
+  quantity: number;
+  /** Item's unit cost at the moment of use, snapshotted so a later reversal posts the same
+   *  amount even if the item's unit cost has since drifted from new purchases. */
+  unitCost: number | null;
+  reason: string;
+  usedAt: string;
+  notes: string;
+  createdByUid: string;
+  createdAt: string;
+}
+
 export interface PackagingItem {
   id: number;
   name: string;
   size: string;
   remaining: number;
+  unitCost: number | null;
   sortOrder: number;
+  purchaseLog: PackagingPurchaseEntry[];
+  usageLog: PackagingUsageEntry[];
+}
+
+function deserializePackagingPurchaseEntry(raw: unknown): PackagingPurchaseEntry | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    id: String(r.id ?? ""),
+    quantity: Number(r.quantity ?? 0),
+    unitCost: r.unitCost === null || r.unitCost === undefined ? null : Number(r.unitCost),
+    supplier: String(r.supplier ?? ""),
+    origin: String(r.origin ?? ""),
+    cargo: Number(r.cargo ?? 0),
+    purchasedAt: String(r.purchasedAt ?? ""),
+    notes: String(r.notes ?? ""),
+    createdByUid: String(r.createdByUid ?? ""),
+    createdAt: String(r.createdAt ?? ""),
+    paymentMethod: typeof r.paymentMethod === "string" ? r.paymentMethod : null,
+  };
+}
+
+function deserializePackagingUsageEntry(raw: unknown): PackagingUsageEntry | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    id: String(r.id ?? ""),
+    quantity: Number(r.quantity ?? 0),
+    unitCost: r.unitCost === null || r.unitCost === undefined ? null : Number(r.unitCost),
+    reason: String(r.reason ?? ""),
+    usedAt: String(r.usedAt ?? ""),
+    notes: String(r.notes ?? ""),
+    createdByUid: String(r.createdByUid ?? ""),
+    createdAt: String(r.createdAt ?? ""),
+  };
 }
 
 function serializePackaging(item: PackagingItem): DocumentData {
@@ -62,6 +137,7 @@ function serializePackaging(item: PackagingItem): DocumentData {
     name: item.name,
     size: item.size,
     remaining: item.remaining,
+    unitCost: item.unitCost,
     sortOrder: item.sortOrder,
     _schemaVersion: STOREFRONT_SCHEMA_VERSION,
     _updatedAt: serverTimestamp(),
@@ -70,12 +146,27 @@ function serializePackaging(item: PackagingItem): DocumentData {
 
 function deserializePackaging(docSnap: QueryDocumentSnapshot): PackagingItem {
   const data = docSnap.data();
+  const unitCostRaw = data.unitCost;
+  const rawPurchaseLog = Array.isArray(data.purchaseLog) ? data.purchaseLog : [];
+  const rawUsageLog = Array.isArray(data.usageLog) ? data.usageLog : [];
   return {
     id: Number(docSnap.id),
     name: String(data.name ?? ""),
     size: String(data.size ?? ""),
     remaining: Number(data.remaining ?? 0),
+    unitCost:
+      unitCostRaw === null || unitCostRaw === undefined || unitCostRaw === ""
+        ? null
+        : Number(unitCostRaw),
     sortOrder: Number(data.sortOrder ?? 0),
+    purchaseLog: rawPurchaseLog
+      .map(deserializePackagingPurchaseEntry)
+      .filter((e): e is PackagingPurchaseEntry => e !== null)
+      .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt)),
+    usageLog: rawUsageLog
+      .map(deserializePackagingUsageEntry)
+      .filter((e): e is PackagingUsageEntry => e !== null)
+      .sort((a, b) => b.usedAt.localeCompare(a.usedAt)),
   };
 }
 
@@ -96,6 +187,233 @@ export async function savePackaging(item: PackagingItem) {
 
 export async function deletePackaging(itemId: number) {
   await deleteDoc(doc(packagingRef, String(itemId)));
+}
+
+export interface AddPackagingPurchaseInput {
+  quantity: number;
+  unitCost: number | null;
+  supplier: string;
+  origin: string;
+  cargo: number;
+  purchasedAt: string;
+  notes: string;
+  createdByUid: string;
+  /** Which money account the purchase was settled from; defaults to cash. */
+  paymentMethod?: string | null;
+}
+
+/** What a purchase cost in total — 0 when no unit cost was recorded. */
+function packagingPurchaseAmount(entry: Pick<PackagingPurchaseEntry, "quantity" | "unitCost">): number {
+  return entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
+}
+
+/** Landed cost of a purchase — the item itself plus what it cost to freight in. */
+export function packagingPurchaseLandedCost(
+  entry: Pick<PackagingPurchaseEntry, "quantity" | "unitCost" | "cargo">,
+): number {
+  return packagingPurchaseAmount(entry) + Math.max(0, entry.cargo || 0);
+}
+
+/**
+ * Records a packaging purchase. Stock grows and the money account it was paid from shrinks,
+ * mirroring addRawMaterialPurchase in rawMaterials.ts.
+ */
+export async function addPackagingPurchase(
+  itemId: number,
+  input: AddPackagingPurchaseInput,
+): Promise<void> {
+  const entry: PackagingPurchaseEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    quantity: input.quantity,
+    unitCost: input.unitCost,
+    supplier: input.supplier,
+    origin: input.origin,
+    cargo: input.cargo,
+    purchasedAt: input.purchasedAt,
+    notes: input.notes,
+    createdByUid: input.createdByUid,
+    createdAt: new Date().toISOString(),
+    paymentMethod: input.paymentMethod ?? null,
+  };
+
+  const amount = packagingPurchaseAmount(entry);
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const itemRef = doc(packagingRef, String(itemId));
+
+  // Read before writing so the new unit cost can be blended with what is already held.
+  const currentSnap = await getDoc(itemRef);
+  const currentData = currentSnap.exists() ? (currentSnap.data() as Record<string, unknown>) : {};
+  const nextUnitCost = blendUnitCost(
+    Number(currentData.remaining ?? 0),
+    currentData.unitCost === null || currentData.unitCost === undefined ? null : Number(currentData.unitCost),
+    input.quantity,
+    input.unitCost,
+  );
+
+  const batch = writeBatch(db);
+
+  batch.update(itemRef, {
+    remaining: increment(input.quantity),
+    purchaseLog: arrayUnion(entry),
+    ...(nextUnitCost !== null ? { unitCost: nextUnitCost } : {}),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildPackagingPurchaseEntry({ amount, paymentMethod: input.paymentMethod }),
+      {
+        sourceType: "packagingPurchase",
+        sourceId: `${itemId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Сав баглаа боодол худалдан авалт: ${input.supplier || String(itemId)}`,
+        createdBy: input.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
+}
+
+export async function removePackagingPurchase(
+  itemId: number,
+  entry: PackagingPurchaseEntry,
+): Promise<void> {
+  const amount = packagingPurchaseAmount(entry);
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
+  const itemRef = doc(packagingRef, String(itemId));
+
+  batch.update(itemRef, {
+    remaining: increment(-entry.quantity),
+    purchaseLog: arrayRemove(entry),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildReversalEntry(
+        buildPackagingPurchaseEntry({ amount, paymentMethod: entry.paymentMethod }).lines,
+      ),
+      {
+        sourceType: "packagingPurchase",
+        sourceId: `${itemId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Сав баглаа боодлын худалдан авалт устгасан — бичилтийг цуцаллаа`,
+        createdBy: entry.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
+}
+
+export interface AddPackagingUsageInput {
+  quantity: number;
+  reason: string;
+  usedAt: string;
+  notes: string;
+  createdByUid: string;
+}
+
+/**
+ * Records packaging consumed outside of a sale — waste, samples, damage. Mirrors
+ * addRawMaterialUsage in rawMaterials.ts.
+ */
+export async function addPackagingUsage(
+  itemId: number,
+  input: AddPackagingUsageInput,
+): Promise<void> {
+  const itemRef = doc(packagingRef, String(itemId));
+  const currentSnap = await getDoc(itemRef);
+  if (!currentSnap.exists()) throw new Error("Packaging item not found");
+  const currentData = currentSnap.data() as Record<string, unknown>;
+  const remaining = Number(currentData.remaining ?? 0);
+  if (input.quantity > remaining) {
+    throw new Error("INSUFFICIENT_STOCK");
+  }
+  const unitCost = currentData.unitCost === null || currentData.unitCost === undefined
+    ? null
+    : Number(currentData.unitCost);
+
+  const entry: PackagingUsageEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    quantity: input.quantity,
+    unitCost,
+    reason: input.reason,
+    usedAt: input.usedAt,
+    notes: input.notes,
+    createdByUid: input.createdByUid,
+    createdAt: new Date().toISOString(),
+  };
+
+  const amount = unitCost && unitCost > 0 ? Math.round(input.quantity * unitCost) : 0;
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
+
+  batch.update(itemRef, {
+    remaining: increment(-input.quantity),
+    usageLog: arrayUnion(entry),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildPackagingWriteOffEntry({ amount }),
+      {
+        sourceType: "packagingUsage",
+        sourceId: `${itemId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Сав баглаа боодлын зарцуулалт: ${input.reason || String(itemId)}`,
+        createdBy: input.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
+}
+
+export async function removePackagingUsage(
+  itemId: number,
+  entry: PackagingUsageEntry,
+): Promise<void> {
+  const amount = entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
+  const itemRef = doc(packagingRef, String(itemId));
+
+  batch.update(itemRef, {
+    remaining: increment(entry.quantity),
+    usageLog: arrayRemove(entry),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildReversalEntry(buildPackagingWriteOffEntry({ amount }).lines),
+      {
+        sourceType: "packagingUsage",
+        sourceId: `${itemId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Сав баглаа боодлын зарцуулалт устгасан — бичилтийг цуцаллаа`,
+        createdBy: entry.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
 }
 
 function deserializeStatus(value: unknown) {

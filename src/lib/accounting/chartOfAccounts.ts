@@ -12,6 +12,8 @@ export const ACCOUNT_CODES = {
   INVENTORY: "1210",
   /** Raw materials held before production turns them into finished goods. */
   RAW_MATERIALS: "1220",
+  /** Packaging materials — boxes, labels, bottles — held before they wrap a finished good. */
+  PACKAGING: "1230",
   VAT_PAYABLE: "2410",
   /** Owner capital — the balancing side of the opening/seed position. */
   EQUITY: "3000",
@@ -30,6 +32,10 @@ export const ACCOUNT_CODES = {
   OPERATING_EXPENSE: "5100",
   /** Goods that left stock without a sale: gifts and own use. */
   GOODS_WRITE_OFF: "5900",
+  /** Raw materials consumed outside of a production batch: waste, samples, testing. */
+  RAW_MATERIAL_WRITE_OFF: "5910",
+  /** Packaging consumed outside of a sale: waste, samples, damage. */
+  PACKAGING_WRITE_OFF: "5920",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
@@ -51,6 +57,7 @@ export const CHART_OF_ACCOUNTS: ChartOfAccountsEntry[] = [
   { code: ACCOUNT_CODES.AR, name: "Худалдааны авлага", nameEn: "Accounts receivable", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.INVENTORY, name: "Бэлэн бүтээгдэхүүний нөөц", nameEn: "Finished goods inventory", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.RAW_MATERIALS, name: "Түүхий эдийн нөөц", nameEn: "Raw materials inventory", type: "asset", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.PACKAGING, name: "Сав баглаа боодлын нөөц", nameEn: "Packaging inventory", type: "asset", normalBalance: "debit" },
   { code: ACCOUNT_CODES.VAT_PAYABLE, name: "НӨАТ-ын өглөг", nameEn: "VAT payable", type: "liability", normalBalance: "credit" },
   { code: ACCOUNT_CODES.EQUITY, name: "Эздийн өмч", nameEn: "Owner's equity", type: "equity", normalBalance: "credit" },
   { code: ACCOUNT_CODES.RETAINED_EARNINGS, name: "Хуримтлагдсан ашиг", nameEn: "Retained earnings", type: "equity", normalBalance: "credit" },
@@ -63,6 +70,8 @@ export const CHART_OF_ACCOUNTS: ChartOfAccountsEntry[] = [
   { code: ACCOUNT_CODES.COGS, name: "Борлуулсан барааны өртөг", nameEn: "Cost of goods sold", type: "expense", normalBalance: "debit" },
   { code: ACCOUNT_CODES.OPERATING_EXPENSE, name: "Үйл ажиллагааны зардал", nameEn: "Operating expenses", type: "expense", normalBalance: "debit" },
   { code: ACCOUNT_CODES.GOODS_WRITE_OFF, name: "Бэлэг, дотоод хэрэглээний зардал", nameEn: "Gifts & own-use write-offs", type: "expense", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.RAW_MATERIAL_WRITE_OFF, name: "Түүхий эдийн зарцуулалтын зардал", nameEn: "Raw material write-offs", type: "expense", normalBalance: "debit" },
+  { code: ACCOUNT_CODES.PACKAGING_WRITE_OFF, name: "Сав баглаа боодлын зарцуулалтын зардал", nameEn: "Packaging write-offs", type: "expense", normalBalance: "debit" },
 ];
 
 export const ACCOUNT_NAMES: Record<string, string> = Object.fromEntries(

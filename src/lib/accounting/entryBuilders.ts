@@ -261,6 +261,44 @@ export function buildRawMaterialPurchaseEntry(params: {
   return assertBalanced(lines);
 }
 
+/**
+ * Raw materials consumed outside of a production batch — waste, samples, testing. No money
+ * changes hands, so the only movement is stock turning into an expense at cost, mirroring
+ * buildGoodsWriteOffEntry for finished goods.
+ */
+export function buildRawMaterialWriteOffEntry(params: { amount: number }): BuiltEntry {
+  const lines = [
+    line(ACCOUNT_CODES.RAW_MATERIAL_WRITE_OFF, params.amount, 0),
+    line(ACCOUNT_CODES.RAW_MATERIALS, 0, params.amount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/** Buying packaging: stock of packaging grows, the money account it was paid from shrinks. */
+export function buildPackagingPurchaseEntry(params: {
+  amount: number;
+  paymentMethod?: string | null;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const lines = [
+    line(ACCOUNT_CODES.PACKAGING, params.amount, 0),
+    line(moneyAccount, 0, params.amount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/**
+ * Packaging consumed outside of a sale — waste, samples, damage. No money changes hands, so
+ * the only movement is stock turning into an expense at cost, mirroring buildRawMaterialWriteOffEntry.
+ */
+export function buildPackagingWriteOffEntry(params: { amount: number }): BuiltEntry {
+  const lines = [
+    line(ACCOUNT_CODES.PACKAGING_WRITE_OFF, params.amount, 0),
+    line(ACCOUNT_CODES.PACKAGING, 0, params.amount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
 // ─── Manually recorded income / expense (the Finance ledger) ───────────────────
 
 /**

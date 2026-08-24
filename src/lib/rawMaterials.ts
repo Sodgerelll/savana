@@ -16,7 +16,11 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { buildRawMaterialPurchaseEntry, buildReversalEntry } from "./accounting/entryBuilders";
+import {
+  buildRawMaterialPurchaseEntry,
+  buildRawMaterialWriteOffEntry,
+  buildReversalEntry,
+} from "./accounting/entryBuilders";
 import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 export const RAW_MATERIALS_COLLECTION = "rawMaterials";
@@ -36,6 +40,9 @@ export interface RawMaterialPurchaseEntry {
   quantity: number;
   unitCost: number | null;
   supplier: string;
+  origin: string;
+  /** Freight/shipping cost paid to land this purchase, in ₮ — separate from the material's own price. */
+  cargo: number;
   purchasedAt: string;
   notes: string;
   createdByUid: string;
@@ -48,6 +55,19 @@ export interface RawMaterialPurchaseEntry {
   paymentMethod?: string | null;
 }
 
+export interface RawMaterialUsageEntry {
+  id: string;
+  quantity: number;
+  /** Material's unit cost at the moment of use, snapshotted so a later reversal posts the
+   *  same amount even if the material's unit cost has since drifted from new purchases. */
+  unitCost: number | null;
+  reason: string;
+  usedAt: string;
+  notes: string;
+  createdByUid: string;
+  createdAt: string;
+}
+
 export interface RawMaterial {
   id: number;
   name: string;
@@ -58,6 +78,7 @@ export interface RawMaterial {
   notes: string;
   sortOrder: number;
   purchaseLog: RawMaterialPurchaseEntry[];
+  usageLog: RawMaterialUsageEntry[];
 }
 
 function deserializePurchaseEntry(raw: unknown): RawMaterialPurchaseEntry | null {
@@ -68,6 +89,8 @@ function deserializePurchaseEntry(raw: unknown): RawMaterialPurchaseEntry | null
     quantity: Number(r.quantity ?? 0),
     unitCost: r.unitCost === null || r.unitCost === undefined ? null : Number(r.unitCost),
     supplier: String(r.supplier ?? ""),
+    origin: String(r.origin ?? ""),
+    cargo: Number(r.cargo ?? 0),
     purchasedAt: String(r.purchasedAt ?? ""),
     notes: String(r.notes ?? ""),
     createdByUid: String(r.createdByUid ?? ""),
@@ -75,6 +98,21 @@ function deserializePurchaseEntry(raw: unknown): RawMaterialPurchaseEntry | null
     // Purchases recorded before the field existed all went to cash, which is what the
     // reversal will now use for them too — the same account their original entry hit.
     paymentMethod: typeof r.paymentMethod === "string" ? r.paymentMethod : null,
+  };
+}
+
+function deserializeUsageEntry(raw: unknown): RawMaterialUsageEntry | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    id: String(r.id ?? ""),
+    quantity: Number(r.quantity ?? 0),
+    unitCost: r.unitCost === null || r.unitCost === undefined ? null : Number(r.unitCost),
+    reason: String(r.reason ?? ""),
+    usedAt: String(r.usedAt ?? ""),
+    notes: String(r.notes ?? ""),
+    createdByUid: String(r.createdByUid ?? ""),
+    createdAt: String(r.createdAt ?? ""),
   };
 }
 
@@ -96,6 +134,7 @@ function deserializeRawMaterial(docSnap: QueryDocumentSnapshot): RawMaterial {
   const categoryValue = String(data.category ?? "other") as RawMaterialCategory;
   const unitCostRaw = data.unitCost;
   const rawLog = Array.isArray(data.purchaseLog) ? data.purchaseLog : [];
+  const rawUsageLog = Array.isArray(data.usageLog) ? data.usageLog : [];
   return {
     id: Number(docSnap.id),
     name: String(data.name ?? ""),
@@ -112,6 +151,10 @@ function deserializeRawMaterial(docSnap: QueryDocumentSnapshot): RawMaterial {
       .map(deserializePurchaseEntry)
       .filter((e): e is RawMaterialPurchaseEntry => e !== null)
       .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt)),
+    usageLog: rawUsageLog
+      .map(deserializeUsageEntry)
+      .filter((e): e is RawMaterialUsageEntry => e !== null)
+      .sort((a, b) => b.usedAt.localeCompare(a.usedAt)),
   };
 }
 
@@ -144,6 +187,8 @@ export interface AddRawMaterialPurchaseInput {
   quantity: number;
   unitCost: number | null;
   supplier: string;
+  origin: string;
+  cargo: number;
   purchasedAt: string;
   notes: string;
   createdByUid: string;
@@ -154,6 +199,13 @@ export interface AddRawMaterialPurchaseInput {
 /** What a purchase cost in total — 0 when no unit cost was recorded. */
 function purchaseAmount(entry: Pick<RawMaterialPurchaseEntry, "quantity" | "unitCost">): number {
   return entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
+}
+
+/** Landed cost of a purchase — the material itself plus what it cost to freight in. */
+export function purchaseLandedCost(
+  entry: Pick<RawMaterialPurchaseEntry, "quantity" | "unitCost" | "cargo">,
+): number {
+  return purchaseAmount(entry) + Math.max(0, entry.cargo || 0);
 }
 
 /**
@@ -191,6 +243,8 @@ export async function addRawMaterialPurchase(
     quantity: input.quantity,
     unitCost: input.unitCost,
     supplier: input.supplier,
+    origin: input.origin,
+    cargo: input.cargo,
     purchasedAt: input.purchasedAt,
     notes: input.notes,
     createdByUid: input.createdByUid,
@@ -270,6 +324,109 @@ export async function removeRawMaterialPurchase(
         sourceId: `${materialId}:${entry.id}`,
         sourceNumber: entry.id,
         description: `Түүхий эдийн худалдан авалт устгасан — бичилтийг цуцаллаа`,
+        createdBy: entry.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
+}
+
+export interface AddRawMaterialUsageInput {
+  quantity: number;
+  reason: string;
+  usedAt: string;
+  notes: string;
+  createdByUid: string;
+}
+
+/**
+ * Records raw material consumed outside of a production batch — waste, samples, testing.
+ * Production usage is already deducted automatically when a batch starts; this covers
+ * everything that leaves the shelf without going through that flow.
+ */
+export async function addRawMaterialUsage(
+  materialId: number,
+  input: AddRawMaterialUsageInput,
+): Promise<void> {
+  const materialRef = doc(rawMaterialsRef, String(materialId));
+  const currentSnap = await getDoc(materialRef);
+  if (!currentSnap.exists()) throw new Error("Material not found");
+  const currentData = currentSnap.data() as Record<string, unknown>;
+  const remaining = Number(currentData.remaining ?? 0);
+  if (input.quantity > remaining) {
+    throw new Error("INSUFFICIENT_STOCK");
+  }
+  const unitCost = currentData.unitCost === null || currentData.unitCost === undefined
+    ? null
+    : Number(currentData.unitCost);
+
+  const entry: RawMaterialUsageEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    quantity: input.quantity,
+    unitCost,
+    reason: input.reason,
+    usedAt: input.usedAt,
+    notes: input.notes,
+    createdByUid: input.createdByUid,
+    createdAt: new Date().toISOString(),
+  };
+
+  const amount = unitCost && unitCost > 0 ? Math.round(input.quantity * unitCost) : 0;
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
+
+  batch.update(materialRef, {
+    remaining: increment(-input.quantity),
+    usageLog: arrayUnion(entry),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildRawMaterialWriteOffEntry({ amount }),
+      {
+        sourceType: "rawMaterialUsage",
+        sourceId: `${materialId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Түүхий эдийн зарцуулалт: ${input.reason || String(materialId)}`,
+        createdBy: input.createdByUid,
+      },
+    );
+  }
+
+  await batch.commit();
+}
+
+export async function removeRawMaterialUsage(
+  materialId: number,
+  entry: RawMaterialUsageEntry,
+): Promise<void> {
+  const amount = entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
+  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
+
+  const batch = writeBatch(db);
+  const materialRef = doc(rawMaterialsRef, String(materialId));
+
+  batch.update(materialRef, {
+    remaining: increment(entry.quantity),
+    usageLog: arrayRemove(entry),
+    _updatedAt: serverTimestamp(),
+  });
+
+  if (entryNumber) {
+    postJournalEntry(
+      batch,
+      entryNumber,
+      buildReversalEntry(buildRawMaterialWriteOffEntry({ amount }).lines),
+      {
+        sourceType: "rawMaterialUsage",
+        sourceId: `${materialId}:${entry.id}`,
+        sourceNumber: entry.id,
+        description: `Түүхий эдийн зарцуулалт устгасан — бичилтийг цуцаллаа`,
         createdBy: entry.createdByUid,
       },
     );

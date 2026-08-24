@@ -279,6 +279,20 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     setTestimonialModal,
     packagingModal,
     setPackagingModal,
+    packagingPurchaseModal,
+    setPackagingPurchaseModal,
+    packagingPurchaseSaving,
+    setPackagingPurchaseSaving,
+    packagingPurchaseError,
+    setPackagingPurchaseError,
+    addPackagingPurchase,
+    packagingUsageModal,
+    setPackagingUsageModal,
+    packagingUsageSaving,
+    setPackagingUsageSaving,
+    packagingUsageError,
+    setPackagingUsageError,
+    addPackagingUsage,
     rawMaterialModal,
     setRawMaterialModal,
     rawMaterialSaving,
@@ -292,6 +306,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     rawMaterialPurchaseError,
     setRawMaterialPurchaseError,
     addRawMaterialPurchase,
+    rawMaterialUsageModal,
+    setRawMaterialUsageModal,
+    rawMaterialUsageSaving,
+    setRawMaterialUsageSaving,
+    rawMaterialUsageError,
+    setRawMaterialUsageError,
+    addRawMaterialUsage,
     productionBatchModal,
     setProductionBatchModal,
     productionBatchSaving,
@@ -2121,7 +2142,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           required
         />
       </label>
-      <label className="admin-field admin-field-wide">
+      <label className="admin-field">
         <span>{copy.packagingSize}</span>
         <input
           value={packagingModal.draft.size}
@@ -2130,7 +2151,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
         />
       </label>
-      <label className="admin-field admin-field-wide">
+      <label className="admin-field">
         <span>{copy.packagingRemaining}</span>
         <input
           type="number"
@@ -2140,11 +2161,289 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
         />
       </label>
+      <label className="admin-field">
+        <span>{copy.packagingUnitCost}</span>
+        <input
+          type="number"
+          min="0"
+          value={packagingModal.draft.unitCost ?? ""}
+          onChange={(e: any)=>
+            setPackagingModal({
+              ...packagingModal,
+              draft: {
+                ...packagingModal.draft,
+                unitCost: e.target.value === "" ? null : Number(e.target.value),
+              },
+            })
+          }
+        />
+      </label>
       <div className="admin-modal-footer">
         <button type="button" className="btn btn-outline" onClick={() => setPackagingModal(null)}>
           {copy.cancel}
         </button>
         <button type="submit" className="btn btn-primary">{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{packagingPurchaseModal && (
+  <AdminModal
+    title={`${copy.packagingPurchaseModalTitle} — ${packagingPurchaseModal.packagingName}`}
+    onClose={() => setPackagingPurchaseModal(null)}
+    disableClose={packagingPurchaseSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!packagingPurchaseModal) return;
+        const { draft } = packagingPurchaseModal;
+        if (!draft.quantity || draft.quantity <= 0) return;
+        setPackagingPurchaseSaving(true);
+        setPackagingPurchaseError(null);
+        try {
+          await addPackagingPurchase(packagingPurchaseModal.packagingId, {
+            quantity: draft.quantity,
+            unitCost: draft.unitCost,
+            supplier: draft.supplier,
+            origin: draft.origin,
+            cargo: draft.cargo,
+            purchasedAt: draft.purchasedAt,
+            notes: draft.notes,
+            createdByUid: user?.uid ?? "",
+            paymentMethod: draft.paymentMethod ?? "cash",
+          });
+          setPackagingPurchaseModal(null);
+        } catch (err) {
+          setPackagingPurchaseError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setPackagingPurchaseSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchasedAt}</span>
+        <input
+          type="date"
+          required
+          value={packagingPurchaseModal.draft.purchasedAt}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, purchasedAt: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseQty}</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          required
+          value={packagingPurchaseModal.draft.quantity || ""}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, quantity: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseUnitCost}</span>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={packagingPurchaseModal.draft.unitCost ?? ""}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: {
+                ...packagingPurchaseModal.draft,
+                unitCost: e.target.value === "" ? null : Number(e.target.value),
+              },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchasePaymentMethod}</span>
+        <select
+          value={packagingPurchaseModal.draft.paymentMethod ?? "cash"}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, paymentMethod: e.target.value },
+            })
+          }
+        >
+          <option value="cash">{language === "MN" ? "Касс" : "Cash"}</option>
+          <option value="bank_transfer">{language === "MN" ? "Банк" : "Bank"}</option>
+        </select>
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialPurchaseSupplier}</span>
+        <input
+          value={packagingPurchaseModal.draft.supplier}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, supplier: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseOrigin}</span>
+        <input
+          value={packagingPurchaseModal.draft.origin}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, origin: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseCargo}</span>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={packagingPurchaseModal.draft.cargo || ""}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, cargo: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialPurchaseNotes}</span>
+        <textarea
+          rows={2}
+          value={packagingPurchaseModal.draft.notes}
+          onChange={(e: any) =>
+            setPackagingPurchaseModal({
+              ...packagingPurchaseModal,
+              draft: { ...packagingPurchaseModal.draft, notes: e.target.value },
+            })
+          }
+        />
+      </label>
+      {packagingPurchaseError && <div className="admin-modal-error">{packagingPurchaseError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setPackagingPurchaseModal(null)} disabled={packagingPurchaseSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={packagingPurchaseSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{packagingUsageModal && (
+  <AdminModal
+    title={`${copy.packagingUsageModalTitle} — ${packagingUsageModal.packagingName}`}
+    onClose={() => setPackagingUsageModal(null)}
+    disableClose={packagingUsageSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!packagingUsageModal) return;
+        const { draft } = packagingUsageModal;
+        if (!draft.quantity || draft.quantity <= 0) return;
+        setPackagingUsageSaving(true);
+        setPackagingUsageError(null);
+        try {
+          await addPackagingUsage(packagingUsageModal.packagingId, {
+            quantity: draft.quantity,
+            reason: draft.reason,
+            usedAt: draft.usedAt,
+            notes: draft.notes,
+            createdByUid: user?.uid ?? "",
+          });
+          setPackagingUsageModal(null);
+        } catch (err) {
+          setPackagingUsageError(
+            err instanceof Error && err.message === "INSUFFICIENT_STOCK"
+              ? copy.rawMaterialUsageInsufficientStock
+              : err instanceof Error ? err.message : String(err),
+          );
+        } finally {
+          setPackagingUsageSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field">
+        <span>{copy.rawMaterialUsedAt}</span>
+        <input
+          type="date"
+          required
+          value={packagingUsageModal.draft.usedAt}
+          onChange={(e: any) =>
+            setPackagingUsageModal({
+              ...packagingUsageModal,
+              draft: { ...packagingUsageModal.draft, usedAt: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialUsageQty} ({copy.rawMaterialRemaining}: {packagingUsageModal.remaining})</span>
+        <input
+          type="number"
+          min="1"
+          max={packagingUsageModal.remaining}
+          step="1"
+          required
+          value={packagingUsageModal.draft.quantity || ""}
+          onChange={(e: any) =>
+            setPackagingUsageModal({
+              ...packagingUsageModal,
+              draft: { ...packagingUsageModal.draft, quantity: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialUsageReason}</span>
+        <input
+          value={packagingUsageModal.draft.reason}
+          onChange={(e: any) =>
+            setPackagingUsageModal({
+              ...packagingUsageModal,
+              draft: { ...packagingUsageModal.draft, reason: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialUsageNotes}</span>
+        <textarea
+          rows={2}
+          value={packagingUsageModal.draft.notes}
+          onChange={(e: any) =>
+            setPackagingUsageModal({
+              ...packagingUsageModal,
+              draft: { ...packagingUsageModal.draft, notes: e.target.value },
+            })
+          }
+        />
+      </label>
+      {packagingUsageError && <div className="admin-modal-error">{packagingUsageError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setPackagingUsageModal(null)} disabled={packagingUsageSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={packagingUsageSaving}>{copy.save}</button>
       </div>
     </form>
   </AdminModal>
@@ -2282,6 +2581,8 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             quantity: draft.quantity,
             unitCost: draft.unitCost,
             supplier: draft.supplier,
+            origin: draft.origin,
+            cargo: draft.cargo,
             purchasedAt: draft.purchasedAt,
             notes: draft.notes,
             createdByUid: user?.uid ?? "",
@@ -2370,6 +2671,33 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
         />
       </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseOrigin}</span>
+        <input
+          value={rawMaterialPurchaseModal.draft.origin}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, origin: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialPurchaseCargo}</span>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={rawMaterialPurchaseModal.draft.cargo || ""}
+          onChange={(e: any) =>
+            setRawMaterialPurchaseModal({
+              ...rawMaterialPurchaseModal,
+              draft: { ...rawMaterialPurchaseModal.draft, cargo: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
       <label className="admin-field admin-field-wide">
         <span>{copy.rawMaterialPurchaseNotes}</span>
         <textarea
@@ -2389,6 +2717,107 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           {copy.cancel}
         </button>
         <button type="submit" className="btn btn-primary" disabled={rawMaterialPurchaseSaving}>{copy.save}</button>
+      </div>
+    </form>
+  </AdminModal>
+)}
+
+{rawMaterialUsageModal && (
+  <AdminModal
+    title={`${copy.rawMaterialUsageModalTitle} — ${rawMaterialUsageModal.rawMaterialName}`}
+    onClose={() => setRawMaterialUsageModal(null)}
+    disableClose={rawMaterialUsageSaving}
+  >
+    <form
+      onSubmit={async (e: FormEvent) => {
+        e.preventDefault();
+        if (!rawMaterialUsageModal) return;
+        const { draft } = rawMaterialUsageModal;
+        if (!draft.quantity || draft.quantity <= 0) return;
+        setRawMaterialUsageSaving(true);
+        setRawMaterialUsageError(null);
+        try {
+          await addRawMaterialUsage(rawMaterialUsageModal.rawMaterialId, {
+            quantity: draft.quantity,
+            reason: draft.reason,
+            usedAt: draft.usedAt,
+            notes: draft.notes,
+            createdByUid: user?.uid ?? "",
+          });
+          setRawMaterialUsageModal(null);
+        } catch (err) {
+          setRawMaterialUsageError(
+            err instanceof Error && err.message === "INSUFFICIENT_STOCK"
+              ? copy.rawMaterialUsageInsufficientStock
+              : err instanceof Error ? err.message : String(err),
+          );
+        } finally {
+          setRawMaterialUsageSaving(false);
+        }
+      }}
+    >
+      <label className="admin-field">
+        <span>{copy.rawMaterialUsedAt}</span>
+        <input
+          type="date"
+          required
+          value={rawMaterialUsageModal.draft.usedAt}
+          onChange={(e: any) =>
+            setRawMaterialUsageModal({
+              ...rawMaterialUsageModal,
+              draft: { ...rawMaterialUsageModal.draft, usedAt: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field">
+        <span>{copy.rawMaterialUsageQty} ({rawMaterialUsageModal.unit}, {copy.rawMaterialRemaining}: {rawMaterialUsageModal.remaining})</span>
+        <input
+          type="number"
+          min="0.001"
+          max={rawMaterialUsageModal.remaining}
+          step="any"
+          required
+          value={rawMaterialUsageModal.draft.quantity || ""}
+          onChange={(e: any) =>
+            setRawMaterialUsageModal({
+              ...rawMaterialUsageModal,
+              draft: { ...rawMaterialUsageModal.draft, quantity: Number(e.target.value) || 0 },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialUsageReason}</span>
+        <input
+          value={rawMaterialUsageModal.draft.reason}
+          onChange={(e: any) =>
+            setRawMaterialUsageModal({
+              ...rawMaterialUsageModal,
+              draft: { ...rawMaterialUsageModal.draft, reason: e.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="admin-field admin-field-wide">
+        <span>{copy.rawMaterialUsageNotes}</span>
+        <textarea
+          rows={2}
+          value={rawMaterialUsageModal.draft.notes}
+          onChange={(e: any) =>
+            setRawMaterialUsageModal({
+              ...rawMaterialUsageModal,
+              draft: { ...rawMaterialUsageModal.draft, notes: e.target.value },
+            })
+          }
+        />
+      </label>
+      {rawMaterialUsageError && <div className="admin-modal-error">{rawMaterialUsageError}</div>}
+      <div className="admin-modal-footer">
+        <button type="button" className="btn btn-outline" onClick={() => setRawMaterialUsageModal(null)} disabled={rawMaterialUsageSaving}>
+          {copy.cancel}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={rawMaterialUsageSaving}>{copy.save}</button>
       </div>
     </form>
   </AdminModal>
