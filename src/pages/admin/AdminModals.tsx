@@ -5576,7 +5576,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
       }
      
       onClose={closeSaleModal}
-      xl
+      wide
       disableClose={savingSale}
     >
       <form className="admin-modal-form" onSubmit={handleSaleSubmit}>
@@ -5880,8 +5880,9 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                       </button>
                     </div>
 
-                    <label className="admin-field admin-field-wide">
-                      <span>{copy.txProduct}</span>
+                    <div className="admin-sale-item-card-row">
+                      <label className="admin-field admin-sale-item-field-product">
+                        <span>{copy.txProduct}</span>
                       <select
                         value={item.productId || ""}
                         onChange={(event: any) => {
@@ -5927,7 +5928,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     </label>
 
                     {selectedProduct?.variants && selectedProduct.variants.length > 0 && (
-                      <label className="admin-field admin-field-wide">
+                      <label className="admin-field admin-sale-item-field-variant">
                         <span>{copy.txVariant}</span>
                         <select
                           value={item.variant ?? ""}
@@ -5957,7 +5958,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                       </label>
                     )}
 
-                    <div className="admin-sale-item-card-row">
                       <div className="admin-field">
                         <span>{language === "MN" ? "Тоо" : "Qty"}</span>
                         <div className="admin-qty-stepper">

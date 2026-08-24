@@ -2503,6 +2503,28 @@
   min-width: 9rem;
 }
 
+/* On a narrow screen, product and variant keep each their own full-width line — putting
+   all four fields side by side only reads well once there's a desktop's worth of room. */
+.admin-sale-item-card-row .admin-sale-item-field-product,
+.admin-sale-item-card-row .admin-sale-item-field-variant {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 769px) {
+  .admin-sale-item-card-row .admin-sale-item-field-product {
+    flex: 2 1 12rem;
+    flex-basis: 12rem;
+    min-width: 12rem;
+  }
+
+  .admin-sale-item-card-row .admin-sale-item-field-variant {
+    flex: 1 1 9rem;
+    flex-basis: 9rem;
+    min-width: 9rem;
+  }
+}
+
 /* Big tap targets either side of the number — easier to hit accurately on a phone than
    typing into a bare <input type="number">. */
 .admin-qty-stepper {
