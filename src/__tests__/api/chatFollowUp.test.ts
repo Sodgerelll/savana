@@ -185,6 +185,18 @@ describe("sweepStaleLeads", () => {
     expect(mocks.sendText).not.toHaveBeenCalled();
   });
 
+  it("never interrupts a thread the bot just handed to a person", async () => {
+    // The customer was told a person would answer. Following that with "shall
+    // we carry on with your order?" reads as the shop having forgotten what it
+    // told them a moment ago.
+    const { db } = fakeDb([lead()], { externalUserId: "PSID-1", status: "handover" });
+
+    const result = await sweepStaleLeads(db, { token: "T", now: NOW });
+
+    expect(result.nudged).toBe(0);
+    expect(mocks.sendText).not.toHaveBeenCalled();
+  });
+
   it("cannot reach a widget visitor, so it skips them", async () => {
     const { db } = fakeDb([lead({ channel: "widget" })]);
 

@@ -33,7 +33,8 @@ const SCAN_LIMIT = 60;
 const SWEEP_THROTTLE = { max: 1, windowMs: 5 * 60 * 1000 };
 
 const NUDGE_MESSAGE =
-  'Сайн байна уу 🌿 Захиалгаа үргэлжлүүлэх үү? Нэр болон утасны дугаараа бичиж өгвөл бид бэлтгэж эхэлнэ.';
+  'Сайн байна уу 🌿 Захиалгаа үргэлжлүүлэх үү? Нэр, утасны дугаар, хүргэлтийн хаягаа ' +
+  'бичиж өгвөл бид бэлтгэж эхэлнэ.';
 
 function toMillis(value: any): number {
   if (!value) return 0;
@@ -160,8 +161,11 @@ async function nudgeConversation(
 
   const conversation = snapshot.data() ?? {};
   const externalUserId = String(conversation.externalUserId ?? '');
-  // Never nudge a thread a human has taken over — the admin is handling it.
-  if (!externalUserId || conversation.status === 'admin_active') {
+  // Never nudge a thread that is with a person. `admin_active` is one they are
+  // answering; `handover` is one the bot just told them a person would answer,
+  // and following that with "shall we carry on with your order?" reads as the
+  // shop not knowing what it told them a moment ago.
+  if (!externalUserId || conversation.status === 'admin_active' || conversation.status === 'handover') {
     return false;
   }
 
