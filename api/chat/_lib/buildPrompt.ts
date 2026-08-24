@@ -70,7 +70,13 @@ export interface PromptProduct {
   ingredients: string;
   howToUse: string;
   sizeLabel: string;
-  variants: Array<{ name: string; price: number; inStock: boolean }>;
+  variants: Array<{ name: string; price: number; inStock: boolean; stock: number }>;
+  /**
+   * Units on hand, or -1 when the product tracks no stock at all. Never shown
+   * to a customer — the shop's rule is "байгаа" or "дууссан", never a figure —
+   * but an order for more than exists must not be taken.
+   */
+  stock: number;
   inStock: boolean;
   bestSeller: boolean;
   /**
@@ -428,6 +434,7 @@ function mapProduct(id: string, data: any): PromptProduct {
       name: String(variant.name),
       price: asNumber(variant.price),
       inStock: asNumber(variant.quantity) > 0,
+      stock: asNumber(variant.quantity),
     }));
 
   // A product with variants is in stock when any variant is; otherwise fall
@@ -436,6 +443,15 @@ function mapProduct(id: string, data: any): PromptProduct {
     mappedVariants.length > 0
       ? mappedVariants.some((variant: { inStock: boolean }) => variant.inStock)
       : data.totalStock === undefined || asNumber(data.totalStock) > 0;
+
+  // -1 says "this product does not track stock", which is different from zero
+  // and must not be treated as sold out.
+  const stock =
+    mappedVariants.length > 0
+      ? mappedVariants.reduce((sum: number, variant: { stock: number }) => sum + variant.stock, 0)
+      : data.totalStock === undefined
+        ? -1
+        : asNumber(data.totalStock);
 
   return {
     id: Number(data.id ?? id) || 0,
@@ -450,6 +466,7 @@ function mapProduct(id: string, data: any): PromptProduct {
     variants: mappedVariants,
     inStock,
     bestSeller: data.bestSeller === true,
+    stock,
     imageUrl: firstImageUrl(data.images),
   };
 }

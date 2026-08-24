@@ -15,7 +15,12 @@ import { bonumPost } from '../../bonum/_client.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
 import { findOpenLead, updateChatLead } from './leads.js';
-import { BelowDeliveryMinimumError, NothingToOrderError } from './tools.js';
+import {
+  BelowDeliveryMinimumError,
+  NothingToOrderError,
+  NotEnoughStockError,
+  SoldOutError,
+} from './tools.js';
 
 
 const ORDERS_COLLECTION = 'orders';
@@ -251,6 +256,16 @@ export async function placeChatOrder(
     const variant = wantedVariant
       ? product.variants.find((entry) => entry.name.toLowerCase() === wantedVariant.toLowerCase())
       : undefined;
+
+    // The catalogue is the authority on what can be sold, not the conversation:
+    // a product can sell out between the carousel and the confirmation.
+    if (variant ? !variant.inStock : !product.inStock) {
+      throw new SoldOutError(variant ? `${product.name} (${variant.name})` : product.name);
+    }
+    const available = variant ? variant.stock : product.stock;
+    if (available >= 0 && quantity > available) {
+      throw new NotEnoughStockError(product.name);
+    }
 
     // Priced exactly as the storefront prices it: the bot announces the
     // discount, so charging the list price would contradict what it just said.

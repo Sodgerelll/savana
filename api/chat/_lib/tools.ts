@@ -254,6 +254,15 @@ export class NothingToOrderError extends Error {}
  */
 export class BelowDeliveryMinimumError extends Error {}
 
+/** Thrown when the product, or the chosen size, has none left. */
+export class SoldOutError extends Error {}
+
+/**
+ * Thrown when the order asks for more than exists. Carries the product name and
+ * never the figure: the shop's rule is that stock counts stay inside the shop.
+ */
+export class NotEnoughStockError extends Error {}
+
 /** Mongolian mobile numbers are eight digits starting 6, 7, 8 or 9. */
 const PHONE_PATTERN = /^[6-9][0-9]{7}$/;
 
@@ -363,6 +372,15 @@ export async function runTool(
         return { text: 'Аль бүтээгдэхүүнийг захиалах вэ?' };
       }
 
+      // Caught here as well as at confirm_order: asking a customer for their
+      // name, phone and address and only then saying the product is gone is a
+      // worse conversation than saying so now.
+      if (product && !product.inStock) {
+        return {
+          text: `Уучлаарай, "${product.name}" одоогоор дууссан байна 🌿 Өөр бүтээгдэхүүн санал болгох уу?`,
+        };
+      }
+
       return {
         text:
           `${productName} — ${quantity} ширхэг ✅\n\n` +
@@ -422,6 +440,16 @@ export async function runTool(
           orderId: order.id,
         };
       } catch (err) {
+        if (err instanceof SoldOutError) {
+          return { text: `Уучлаарай, "${err.message}" одоогоор дууссан байна 🌿 Өөр бүтээгдэхүүн санал болгох уу?` };
+        }
+        if (err instanceof NotEnoughStockError) {
+          // Says that the quantity is not available without saying how many
+          // there are — stock figures are the shop's business, not the buyer's.
+          return {
+            text: `"${err.message}" тэр тооны нөөц одоогоор хүрэлцэхгүй байна 🌿 Цөөн тоогоор захиалах уу?`,
+          };
+        }
         if (err instanceof BelowDeliveryMinimumError) {
           // The shop's own rule, said in the shop's own terms — not an error
           // and not something to wake a human for.

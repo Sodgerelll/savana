@@ -5,7 +5,9 @@ import {
   CHAT_TOOLS,
   BelowDeliveryMinimumError,
   normalizeOrderNumber,
+  NotEnoughStockError,
   NothingToOrderError,
+  SoldOutError,
   runTool,
   TOOL_NAMES,
   type ToolContext,
@@ -25,6 +27,8 @@ function product(overrides: Partial<PromptProduct> = {}): PromptProduct {
     sizeLabel: "100 гр",
     variants: [],
     inStock: true,
+    // -1 is "tracks no stock", which is not the same as sold out.
+    stock: -1,
     bestSeller: false,
     ...overrides,
   };
@@ -79,6 +83,31 @@ function placedOrder(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("start_order and stock", () => {
+  it("says a sold-out product is gone before asking for any details", async () => {
+    // Collecting a name, a phone and an address and only then saying the
+    // product is gone is a worse conversation than saying so at the start.
+    const ctx = context({
+      storefront: storefront({ products: [product({ id: 3, name: "Дууссан саван", inStock: false })] }),
+    });
+
+    const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 3 }, ctx);
+
+    expect(result.text).toContain("дууссан");
+    expect(result.lead).toBeUndefined();
+  });
+
+  it("still starts an order for a product that is in stock", async () => {
+    const ctx = context({
+      storefront: storefront({ products: [product({ id: 3, name: "Байгаа саван", inStock: true })] }),
+    });
+
+    const result = await runTool(TOOL_NAMES.START_ORDER, { productId: 3 }, ctx);
+
+    expect(result.lead).toMatchObject({ productName: "Байгаа саван", productId: 3 });
+  });
+});
 
 describe("check_order without a number", () => {
   it("lists the orders this conversation placed", async () => {
@@ -203,6 +232,33 @@ describe("confirm_order", () => {
 
     expect(result.text).toContain("Аль бүтээгдэхүүнийг");
     expect(result.handoverReason).toBeUndefined();
+  });
+
+  it("says a product is gone without saying how many are left", async () => {
+    // The shop's rule is "байгаа" or "дууссан" — a stock figure is the shop's
+    // business, and a bot that volunteers one has leaked it to every customer.
+    const placeOrder = vi.fn(async () => {
+      throw new SoldOutError("Хужирт саван");
+    });
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.text).toContain("дууссан");
+    expect(result.text).toContain("Хужирт саван");
+    expect(result.text).not.toMatch(/d/);
+    expect(result.handoverReason).toBeUndefined();
+  });
+
+  it("refuses more than exists without naming the number that exists", async () => {
+    const placeOrder = vi.fn(async () => {
+      throw new NotEnoughStockError("Хужирт саван");
+    });
+
+    const result = await runTool(TOOL_NAMES.CONFIRM_ORDER, details, context({ placeOrder }));
+
+    expect(result.text).toContain("хүрэлцэхгүй");
+    expect(result.text).not.toMatch(/d/);
+    expect(result.buttons).toBeUndefined();
   });
 
   it("quotes the shop's delivery minimum instead of raising an order it will not fulfil", async () => {
