@@ -210,6 +210,12 @@ export default async function handler(req: any, res: any): Promise<void> {
       };
       const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
 
+      // See webhook.ts: where the conversation already says which step is next,
+      // the caller decides and the model only reads out the details.
+      const pending = await findOpenLead(db, conversation.id);
+      const pendingItems = Array.isArray(pending?.data.items) ? pending.data.items.length : 0;
+      const forceTool = pendingItems > 0 && extractPhone(message) ? 'confirm_order' : undefined;
+
       const result = await callGeminiAgent({
         systemPrompt: cacheOptions.systemPrompt,
         history: priorHistory,
@@ -218,6 +224,7 @@ export default async function handler(req: any, res: any): Promise<void> {
         model: settings.model || undefined,
         temperature: settings.temperature,
         cache,
+        forceTool,
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
 

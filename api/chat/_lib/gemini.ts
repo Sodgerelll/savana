@@ -92,6 +92,17 @@ export interface GeminiCallOptions {
   cache?: { name: string; model: string } | null;
   /** Called when the API rejects the handle, so the caller can rebuild it. */
   onCacheRejected?: () => void;
+  /**
+   * Names the one tool the model is allowed to call this turn.
+   *
+   * Choosing between two ordered steps turned out to be something the model
+   * does most of the time, and "most of the time" is a customer repeating their
+   * name, phone and address to a bot that keeps asking again. Where the
+   * conversation itself already says which step is next, the caller decides and
+   * leaves the model the part it is reliable at: reading the details out of the
+   * sentence.
+   */
+  forceTool?: string;
 }
 
 /** Either the model answered in prose, or it decided to call one of the tools. */
@@ -181,6 +192,11 @@ function buildRequestBody(options: GeminiCallOptions): Record<string, unknown> {
   }
   if (options.tools && options.tools.length > 0) {
     body.tools = options.tools;
+  }
+  if (options.forceTool) {
+    body.tool_config = {
+      function_calling_config: { mode: 'ANY', allowed_function_names: [options.forceTool] },
+    };
   }
 
   return body;

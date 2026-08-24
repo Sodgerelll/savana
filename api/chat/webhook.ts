@@ -510,6 +510,14 @@ async function replyToEvent(
     };
     const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
 
+    // When the conversation itself says which step is next, say so rather than
+    // leaving it to the model — it looped on step one often enough that
+    // customers were sending their details twice.
+    const pending = await findOpenLead(db, conversation.id);
+    const pendingItems = Array.isArray(pending?.data.items) ? pending.data.items.length : 0;
+    const forceTool =
+      text && pendingItems > 0 && extractPhone(text) ? TOOL_NAMES.CONFIRM_ORDER : undefined;
+
     const result = await callGeminiAgent({
       systemPrompt: cacheOptions.systemPrompt,
       history: priorHistory,
@@ -518,6 +526,7 @@ async function replyToEvent(
       model: settings.model || undefined,
       temperature: settings.temperature,
       cache,
+      forceTool,
       onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
     });
 

@@ -606,3 +606,32 @@ describe("looksLikeOurOwnInstructions", () => {
     ).toBe(true);
   });
 });
+
+describe("forceTool", () => {
+  it("pins the model to one tool when the caller already knows the step", async () => {
+    // Choosing between two ordered steps is something the model does most of
+    // the time, and "most" means a customer repeating their name, phone and
+    // address to a bot that keeps asking again.
+    responders = [() => jsonResponse(textPayload("ok"))];
+
+    await callGeminiAgent({
+      message: "Нэр Бат, утас 99119911, хаяг СБД 1-р хороо",
+      tools: [
+        { functionDeclarations: [{ name: "confirm_order", description: "x", parameters: {} }] },
+      ],
+      forceTool: "confirm_order",
+    });
+
+    expect((requestBody(calls[0]) as Record<string, unknown>).tool_config).toEqual({
+      function_calling_config: { mode: "ANY", allowed_function_names: ["confirm_order"] },
+    });
+  });
+
+  it("leaves the choice to the model when no step is pinned", async () => {
+    responders = [() => jsonResponse(textPayload("Сайн байна уу"))];
+
+    await callGeminiAgent({ message: "сайн уу" });
+
+    expect((requestBody(calls[0]) as Record<string, unknown>).tool_config).toBeUndefined();
+  });
+});
