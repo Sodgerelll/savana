@@ -479,8 +479,36 @@ describe("callGeminiAgent", () => {
 
     await expect(callGeminiAgent({ message: "савангаа үзүүлээч", tools })).resolves.toEqual({
       functionCall: { name: "show_products", args: { category: "savan" } },
+      functionCalls: [{ name: "show_products", args: { category: "savan" } }],
       text: null,
     });
+  });
+
+  it("reports every product the model named in one message", async () => {
+    // "Хоёр саван, нэг шампунь авъя" is one message and two calls. Reading only
+    // the first recorded the soap and dropped the shampoo without telling
+    // anyone, which is a wrong order rather than a missing feature.
+    responders = [
+      () =>
+        jsonResponse({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { functionCall: { name: "start_order", args: { productName: "Саван" } } },
+                  { functionCall: { name: "start_order", args: { productName: "Шампунь" } } },
+                ],
+              },
+            },
+          ],
+        }),
+    ];
+
+    const result = await callGeminiAgent({ message: "саван, шампунь авъя", tools });
+
+    expect(result.functionCalls.map((call) => call.args.productName)).toEqual(["Саван", "Шампунь"]);
+    // The first stays where single-tool callers expect it.
+    expect(result.functionCall?.args.productName).toBe("Саван");
   });
 
   it("defaults missing function-call args to an empty object", async () => {
@@ -501,6 +529,7 @@ describe("callGeminiAgent", () => {
 
     await expect(callGeminiAgent({ message: "найрлага юу вэ", tools })).resolves.toEqual({
       functionCall: null,
+      functionCalls: [],
       text: "Манай саван байгалийн гаралтай.",
     });
   });

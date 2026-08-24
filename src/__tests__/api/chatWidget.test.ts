@@ -19,6 +19,12 @@ vi.mock("../../../api/chat/_lib/gemini.js", async () => {
 import handler from "../../../api/chat/widget";
 import { clearStorefrontContextCache } from "../../../api/chat/_lib/buildPrompt";
 
+/** callGeminiAgent reports the first call and the full list; fixtures set both. */
+function agentCall(call: { name: string; args: Record<string, unknown> }) {
+  return { functionCall: call, functionCalls: [call] };
+}
+
+
 const SESSION = "a1b2c3d4e5f6a7b8";
 
 function createFakeDb(seed: Record<string, Record<string, unknown>> = {}) {
@@ -143,7 +149,7 @@ beforeEach(() => {
 
   fake = createFakeDb({ "chat_settings/main": widgetSettings() });
   mocks.getAdminFirestore.mockReturnValue(Promise.resolve(fake.db));
-  mocks.callGeminiAgent.mockResolvedValue({ text: "Байгалийн саван байна.", functionCall: null });
+  mocks.callGeminiAgent.mockResolvedValue({ text: "Байгалийн саван байна.", functionCall: null, functionCalls: [] });
 });
 
 afterEach(() => {
@@ -352,7 +358,7 @@ describe("POST /api/chat/widget", () => {
     });
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "show_products", args: {} },
+      ...agentCall({ name: "show_products", args: {} }),
     });
     const { res, captured } = mockRes();
 
@@ -372,7 +378,7 @@ describe("POST /api/chat/widget", () => {
   it("flags a handover and stops the bot on that thread", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "transfer_to_staff", args: { reason: "Гомдол" } },
+      ...agentCall({ name: "transfer_to_staff", args: { reason: "Гомдол" } }),
     });
     const { res, captured } = mockRes();
 
@@ -401,12 +407,12 @@ describe("POST /api/chat/widget", () => {
   it("captures an order lead and later fills in the phone number", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Хужирт саван", quantity: 2 } },
+      ...agentCall({ name: "start_order", args: { productName: "Хужирт саван", quantity: 2 } }),
     });
     const { res } = mockRes();
     await handler(post({ sessionId: SESSION, message: "саван авъя" }), res);
 
-    mocks.callGeminiAgent.mockResolvedValue({ text: "Баярлалаа", functionCall: null });
+    mocks.callGeminiAgent.mockResolvedValue({ text: "Баярлалаа", functionCall: null, functionCalls: [] });
     await handler(post({ sessionId: SESSION, message: "Батаа 99119911" }), res);
 
     const lead = [...fake.store.entries()].find(([key]) => key.startsWith("chat_leads/"))?.[1];

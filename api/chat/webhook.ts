@@ -67,6 +67,13 @@ export const config = { maxDuration: 60, api: { bodyParser: false } };
 const LEAKED_INSTRUCTION_REPLY =
   'Уучлаарай, сүүлийн мессежийг маань үл ойшооно уу 🌿 Та юу хүсэж байгаагаа дахин бичиж өгөхгүй юу?';
 
+/**
+ * Tool calls acted on in one turn. "Хоёр саван, нэг шампунь" is two; a model
+ * emitting a dozen is confused, and answering all of them would be a wall of
+ * messages rather than a reply.
+ */
+const MAX_TOOL_CALLS_PER_TURN = 4;
+
 /** Facebook resends when it does not see a 200 within roughly 20 seconds. */
 const PER_USER_RATE_LIMIT = { max: 12, windowMs: 60_000 };
 
@@ -482,8 +489,8 @@ async function replyToEvent(
     return;
   }
 
-  let outcome;
-  let toolName: string | null = null;
+  /** One entry per tool the model called, delivered in the order it called them. */
+  const outcomes: Array<{ outcome: Awaited<ReturnType<typeof runTool>>; toolName: string | null }> = [];
 
   // A question the shop has already answered is served from the knowledge base
   // for nothing, in the shop's own approved wording. The bar for a hit is high
@@ -530,24 +537,28 @@ async function replyToEvent(
       onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
     });
 
-    if (result.functionCall) {
-      toolName = result.functionCall.name;
-      outcome = await runTool(result.functionCall.name, result.functionCall.args, toolContext);
+    if (result.functionCalls.length > 0) {
+      for (const call of result.functionCalls.slice(0, MAX_TOOL_CALLS_PER_TURN)) {
+        outcomes.push({ outcome: await runTool(call.name, call.args, toolContext), toolName: call.name });
+      }
     } else {
       const text = result.text ?? '';
       if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
         console.error('[chat/webhook] model echoed its own instructions; reply withheld');
-        outcome = { text: LEAKED_INSTRUCTION_REPLY };
+        outcomes.push({ outcome: { text: LEAKED_INSTRUCTION_REPLY }, toolName: null });
       } else {
-        outcome = { text };
+        outcomes.push({ outcome: { text }, toolName: null });
       }
     }
   } catch (err) {
     console.error('[chat/webhook] generation failed:', (err as Error).message);
-    outcome = { text: geminiErrorToUserMessage(err) };
+    outcomes.length = 0;
+    outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
   }
 
-  await deliverOutcome(db, token, senderId, { ...conversation, channel }, outcome, toolName);
+  for (const entry of outcomes) {
+    await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
+  }
 }
 
 /**

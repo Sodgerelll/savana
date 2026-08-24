@@ -39,6 +39,9 @@ const MAX_MESSAGE_LENGTH = 600;
 /** A session id we generated is 24 hex chars; reject anything unlike one. */
 const SESSION_ID_PATTERN = /^[a-z0-9]{16,40}$/i;
 
+/** Mirrors the webhook: one message can name a few products, not a dozen. */
+const MAX_TOOL_CALLS_PER_TURN = 4;
+
 /**
  * What a customer is told when the model reads its own instructions back. Rare,
  * and worth one awkward turn: the alternative is internal material on a screen
@@ -228,15 +231,17 @@ export default async function handler(req: any, res: any): Promise<void> {
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
 
-      if (result.functionCall) {
-        toolName = result.functionCall.name;
-        const outcome = await runTool(result.functionCall.name, result.functionCall.args, toolContext);
-        text = outcome.text ?? '';
+      // One message can name two products; the widget answers in one reply, so
+      // the parts are joined rather than sent one after another.
+      for (const call of result.functionCalls.slice(0, MAX_TOOL_CALLS_PER_TURN)) {
+        toolName = call.name;
+        const outcome = await runTool(call.name, call.args, toolContext);
+        text = [text, outcome.text ?? ''].filter(Boolean).join('\n\n');
 
         // The widget renders its own cards, so tool output is returned as data
         // rather than the Messenger carousel shape.
         if (outcome.cards && outcome.cards.length > 0) {
-          products = matchCards(outcome.cards, storefront.products);
+          products = [...products, ...matchCards(outcome.cards, storefront.products)];
         }
         if (outcome.handoverReason) {
           handedOver = true;
@@ -249,8 +254,10 @@ export default async function handler(req: any, res: any): Promise<void> {
         }
         // The widget draws its own button rather than sending a Messenger
         // template, so the link is returned as data like the cards are.
-        payUrl = outcome.buttons?.find((button) => button.url)?.url ?? '';
-      } else {
+        payUrl = outcome.buttons?.find((button) => button.url)?.url ?? payUrl;
+      }
+
+      if (result.functionCalls.length === 0) {
         text = result.text ?? '';
         if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
           console.error('[chat/widget] model echoed its own instructions; reply withheld');

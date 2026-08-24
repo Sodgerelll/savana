@@ -108,7 +108,16 @@ export interface GeminiCallOptions {
 /** Either the model answered in prose, or it decided to call one of the tools. */
 export interface GeminiAgentResult {
   text: string | null;
+  /** First call, kept for callers that only ever act on one. */
   functionCall: GeminiFunctionCall | null;
+  /**
+   * Every call the model made this turn, in order.
+   *
+   * "Хоёр саван, нэг шампунь авъя" is one message and two products. Reading
+   * only the first call recorded the soap and dropped the shampoo without
+   * telling anybody, which is a wrong order rather than a missing feature.
+   */
+  functionCalls: GeminiFunctionCall[];
 }
 
 /**
@@ -429,16 +438,17 @@ export async function callGeminiAgent(options: GeminiCallOptions): Promise<Gemin
   const body = buildRequestBody(options);
   const parts = await generateParts(apiKey, body, options.model, options.cache, options.onCacheRejected);
 
-  const call = parts.find((entry) => entry?.functionCall)?.functionCall;
-  if (call && typeof call.name === 'string') {
-    return {
-      functionCall: { name: call.name, args: (call.args ?? {}) as Record<string, unknown> },
-      text: null,
-    };
+  const calls = parts
+    .map((entry) => entry?.functionCall)
+    .filter((call): call is { name: string; args?: unknown } => Boolean(call) && typeof call.name === 'string')
+    .map((call) => ({ name: call.name, args: (call.args ?? {}) as Record<string, unknown> }));
+
+  if (calls.length > 0) {
+    return { functionCall: calls[0], functionCalls: calls, text: null };
   }
 
   const text = firstText(parts);
-  return { functionCall: null, text: text ? text.slice(0, REPLY_CHAR_CAP) : null };
+  return { functionCall: null, functionCalls: [], text: text ? text.slice(0, REPLY_CHAR_CAP) : null };
 }
 
 /**

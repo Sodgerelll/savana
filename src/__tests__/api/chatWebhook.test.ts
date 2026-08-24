@@ -49,6 +49,12 @@ vi.mock("../../../api/chat/_lib/gemini.js", async () => {
 import handler from "../../../api/chat/webhook";
 import { clearStorefrontContextCache } from "../../../api/chat/_lib/buildPrompt";
 
+/** callGeminiAgent reports the first call and the full list; fixtures set both. */
+function agentCall(call: { name: string; args: Record<string, unknown> }) {
+  return { functionCall: call, functionCalls: [call] };
+}
+
+
 const PAGE_TOKEN = "PAGE-TOKEN";
 const PAGE_ID = "PAGE-1";
 const SENDER = "PSID-1";
@@ -250,7 +256,7 @@ beforeEach(() => {
   fake = createFakeDb({ "chat_settings/main": activeSettings() });
   mocks.getAdminFirestore.mockReturnValue(Promise.resolve(fake.db));
   mocks.getUserName.mockResolvedValue("Батбаяр");
-  mocks.callGeminiAgent.mockResolvedValue({ text: "Тийм ээ, байгаа.", functionCall: null });
+  mocks.callGeminiAgent.mockResolvedValue({ text: "Тийм ээ, байгаа.", functionCall: null, functionCalls: [] });
   mocks.callGemini.mockResolvedValue("Энэ бол манай хужирт саван.");
   mocks.fetchImageAsBase64.mockResolvedValue({ base64: "AAAA", mimeType: "image/jpeg" });
   mocks.replyToComment.mockResolvedValue(true);
@@ -801,7 +807,7 @@ describe("handover", () => {
     // Quick replies are the only thing on screen at that moment; without one
     // the customer has no idea the bot can be recalled at all.
     mocks.callGeminiAgent.mockResolvedValue({
-      functionCall: { name: "transfer_to_staff", args: { reason: "гомдол" } },
+      ...agentCall({ name: "transfer_to_staff", args: { reason: "гомдол" } }),
       text: null,
     });
     const { res } = mockRes();
@@ -841,7 +847,7 @@ describe("handover", () => {
   it("marks the conversation as handover when the bot escalates", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "transfer_to_staff", args: { reason: "Гомдол" } },
+      ...agentCall({ name: "transfer_to_staff", args: { reason: "Гомдол" } }),
     });
     const { res } = mockRes();
 
@@ -869,7 +875,7 @@ describe("tool calls", () => {
   it("sends a carousel when the model calls show_products", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "show_products", args: {} },
+      ...agentCall({ name: "show_products", args: {} }),
     });
     const { res } = mockRes();
 
@@ -897,7 +903,7 @@ describe("tool calls", () => {
     });
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "show_products", args: {} },
+      ...agentCall({ name: "show_products", args: {} }),
     });
     const { res } = mockRes();
 
@@ -910,7 +916,7 @@ describe("tool calls", () => {
   it("records the tool name on the assistant message", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "show_products", args: {} },
+      ...agentCall({ name: "show_products", args: {} }),
     });
     const { res } = mockRes();
 
@@ -1201,7 +1207,7 @@ describe("lead capture", () => {
   it("raises a lead when the customer asks to order", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Хужирт саван", quantity: 2 } },
+      ...agentCall({ name: "start_order", args: { productName: "Хужирт саван", quantity: 2 } }),
     });
     const { res } = mockRes();
 
@@ -1217,7 +1223,7 @@ describe("lead capture", () => {
   it("seeds the lead with the Messenger profile name", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Саван" } },
+      ...agentCall({ name: "start_order", args: { productName: "Саван" } }),
     });
     const { res } = mockRes();
 
@@ -1229,12 +1235,12 @@ describe("lead capture", () => {
   it("fills in the phone number from a later message", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Саван" } },
+      ...agentCall({ name: "start_order", args: { productName: "Саван" } }),
     });
     const { res } = mockRes();
     await handler({ method: "POST", body: messageEvent("авъя", "m_1") }, res);
 
-    mocks.callGeminiAgent.mockResolvedValue({ text: "Баярлалаа", functionCall: null });
+    mocks.callGeminiAgent.mockResolvedValue({ text: "Баярлалаа", functionCall: null, functionCalls: [] });
     await handler({ method: "POST", body: messageEvent("99119911", "m_2") }, res);
 
     expect(leads()[0].customerPhone).toBe("99119911");
@@ -1243,12 +1249,12 @@ describe("lead capture", () => {
   it("finds the phone number even when a quantity is in the same message", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Саван" } },
+      ...agentCall({ name: "start_order", args: { productName: "Саван" } }),
     });
     const { res } = mockRes();
     await handler({ method: "POST", body: messageEvent("авъя", "m_1") }, res);
 
-    mocks.callGeminiAgent.mockResolvedValue({ text: "За", functionCall: null });
+    mocks.callGeminiAgent.mockResolvedValue({ text: "За", functionCall: null, functionCalls: [] });
     await handler({ method: "POST", body: messageEvent("3 ширхэг, 99119911", "m_2") }, res);
 
     expect(leads()[0].customerPhone).toBe("99119911");
@@ -1257,14 +1263,14 @@ describe("lead capture", () => {
   it("adds a second product to the same open lead instead of starting a new one", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Саван" } },
+      ...agentCall({ name: "start_order", args: { productName: "Саван" } }),
     });
     const { res } = mockRes();
     await handler({ method: "POST", body: messageEvent("саван авъя", "m_1") }, res);
 
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Ванны давс", quantity: 3 } },
+      ...agentCall({ name: "start_order", args: { productName: "Ванны давс", quantity: 3 } }),
     });
     await handler({ method: "POST", body: messageEvent("давс ч бас", "m_2") }, res);
 
@@ -1275,12 +1281,12 @@ describe("lead capture", () => {
   it("does not overwrite a phone number already captured", async () => {
     mocks.callGeminiAgent.mockResolvedValue({
       text: null,
-      functionCall: { name: "start_order", args: { productName: "Саван" } },
+      ...agentCall({ name: "start_order", args: { productName: "Саван" } }),
     });
     const { res } = mockRes();
     await handler({ method: "POST", body: messageEvent("авъя", "m_1") }, res);
 
-    mocks.callGeminiAgent.mockResolvedValue({ text: "За", functionCall: null });
+    mocks.callGeminiAgent.mockResolvedValue({ text: "За", functionCall: null, functionCalls: [] });
     await handler({ method: "POST", body: messageEvent("99119911", "m_2") }, res);
     await handler({ method: "POST", body: messageEvent("өө уучлаарай 88008800", "m_3") }, res);
 
