@@ -369,7 +369,9 @@ describe("POST /api/chat/widget", () => {
         id: 1,
         name: "Хужирт саван",
         price: 25000,
-        imageUrl: "https://cdn.savana.mn/1.jpg",
+        // Photos are stored inline and are no longer read with the catalogue, so
+        // the card points at the endpoint that resolves one from the product id.
+        imageUrl: "/api/chat/productImage?id=1",
         inStock: true,
       },
     ]);

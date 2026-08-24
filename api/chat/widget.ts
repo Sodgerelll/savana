@@ -320,17 +320,23 @@ async function handleConfig(res: any): Promise<void> {
 
 /** Resolves carousel cards back to catalog rows the widget can render. */
 function matchCards(
-  cards: Array<{ title: string }>,
-  catalog: Array<{ id: number; name: string; price: number; imageUrl: string; inStock: boolean }>,
+  cards: Array<{ title: string; imageUrl?: string }>,
+  catalog: Array<{ id: number; name: string; price: number; inStock: boolean }>,
 ): WidgetProductCard[] {
   return cards
-    .map((card) => catalog.find((product) => product.name === card.title))
-    .filter((product): product is NonNullable<typeof product> => Boolean(product))
-    .map((product) => ({
+    .map((card) => ({ card, product: catalog.find((entry) => entry.name === card.title) }))
+    .filter((pair): pair is { card: (typeof cards)[number]; product: NonNullable<typeof pair.product> } =>
+      Boolean(pair.product),
+    )
+    .map(({ card, product }) => ({
       id: product.id,
       name: product.name,
       price: product.price,
-      imageUrl: product.imageUrl,
+      // Taken from the card the tool built, not from the catalogue: photos are
+      // stored inline and are no longer read with it, so the catalogue's own
+      // field is empty and every card came back without a picture. The relative
+      // path is the fallback, and correct here — the widget is on this origin.
+      imageUrl: card.imageUrl || `/api/chat/productImage?id=${product.id}`,
       inStock: product.inStock,
     }));
 }
