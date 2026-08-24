@@ -113,6 +113,52 @@ describe("splitText", () => {
   });
 });
 
+describe("applyMessengerProfile menu", () => {
+  it("nests a submenu rather than dropping what will not fit", async () => {
+    // Messenger shows three entries at the top level. A fourth used to be sliced
+    // off without a word, which is how a menu item gets added, deployed, and
+    // never appears — the way "Ботруу буцах" did.
+    await applyMessengerProfile(TOKEN, {
+      menuItems: [
+        { title: "Бүтээгдэхүүн", payload: "SHOW_PRODUCTS" },
+        { title: "Хямдрал", payload: "SHOW_PROMOTIONS" },
+        {
+          title: "Тусламж",
+          items: [
+            { title: "Ажилтантай ярих", payload: "TRANSFER_TO_STAFF" },
+            { title: "Ботруу буцах", payload: "RESUME_BOT" },
+          ],
+        },
+      ],
+    });
+
+    const menu = body().persistent_menu as Array<{ call_to_actions: Array<Record<string, unknown>> }>;
+    const actions = menu[0].call_to_actions;
+
+    expect(actions).toHaveLength(3);
+    expect(actions[2]).toMatchObject({ type: "nested", title: "Тусламж" });
+    expect((actions[2].call_to_actions as Array<{ payload: string }>).map((a) => a.payload)).toEqual([
+      "TRANSFER_TO_STAFF",
+      "RESUME_BOT",
+    ]);
+  });
+
+  it("says so when more top-level items are given than Messenger will show", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await applyMessengerProfile(TOKEN, {
+      menuItems: [
+        { title: "A", payload: "A" },
+        { title: "B", payload: "B" },
+        { title: "C", payload: "C" },
+        { title: "D", payload: "D" },
+      ],
+    });
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("top-level"));
+  });
+});
+
 describe("sendText", () => {
   it("posts the message to the Send API", async () => {
     await sendText(TOKEN, "PSID-1", "Сайн байна уу");

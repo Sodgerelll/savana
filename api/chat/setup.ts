@@ -19,10 +19,16 @@ export const config = { maxDuration: 30 };
 const DEFAULT_MENU_ITEMS = [
   { title: 'Бүтээгдэхүүн 🌿', payload: 'SHOW_PRODUCTS' },
   { title: 'Хямдрал 🎁', payload: 'SHOW_PROMOTIONS' },
-  { title: 'Ажилтантай ярих ☎️', payload: 'TRANSFER_TO_STAFF' },
-  // Always reachable, because quick replies vanish the moment the customer
-  // types anything and the thread they are stuck in may be hours old.
-  { title: 'Ботруу буцах 🤖', payload: 'RESUME_BOT' },
+  // Messenger shows three entries at the top, and both of these have to be
+  // reachable: quick replies vanish the moment the customer types anything, and
+  // the thread they are stuck in may be hours old by the time they want out.
+  {
+    title: 'Тусламж ☎️',
+    items: [
+      { title: 'Ажилтантай ярих', payload: 'TRANSFER_TO_STAFF' },
+      { title: 'Ботруу буцах 🤖', payload: 'RESUME_BOT' },
+    ],
+  },
 ];
 
 const NOT_CONFIGURED = 'Facebook холбогдоогүй байна. FB_PAGE_ACCESS_TOKEN тохируулна уу.';

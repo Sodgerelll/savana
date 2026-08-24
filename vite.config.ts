@@ -554,6 +554,13 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // Vitest defaults to five seconds. The webhook and widget suites drive a
+    // whole request through fake Firestore and fake Graph calls, which is fast
+    // on an idle machine and not always fast on a busy one — two of them failed
+    // intermittently for no reason but load. None of these tests wait on
+    // anything real, so a generous ceiling costs nothing and stops the suite
+    // reporting a problem that is not there.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
