@@ -11,7 +11,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { buildStorefrontPrompt, type StorefrontContext } from './buildPrompt.js';
-import { callGemini } from './gemini.js';
+import { callGemini, looksLikeOurOwnInstructions } from './gemini.js';
 import { replyToComment, sendPrivateReply } from './facebook.js';
 import { markEventProcessed } from './guards.js';
 
@@ -106,10 +106,12 @@ export async function handleCommentEvent(
     return false;
   }
 
+  const systemPrompt = `${buildStorefrontPrompt(options.storefront, new Date())}\n${PUBLIC_REPLY_RULES}`;
+
   let reply: string;
   try {
     reply = await callGemini({
-      systemPrompt: `${buildStorefrontPrompt(options.storefront, new Date())}\n${PUBLIC_REPLY_RULES}`,
+      systemPrompt,
       message: event.message,
       model: options.model,
       temperature: options.temperature,
@@ -117,6 +119,14 @@ export async function handleCommentEvent(
     });
   } catch (err) {
     console.error('[chat/comments] generation failed:', (err as Error).message);
+    return false;
+  }
+
+  // Saying nothing beats saying the wrong thing here. A comment reply sits on a
+  // public post, where an echoed instruction is visible to everyone who sees
+  // the post and stays visible; the comment is left for a person instead.
+  if (looksLikeOurOwnInstructions(reply, [systemPrompt])) {
+    console.error('[chat/comments] model echoed its own instructions; nothing posted');
     return false;
   }
 

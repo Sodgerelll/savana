@@ -203,6 +203,21 @@ describe("handleCommentEvent", () => {
     expect(mocks.sendPrivateReply).toHaveBeenCalledWith("PAGE-TOKEN", "c1", expect.any(String));
   });
 
+  it("posts nothing when the model reads its own instructions back", async () => {
+    // A comment reply sits on a public post. An echoed instruction there is
+    // visible to everyone who sees the post and stays visible, so the comment
+    // is left for a person rather than answered badly.
+    const { db } = fakeDb();
+    mocks.callGemini.mockImplementationOnce(async (options: { systemPrompt?: string }) =>
+      String(options.systemPrompt ?? '').slice(200, 320),
+    );
+
+    await expect(handleCommentEvent(db, event, options())).resolves.toBe(false);
+
+    expect(mocks.replyToComment).not.toHaveBeenCalled();
+    expect(mocks.sendPrivateReply).not.toHaveBeenCalled();
+  });
+
   it("claims the comment id so a redelivery cannot burn the single private reply", async () => {
     const { db } = fakeDb();
 

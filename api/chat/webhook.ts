@@ -654,10 +654,12 @@ async function answerImage(
     return;
   }
 
+  const systemPrompt = `${buildStorefrontPrompt(params.storefront, new Date())}\n${IMAGE_REPLY_RULES}`;
+
   let reply: string;
   try {
     reply = await callGemini({
-      systemPrompt: `${buildStorefrontPrompt(params.storefront, new Date())}\n${IMAGE_REPLY_RULES}`,
+      systemPrompt,
       history: params.history,
       message: params.caption || 'Хэрэглэгч зураг илгээлээ. Юу байгааг хараад тусал.',
       imageBase64: image.base64,
@@ -668,6 +670,13 @@ async function answerImage(
   } catch (err) {
     console.error('[chat/webhook] image reply failed:', (err as Error).message);
     reply = geminiErrorToUserMessage(err);
+  }
+
+  // The same net the text path has. A photo turn builds its own prompt and so
+  // answered outside that net, which is exactly where a gap goes unnoticed.
+  if (looksLikeOurOwnInstructions(reply, [systemPrompt])) {
+    console.error('[chat/webhook] model echoed its own instructions on a photo; reply withheld');
+    reply = LEAKED_INSTRUCTION_REPLY;
   }
 
   await sendText(token, senderId, reply);

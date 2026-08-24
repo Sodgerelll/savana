@@ -994,6 +994,20 @@ describe("photo messages", () => {
     expect(mocks.sendText).toHaveBeenCalledWith(PAGE_TOKEN, SENDER, "Энэ бол манай хужирт саван.");
   });
 
+  it("withholds a photo reply that is really our own instructions", async () => {
+    // A photo turn builds its own prompt and answered outside the guard the
+    // text path has, which is exactly where a gap goes unnoticed.
+    mocks.callGemini.mockImplementationOnce(async (options: { systemPrompt?: string }) =>
+      String(options.systemPrompt ?? '').slice(100, 260),
+    );
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: photoEvent() }, res);
+
+    const sent = String(mocks.sendText.mock.calls.at(-1)?.[2] ?? "");
+    expect(sent).toContain("дахин бичиж");
+  });
+
   it("passes the downloaded image to the vision call", async () => {
     const { res } = mockRes();
 
