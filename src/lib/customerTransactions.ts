@@ -446,12 +446,19 @@ function sameGoods(a: CustomerTransactionItem[], b: CustomerTransactionItem[]): 
  * Moves stock for a transaction's items. `direction` is +1 to apply the transaction's own
  * effect and -1 to undo it; the type decides which way the goods travel (a return puts
  * them back). Validation is off for the undo direction, which only ever adds stock back.
+ *
+ * `requireVariant` defaults to true for a brand-new transaction. `updateCustomerTransaction`
+ * passes false on its forward apply — an edit (including recording a payment, which reuses
+ * this same path with an unchanged item list) re-takes units the transaction already holds,
+ * so a transaction recorded before its product had variants must stay editable instead of
+ * getting stuck on MissingVariantError.
  */
 function applyItemsToStates(
   states: Map<number | string, ProductStockState>,
   items: CustomerTransactionItem[],
   type: CustomerTransactionType,
   direction: 1 | -1,
+  requireVariant = true,
 ) {
   const sign = stockSignForType(type) * direction;
 
@@ -461,7 +468,7 @@ function applyItemsToStates(
     applyStockMovement(
       state,
       { variant: item.variant, quantity: item.quantity * sign },
-      { productName: item.productName },
+      { productName: item.productName, requireVariant },
     );
   });
 }
@@ -599,8 +606,9 @@ export async function updateCustomerTransaction(
 
     // Undo the old version's stock effect, then apply the new one, so an edit is checked
     // against stock that excludes the quantity this very transaction is already holding.
+    // The forward apply skips the variant requirement — see applyItemsToStates.
     applyItemsToStates(states, previous.items, previous.type, -1);
-    applyItemsToStates(states, next.items, next.type, 1);
+    applyItemsToStates(states, next.items, next.type, 1, false);
 
     // The cost of goods already sold does not change because the transaction was edited.
     // It is only recomputed when the goods themselves changed — recording a payment, which
