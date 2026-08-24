@@ -150,12 +150,9 @@ export default async function handler(req: any, res: any): Promise<void> {
     const storefront = await loadStorefrontContext(db, new Date());
     const toolContext: ToolContext = {
       storefront,
-      // A photo stored as a `data:` URI has no host for Facebook to fetch, so
-      // it is served over https instead. Products with no photo at all get no
-      // image rather than a URL that would 404 and break the whole card.
-      imageUrlFor: (product) =>
-        product.imageUrl ||
-        (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
+      // See the note in webhook.ts: the picture is resolved from the id rather
+      // than read with the catalogue.
+      imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
       lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
       placeOrder: (details) =>
         placeChatOrder(

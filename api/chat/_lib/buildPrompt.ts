@@ -73,10 +73,12 @@ export interface PromptProduct {
   variants: Array<{ name: string; price: number; inStock: boolean }>;
   inStock: boolean;
   bestSeller: boolean;
-  /** Primary image when it is already an https URL. Empty otherwise. */
+  /**
+   * Always empty now: the products read no longer carries photos, because they
+   * are stored inline and cost more to read than everything else combined.
+   * api/chat/productImage resolves a picture from the product id instead.
+   */
   imageUrl: string;
-  /** Whether a photo exists at all, including one stored as a `data:` URI. */
-  hasImage: boolean;
 }
 
 export interface PromptCollection {
@@ -449,7 +451,6 @@ function mapProduct(id: string, data: any): PromptProduct {
     inStock,
     bestSeller: data.bestSeller === true,
     imageUrl: firstImageUrl(data.images),
-    hasImage: hasStoredImage(data.images),
   };
 }
 
@@ -466,22 +467,6 @@ function firstImageUrl(images: unknown): string {
     (entry) => typeof entry === 'string' && /^https:\/\//i.test(entry.trim()),
   );
   return typeof found === 'string' ? found.trim() : '';
-}
-
-/**
- * Whether a photo exists at all, including one stored as a `data:` URI — which
- * {@link firstImageUrl} refuses on purpose, because Messenger fetches carousel
- * images itself and cannot fetch those. api/chat/productImage serves them over
- * https instead, so the card still gets its picture.
- */
-function hasStoredImage(images: unknown): boolean {
-  return (
-    Array.isArray(images) &&
-    images.some((entry) => {
-      const value = typeof entry === 'string' ? entry.trim().toLowerCase() : '';
-      return value.startsWith('https://') || value.startsWith('data:image/');
-    })
-  );
 }
 
 function describeDiscount(data: any, productName: string): PromptDiscount {
@@ -593,7 +578,35 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
       safe(() => db.collection('collections').limit(MAX_COLLECTIONS).get(), { docs: [] }),
       // Fetch beyond the cap so inactive rows are filtered out of the raw set
       // rather than eating into the budget of visible products.
-      safe(() => db.collection('products').limit(MAX_PRODUCTS * 3).get(), { docs: [] }),
+      // Named fields only. Photos are stored inline as base64 `data:` URIs, so
+      // reading whole product documents pulled 3.4 MB across the wire on every
+      // single message — six seconds before the model was even called, which is
+      // most of the way to the function's timeout. The prompt needs the words;
+      // the picture is fetched separately by api/chat/productImage.
+      safe(
+        () =>
+          db
+            .collection('products')
+            .select(
+              'id',
+              'name',
+              'price',
+              'category',
+              'description',
+              'ingredients',
+              'howToUse',
+              'sizeLabel',
+              'variants',
+              'status',
+              'bestSeller',
+              'sortOrder',
+              'siteId',
+              'totalStock',
+            )
+            .limit(MAX_PRODUCTS * 3)
+            .get(),
+        { docs: [] },
+      ),
       safe(() => db.collection(`sites/${SITE_ID}/discounts`).limit(MAX_DISCOUNTS * 2).get(), { docs: [] }),
       loadFaqDocs(db),
     ]);

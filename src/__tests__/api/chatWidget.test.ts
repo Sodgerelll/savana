@@ -61,6 +61,9 @@ function createFakeDb(seed: Record<string, Record<string, unknown>> = {}) {
         where: () => build(order, take),
         orderBy: (_f: string, dir = "asc") => build({ dir }, take),
         limit: (n: number) => build(order, n),
+        // Products are read with a field mask so their inline base64 photos
+        // never leave the server; the fixtures hold only the named fields.
+        select: () => build(order, take),
         get: () => Promise.resolve({ docs: rows(), empty: rows().length === 0 }),
       };
     };

@@ -24,6 +24,17 @@ const DATA_URI = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i;
  */
 const CACHE_CONTROL = 'public, max-age=86400, s-maxage=86400';
 
+/**
+ * An 8×8 block of the storefront's own cream, sent when a product has no usable
+ * photo. A 404 would leave the card pointing at a URL that fails to load, and a
+ * card whose image fails is worse than one that never promised a picture — this
+ * way every card renders, at the same size, whatever the catalogue holds.
+ */
+const PLACEHOLDER = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mN4+/IBVsQwtCQAzfWtgafIJkcAAAAASUVORK5CYII=',
+  'base64',
+);
+
 type StoredImage =
   | { kind: 'url'; url: string }
   | { kind: 'bytes'; contentType: string; bytes: Buffer };
@@ -89,13 +100,15 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
+    res.setHeader('Cache-Control', CACHE_CONTROL);
+
     const image = parseStoredImage(data.images);
     if (!image) {
-      res.status(404).send('Not found');
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', String(PLACEHOLDER.length));
+      res.status(200).send(PLACEHOLDER);
       return;
     }
-
-    res.setHeader('Cache-Control', CACHE_CONTROL);
 
     // A photo already on the web is served from where it lives, so its bytes
     // never travel through here at all.

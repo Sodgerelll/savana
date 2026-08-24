@@ -422,12 +422,12 @@ async function replyToEvent(
   const storefront = await loadStorefrontContext(db, new Date());
   const toolContext: ToolContext = {
     storefront,
-    // A photo stored as a `data:` URI has no host for Facebook to fetch, so
-    // it is served over https instead. Products with no photo at all get no
-    // image rather than a URL that would 404 and break the whole card.
-    imageUrlFor: (product) =>
-      product.imageUrl ||
-      (product.hasImage ? storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined : undefined),
+    // Photos are stored inline as `data:` URIs, which Facebook cannot fetch,
+    // and reading them with the catalogue cost more than the rest of the prompt
+    // put together. Every card points at the image endpoint, which resolves the
+    // picture from the id and answers with a placeholder when there is none —
+    // so a card is never broken by a URL that fails to load.
+    imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
     productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
     lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
     placeOrder: (details) =>

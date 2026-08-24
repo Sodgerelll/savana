@@ -308,6 +308,9 @@ describe("loadStorefrontContext", () => {
         where: () => query,
         orderBy: () => query,
         limit: () => query,
+        // Products are read with a field mask so their inline base64 photos stay
+        // on the server; the fixtures already hold only the named fields.
+        select: () => query,
         get: () => Promise.resolve({ docs: collectionData[path] ?? [] }),
       };
       return query;

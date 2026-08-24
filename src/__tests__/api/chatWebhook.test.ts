@@ -129,6 +129,9 @@ function createFakeDb(seed: Record<string, Record<string, unknown>> = {}) {
         where: () => build(order, take),
         orderBy: (field: string, dir = "asc") => build({ field, dir }, take),
         limit: (n: number) => build(order, n),
+        // Products are read with a field mask so their inline base64 photos
+        // never leave the server; the fixtures hold only the named fields.
+        select: () => build(order, take),
         get: () => Promise.resolve({ docs: rows(), empty: rows().length === 0 }),
       };
       return query;
@@ -234,6 +237,9 @@ let fake: ReturnType<typeof createFakeDb>;
 beforeEach(() => {
   vi.clearAllMocks();
   clearStorefrontContextCache();
+  // Carousel images are absolute URLs back to this deployment, so the tests
+  // need to know what this deployment is called.
+  process.env.PUBLIC_SITE_URL = "https://savana.test";
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -872,7 +878,33 @@ describe("tool calls", () => {
     expect(mocks.sendCarousel).toHaveBeenCalled();
     const cards = mocks.sendCarousel.mock.calls[0][2];
     expect(cards[0].title).toBe("Хужирт саван");
-    expect(cards[0].imageUrl).toBe("https://cdn.savana.mn/1.jpg");
+    // Every card points at the image endpoint rather than at whatever the
+    // product record holds: photos are stored inline as base64 and are no
+    // longer read with the catalogue, so the picture is resolved from the id.
+    expect(cards[0].imageUrl).toBe("https://savana.test/api/chat/productImage?id=1");
+  });
+
+  it("gives a card an image even when the product has no usable photo", async () => {
+    // The endpoint answers with a placeholder rather than a 404, so a card is
+    // never left pointing at a URL that fails to load.
+    fake.store.set("products/p1", {
+      id: 1,
+      name: "Хужирт саван",
+      price: 25000,
+      category: "soap",
+      images: [],
+      status: "active",
+    });
+    mocks.callGeminiAgent.mockResolvedValue({
+      text: null,
+      functionCall: { name: "show_products", args: {} },
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("юу байна") }, res);
+
+    const cards = mocks.sendCarousel.mock.calls[0][2];
+    expect(cards[0].imageUrl).toBe("https://savana.test/api/chat/productImage?id=1");
   });
 
   it("records the tool name on the assistant message", async () => {
