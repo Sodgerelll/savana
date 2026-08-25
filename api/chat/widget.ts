@@ -32,6 +32,7 @@ import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, ORDER_DETAILS_ASK, runTool, type ToolContext } from './_lib/tools.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
+import { recordChatFailure } from './_lib/diagnostics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -307,6 +308,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       }
     } catch (err) {
       console.error('[chat/widget] generation failed:', (err as Error).message);
+      await recordChatFailure(db, 'widget', (err as Error).message);
       text = geminiErrorToUserMessage(err);
     }
 

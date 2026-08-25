@@ -33,6 +33,7 @@ import {
   sendTypingOn,
 } from './_lib/facebook.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
+import { recordChatFailure } from './_lib/diagnostics.js';
 import {
   callGemini,
   callGeminiAgent,
@@ -558,6 +559,7 @@ async function replyToEvent(
     }
   } catch (err) {
     console.error('[chat/webhook] generation failed:', (err as Error).message);
+    await recordChatFailure(db, 'messenger', (err as Error).message, { channel });
     outcomes.length = 0;
     outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
   }
