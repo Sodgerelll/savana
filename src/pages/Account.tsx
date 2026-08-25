@@ -456,6 +456,8 @@ interface ProductionBatchDraft {
   readyAt: string | null;
   /** Variant the batch is produced for — selects which recipe fills the supplies. */
   plannedVariant: string | null;
+  /** Which of several matching recipes to use when a product/variant carries more than one. */
+  selectedRecipeId: string | null;
   supplies: ProductionBatchSupply[];
   totalCost: number;
   notes: string;
@@ -471,6 +473,7 @@ interface ProductionRecipeDraft {
   id: string;
   productId: number;
   productName: string;
+  name: string;
   category: string;
   variantName: string | null;
   baseQuantity: number;

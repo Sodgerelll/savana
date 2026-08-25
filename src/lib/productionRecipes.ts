@@ -25,6 +25,8 @@ export interface ProductionRecipe {
   id: string;
   productId: number;
   productName: string;
+  /** Optional label distinguishing this recipe from others on the same product/variant. */
+  name: string;
   /** Product category slug at save time — kept so recipes stay groupable on their own. */
   category: string;
   /** Variant the recipe belongs to. `null` means it covers every variant of the product. */
@@ -42,6 +44,7 @@ export interface ProductionRecipe {
 export interface ProductionRecipeInput {
   productId: number;
   productName: string;
+  name?: string;
   category: string;
   variantName: string | null;
   baseQuantity: number;
@@ -88,6 +91,7 @@ function deserializeRecipe(
     id: snapshot.id,
     productId: Number(data.productId ?? 0),
     productName: String(data.productName ?? ""),
+    name: String(data.name ?? ""),
     category: String(data.category ?? ""),
     variantName:
       typeof variantName === "string" && variantName.length > 0 ? variantName : null,
@@ -109,6 +113,7 @@ function serializeRecipe(input: ProductionRecipeInput): DocumentData {
   return {
     productId: input.productId,
     productName: input.productName,
+    name: input.name ?? "",
     category: input.category,
     variantName: input.variantName,
     baseQuantity: input.baseQuantity,
@@ -170,21 +175,36 @@ export async function deleteProductionRecipe(id: string): Promise<void> {
 }
 
 /**
+ * Finds every recipe that applies to a product/variant pair. A product can carry
+ * several recipes for the same variant, so exact variant matches are returned
+ * together (caller picks one); only when none exist does it fall back to the
+ * product-wide recipes (`variantName === null`).
+ */
+export function findMatchingRecipes(
+  recipes: ProductionRecipe[],
+  productId: number,
+  variantName?: string | null,
+): ProductionRecipe[] {
+  const forProduct = recipes.filter((r) => r.productId === productId);
+  if (variantName) {
+    const exact = forProduct.filter((r) => r.variantName === variantName);
+    if (exact.length > 0) return exact;
+  }
+  return forProduct.filter((r) => r.variantName === null);
+}
+
+/**
  * Finds the recipe that applies to a product/variant pair. An exact variant match
- * wins; otherwise a product-wide recipe (`variantName === null`) is used.
+ * wins; otherwise a product-wide recipe (`variantName === null`) is used. When
+ * several recipes match, the first one is returned — use `findMatchingRecipes`
+ * when the caller needs to let the user pick among them.
  */
 export function findRecipeFor(
   recipes: ProductionRecipe[],
   productId: number,
   variantName?: string | null,
 ): ProductionRecipe | null {
-  const forProduct = recipes.filter((r) => r.productId === productId);
-  if (forProduct.length === 0) return null;
-  if (variantName) {
-    const exact = forProduct.find((r) => r.variantName === variantName);
-    if (exact) return exact;
-  }
-  return forProduct.find((r) => r.variantName === null) ?? null;
+  return findMatchingRecipes(recipes, productId, variantName)[0] ?? null;
 }
 
 /** Keeps scaled quantities readable instead of carrying float noise. */

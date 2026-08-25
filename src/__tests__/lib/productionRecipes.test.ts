@@ -16,6 +16,7 @@ vi.mock("firebase/firestore", () => ({
 import {
   buildSuppliesFromRecipe,
   calculateSuppliesCost,
+  findMatchingRecipes,
   findRecipeFor,
   type ProductionRecipe,
 } from "../../lib/productionRecipes";
@@ -25,6 +26,7 @@ function makeRecipe(overrides: Partial<ProductionRecipe> = {}): ProductionRecipe
     id: "recipe-1",
     productId: 1,
     productName: "Organic Soap",
+    name: "",
     category: "soap",
     variantName: "100g",
     baseQuantity: 10,
@@ -64,6 +66,26 @@ describe("findRecipeFor", () => {
 
   it("returns null when only variant recipes exist and no variant is requested", () => {
     expect(findRecipeFor([makeRecipe({ variantName: "50g" })], 1, null)).toBeNull();
+  });
+});
+
+describe("findMatchingRecipes", () => {
+  it("returns every recipe sharing the same product/variant instead of just one", () => {
+    const recipes = [
+      makeRecipe({ id: "a", name: "Classic" }),
+      makeRecipe({ id: "b", name: "Budget" }),
+    ];
+    const matches = findMatchingRecipes(recipes, 1, "100g");
+    expect(matches.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("falls back to all product-wide recipes when none match the variant", () => {
+    const recipes = [
+      makeRecipe({ id: "a", variantName: null }),
+      makeRecipe({ id: "b", variantName: null }),
+    ];
+    const matches = findMatchingRecipes(recipes, 1, "100g");
+    expect(matches.map((r) => r.id)).toEqual(["a", "b"]);
   });
 });
 

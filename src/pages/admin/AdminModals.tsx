@@ -10,7 +10,7 @@ import type { RawMaterialCategory } from "../../lib/rawMaterials";
 import {
   buildSuppliesFromRecipe,
   calculateSuppliesCost,
-  findRecipeFor,
+  findMatchingRecipes,
 } from "../../lib/productionRecipes";
 import { applyDiscount, buildCategoryTree, getActiveDiscount } from "../../lib/storefrontHelpers";
 import { getDistrictOrSoumOptions, getKhorooOrBagOptions, getRegionOptions } from "../../lib/checkoutAddress";
@@ -2851,24 +2851,33 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   const rawMaterialIndex = new Map(
     (rawMaterials as any[]).map((r: any) => [r.id, { name: r.name, unit: r.unit, unitCost: r.unitCost }]),
   );
-  const matchedRecipe = findRecipeFor(
+  const matchingRecipes = findMatchingRecipes(
     (productionRecipes ?? []) as any[],
     batchDraft.productId,
     batchDraft.plannedVariant,
   );
+  const matchedRecipe =
+    matchingRecipes.find((r) => r.id === batchDraft.selectedRecipeId) ?? matchingRecipes[0] ?? null;
 
   /**
    * Applies a draft change and, whenever a recipe covers the product/variant,
-   * recomputes the supply lines for the planned quantity.
+   * recomputes the supply lines for the planned quantity. A product/variant change
+   * resets the recipe pick back to the default (first match) unless the patch
+   * itself is choosing a recipe.
    */
   const patchBatchDraft = (patch: any, { recalc = true }: { recalc?: boolean } = {}) => {
     const nextDraft = { ...batchDraft, ...patch };
     if (recalc && batchEditable) {
-      const recipe = findRecipeFor(
+      if (!("selectedRecipeId" in patch) && ("productId" in patch || "plannedVariant" in patch)) {
+        nextDraft.selectedRecipeId = null;
+      }
+      const candidates = findMatchingRecipes(
         (productionRecipes ?? []) as any[],
         nextDraft.productId,
         nextDraft.plannedVariant,
       );
+      const recipe = candidates.find((r) => r.id === nextDraft.selectedRecipeId) ?? candidates[0] ?? null;
+      nextDraft.selectedRecipeId = recipe?.id ?? null;
       if (recipe) {
         const supplies = buildSuppliesFromRecipe(recipe, nextDraft.plannedQuantity, rawMaterialIndex);
         nextDraft.supplies = supplies;
@@ -3020,6 +3029,17 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           <span style={{ fontSize: "0.82rem", color: matchedRecipe ? "#047857" : "#b45309" }}>
             {matchedRecipe ? copy.productionBatchRecipeApplied : copy.productionBatchRecipeMissing}
           </span>
+          {matchingRecipes.length > 1 && (
+            <select
+              value={matchedRecipe?.id ?? ""}
+              onChange={(e: any) => patchBatchDraft({ selectedRecipeId: e.target.value })}
+              style={{ fontSize: "0.8rem" }}
+            >
+              {matchingRecipes.map((r: any, i: number) => (
+                <option key={r.id} value={r.id}>{r.name || `${copy.recipeUnnamed} ${i + 1}`}</option>
+              ))}
+            </select>
+          )}
           {matchedRecipe && (
             <button
               type="button"
@@ -3419,16 +3439,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           setProductionRecipeError(copy.recipeBaseQuantityHint);
           return;
         }
-        const duplicate = ((productionRecipes ?? []) as any[]).some(
-          (r: any) =>
-            r.id !== draft.id &&
-            r.productId === draft.productId &&
-            (r.variantName ?? null) === (draft.variantName ?? null),
-        );
-        if (duplicate) {
-          setProductionRecipeError(copy.recipeDuplicate);
-          return;
-        }
         setProductionRecipeSaving(true);
         setProductionRecipeError(null);
         try {
@@ -3436,6 +3446,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           const payload = {
             productId: draft.productId,
             productName: selected ? selected.name : draft.productName,
+            name: draft.name ?? "",
             category: selected ? selected.category : draft.category,
             variantName: draft.variantName ?? null,
             baseQuantity: draft.baseQuantity,
@@ -3511,6 +3522,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <option key={v.name} value={v.name}>{v.name}</option>
           ))}
         </select>
+      </label>
+      <label className="admin-field">
+        <span>{copy.recipeName}</span>
+        <input
+          type="text"
+          placeholder={copy.recipeNamePlaceholder}
+          value={recipeDraft.name ?? ""}
+          onChange={(e: any) => patchRecipeDraft({ name: e.target.value })}
+        />
       </label>
       <label className="admin-field">
         <span>{copy.recipeBaseQuantity}</span>

@@ -96,6 +96,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
         plannedQuantity: 0, actualQuantity: null,
         startedAt: null, expectedReadyAt: null, readyAt: null,
         plannedVariant: firstProduct?.variants?.[0]?.name ?? null,
+        selectedRecipeId: null,
         supplies: [], totalCost: 0, notes: "",
       },
     });
@@ -113,6 +114,7 @@ export default function FactoryProductionPage({ ctx }: { ctx: AdminCtx }) {
         plannedQuantity: batch.plannedQuantity, actualQuantity: batch.actualQuantity,
         startedAt: batch.startedAt, expectedReadyAt: batch.expectedReadyAt, readyAt: batch.readyAt,
         plannedVariant: batch.plannedVariant ?? null,
+        selectedRecipeId: null,
         supplies: batch.supplies.map((s: any) => ({ ...s })),
         totalCost: batch.totalCost, notes: batch.notes,
       },

@@ -60,6 +60,7 @@ export default function FactoryRecipesPage({ ctx }: { ctx: AdminCtx }) {
         id: "",
         productId: firstProduct.id,
         productName: firstProduct.name,
+        name: "",
         category: firstProduct.category ?? "",
         variantName: firstProduct.variants?.[0]?.name ?? null,
         baseQuantity: 1,
@@ -79,6 +80,7 @@ export default function FactoryRecipesPage({ ctx }: { ctx: AdminCtx }) {
         id: recipe.id,
         productId: recipe.productId,
         productName: recipe.productName,
+        name: recipe.name ?? "",
         category: categoryOf(recipe),
         variantName: recipe.variantName,
         baseQuantity: recipe.baseQuantity,
@@ -197,7 +199,12 @@ export default function FactoryRecipesPage({ ctx }: { ctx: AdminCtx }) {
                       </td>
                       <td>{idx + 1}</td>
                       <td>{categoryLabel(categoryOf(recipe))}</td>
-                      <td>{getProductLabel(recipe.productId, productById.get(recipe.productId)?.name ?? recipe.productName)}</td>
+                      <td>
+                        {getProductLabel(recipe.productId, productById.get(recipe.productId)?.name ?? recipe.productName)}
+                        {recipe.name && (
+                          <div style={{ color: "#9ca3af", fontSize: "0.75rem" }}>{recipe.name}</div>
+                        )}
+                      </td>
                       <td>
                         {recipe.variantName ? (
                           <span style={{
