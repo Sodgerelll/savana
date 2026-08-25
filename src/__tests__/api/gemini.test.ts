@@ -140,6 +140,37 @@ describe("callGemini", () => {
     expect(calls[0].url).toBe(calls[1].url);
   });
 
+  it("asks the fallback model when the first one does not answer in time", async () => {
+    // A model that has not answered in twenty-five seconds is unlikely to
+    // answer in the next twenty-five. Retrying it in place spent the whole
+    // allowance on one model and the fallback was never asked at all.
+    responders = [
+      () => {
+        const abort = new Error("aborted");
+        abort.name = "AbortError";
+        throw abort;
+      },
+      () => jsonResponse(textPayload("the other model answered")),
+    ];
+
+    await expect(callGemini({ message: "hi" })).resolves.toBe("the other model answered");
+    expect(calls).toHaveLength(2);
+    // Second call went to a different model, not a second go at the first.
+    expect(calls[0].url).not.toBe(calls[1].url);
+  });
+
+  it("still retries the same model when the connection merely dropped", async () => {
+    responders = [
+      () => {
+        throw new TypeError("network down");
+      },
+      () => jsonResponse(textPayload("retried fine")),
+    ];
+
+    await expect(callGemini({ message: "hi" })).resolves.toBe("retried fine");
+    expect(calls[0].url).toBe(calls[1].url);
+  });
+
   it("stops trying when there is no time left rather than running past its host", async () => {
     // Two models, two attempts each, twenty-five seconds apiece is a hundred
     // seconds, and the function this runs in is cut off at sixty — so the slow

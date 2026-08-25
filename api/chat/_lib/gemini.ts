@@ -290,7 +290,9 @@ async function postToModel(
   model: string,
   requestBody: Record<string, unknown>,
   timeoutMs = TIMEOUT_MS,
-): Promise<{ ok: true; data: any } | { ok: false; status: number | null; message: string }> {
+): Promise<
+  { ok: true; data: any } | { ok: false; status: number | null; timedOut?: boolean; message: string }
+> {
   const body = configForModel(requestBody, model);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -321,6 +323,7 @@ async function postToModel(
       return {
         ok: false,
         status: res.status,
+        timedOut: false,
         message: `Gemini ${model} ${res.status}${detail ? `: ${detail}` : ''}`,
       };
     }
@@ -331,6 +334,7 @@ async function postToModel(
     return {
       ok: false,
       status: null,
+      timedOut: aborted,
       message: aborted ? `Gemini ${model} timed out` : `Gemini ${model} request failed`,
     };
   } finally {
@@ -411,6 +415,15 @@ async function generateParts(
       // An HTTP-level rejection is deterministic for this model — move on.
       // Only transport errors (status null) are worth retrying in place.
       if (result.status !== null) {
+        break;
+      }
+
+      // A model that did not answer in twenty-five seconds is unlikely to
+      // answer in the next twenty-five, and the budget only stretches to two
+      // attempts — so retrying in place spent the whole allowance on one model
+      // and the fallback never got asked at all. A timeout moves on; a dropped
+      // connection is still worth one more go on the same model.
+      if (result.timedOut) {
         break;
       }
       if (attempt < MAX_ATTEMPTS_PER_MODEL - 1) {
