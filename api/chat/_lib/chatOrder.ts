@@ -156,6 +156,10 @@ export async function createChatOrder(
       // The document id doubles as the Bonum transactionId, which is how the
       // payment webhook finds this order again.
       transactionId: ref.id,
+      // The statement should say what the money was for. The order number is
+      // what an admin searches by; the channel is what tells them where to look
+      // for the conversation behind it.
+      description: `${orderNumber} · ${CHANNEL_TO_SOURCE[input.channel] ?? 'messenger'}`,
       callback: bonumCallbackUrl(),
       expiresIn: INVOICE_TTL_SECONDS,
     },

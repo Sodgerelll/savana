@@ -188,11 +188,15 @@ function createOrderNumber(orderId: string): string {
   return documentNumberFromId("ORD", orderId);
 }
 
-async function createBonumInvoice(amount: number, transactionId: string): Promise<{ invoiceId: string; followUpLink: string }> {
+async function createBonumInvoice(
+  amount: number,
+  transactionId: string,
+  description: string,
+): Promise<{ invoiceId: string; followUpLink: string }> {
   const res = await fetch("/api/bonum/invoice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount, transactionId }),
+    body: JSON.stringify({ amount, transactionId, description }),
   });
 
   if (!res.ok) {
@@ -376,7 +380,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
   // development so testing charged nobody, and shipping it that way meant every
   // customer paid 100₮ for whatever they bought while the order recorded the real
   // total and the webhook marked it paid.
-  const bonumResult = await createBonumInvoice(input.totals.grandTotal, orderRef.id);
+  // The statement should say what the money was for; an amount alone is a row
+  // nobody can reconcile against an order.
+  const bonumResult = await createBonumInvoice(
+    input.totals.grandTotal,
+    orderRef.id,
+    `${orderNumber} · web`,
+  );
 
   const payment: OrderPaymentPayload = {
     method: "bonum",

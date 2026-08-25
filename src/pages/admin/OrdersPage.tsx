@@ -1,8 +1,30 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo, useState } from "react";
 import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
 import { hasReturnableQuantity } from "../../lib/returns";
+
+/**
+ * Where an order came from, in the shop's own words.
+ *
+ * The column used to show how the customer signed in, which reads "Зочин" for a
+ * Messenger order and "Зочин" for a website one — the same word for the two
+ * things an owner most wants to tell apart.
+ */
+const SOURCE_LABELS: Record<string, { mn: string; en: string }> = {
+  web: { mn: "Вэб сайт", en: "Website" },
+  messenger: { mn: "Messenger", en: "Messenger" },
+  facebook: { mn: "Facebook", en: "Facebook" },
+  instagram: { mn: "Instagram", en: "Instagram" },
+  phone: { mn: "Утсаар", en: "Phone" },
+  email: { mn: "И-мэйл", en: "Email" },
+  walk_in: { mn: "Дэлгүүрт", en: "Walk-in" },
+};
+
+function sourceLabel(source: string, language: string): string {
+  return SOURCE_LABELS[source]?.[language === "MN" ? "mn" : "en"] ?? source;
+}
 
 export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -27,6 +49,22 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
     getAuthMethodLabel,
   } = ctx;
 
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+
+  // Only the channels this shop actually has orders from, so the filter never
+  // offers a button that finds nothing.
+  const sources = useMemo(
+    () => [...new Set((orders as any[]).map((order) => String(order.source)))].sort(),
+    [orders],
+  );
+  const visibleOrders = useMemo(
+    () =>
+      sourceFilter === "all"
+        ? (orders as any[])
+        : (orders as any[]).filter((order) => String(order.source) === sourceFilter),
+    [orders, sourceFilter],
+  );
+
   return (
     <>
       <div className="admin-topbar">
@@ -42,6 +80,29 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
       </div>
 
       {ordersError && <div className="admin-sync-error">{ordersError}</div>}
+
+      {/* Only shown once there is more than one channel to tell apart. */}
+      {sources.length > 1 && (
+        <div className="admin-topbar-actions" style={{ marginBottom: "1rem" }}>
+          <button
+            type="button"
+            className={`btn ${sourceFilter === "all" ? "btn-primary" : ""}`}
+            onClick={() => setSourceFilter("all")}
+          >
+            {language === "MN" ? "Бүгд" : "All"}
+          </button>
+          {sources.map((source) => (
+            <button
+              key={source}
+              type="button"
+              className={`btn ${sourceFilter === source ? "btn-primary" : ""}`}
+              onClick={() => setSourceFilter(source)}
+            >
+              {sourceLabel(source, language)}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="admin-summary-grid">
         <div className="admin-summary-card admin-summary-card-compact">
@@ -97,14 +158,14 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 ? (
+              {visibleOrders.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="admin-table-empty">
                     {copy.emptyOrders}
                   </td>
                 </tr>
               ) : (
-                (orders as any[]).map((order: any) => (
+                visibleOrders.map((order: any) => (
                   <tr key={order.id}>
                     <td>
                       <button type="button" className="admin-table-link" onClick={() => openOrderModal(order)}>
@@ -162,13 +223,16 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                       </div>
                     </td>
                     <td>
-                      <span className="admin-table-code">
-                        {order.auth.isAnonymous
-                          ? language === "MN"
-                            ? "Зочин"
-                            : "Guest"
-                          : getAuthMethodLabel(order.auth.method, language)}
-                      </span>
+                      <div className="admin-table-primary">
+                        <strong>{sourceLabel(String(order.source), language)}</strong>
+                        <small>
+                          {order.auth.isAnonymous
+                            ? language === "MN"
+                              ? "Зочин"
+                              : "Guest"
+                            : getAuthMethodLabel(order.auth.method, language)}
+                        </small>
+                      </div>
                     </td>
                     <td>
                       <div className="admin-table-primary">

@@ -10,6 +10,8 @@ import { bonumCallbackUrl, bonumPost } from './_client.js';
 interface InvoiceRequestBody {
   amount: number;
   transactionId: string;
+  /** What the payment is for. Ends up on the statement, where an amount alone says nothing. */
+  description?: string;
 }
 
 interface BonumInvoiceResponse {
@@ -23,7 +25,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const { amount, transactionId } = req.body as Partial<InvoiceRequestBody>;
+  const { amount, transactionId, description } = req.body as Partial<InvoiceRequestBody>;
 
   if (!amount || !transactionId) {
     res.status(400).json({ error: 'amount and transactionId are required' });
@@ -37,6 +39,11 @@ export default async function handler(req: any, res: any): Promise<void> {
       {
         amount,
         transactionId,
+        // Bonum ignores a field it does not know, so this is safe either way —
+        // and where it is shown, a line reading "ORD-260825-YD2KI7 · Messenger"
+        // is the difference between a statement anyone can reconcile and a
+        // column of amounts.
+        ...(description ? { description: String(description).slice(0, 120) } : {}),
         callback: bonumCallbackUrl(),
         expiresIn: 3600, // 1 hour
       },
