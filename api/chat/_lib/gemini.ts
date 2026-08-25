@@ -57,6 +57,9 @@ const TIMEOUT_MS = 25_000;
  */
 const LEADING_TIMEOUT_MS = 18_000;
 
+/** The health probe answers quickly or not at all; there is nothing to wait for. */
+const PROBE_TIMEOUT_MS = 10_000;
+
 /**
  * How long the whole chain may take, retries and fallbacks included.
  *
@@ -541,6 +544,59 @@ export function geminiErrorToUserMessage(err: unknown): string {
     }
   }
   return 'Хариу авч чадсангүй. Дахин оролдоно уу.';
+}
+
+/**
+ * Asks the API the smallest question there is, to find out whose fault a
+ * failure was.
+ *
+ * When every model in the chain times out there are two very different stories
+ * and no way to tell them apart from the outside: the API is unreachable, or
+ * our own request has grown into something it will not answer in time. One
+ * question with a two-word prompt, no tools and no cache settles it — if that
+ * comes back, the problem is what we are sending.
+ *
+ * Costs one call, and only on a turn that has already failed.
+ */
+export async function probeGemini(): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return 'no api key';
+  }
+
+  const model = DEFAULT_MODELS[DEFAULT_MODELS.length - 1];
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${API_BASE}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+        generationConfig: { maxOutputTokens: 1 },
+      }),
+      signal: controller.signal,
+    });
+
+    const ms = Date.now() - started;
+    if (res.ok) {
+      return `reachable in ${ms}ms — the payload is ours to fix`;
+    }
+
+    const detail = await res
+      .json()
+      .then((body: any) => body?.error?.message ?? '')
+      .catch(() => '');
+    return `HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`;
+  } catch (err) {
+    const ms = Date.now() - started;
+    const aborted = err instanceof Error && err.name === 'AbortError';
+    return aborted ? `unreachable — even a two-word prompt timed out after ${ms}ms` : `request failed after ${ms}ms`;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

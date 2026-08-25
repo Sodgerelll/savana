@@ -40,6 +40,7 @@ import {
   geminiErrorToUserMessage,
   looksLikeOurOwnInstructions,
   primaryModel,
+  probeGemini,
   shouldEscalateAfterFailure,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
@@ -603,7 +604,11 @@ async function replyToEvent(
       }
     } catch (err) {
       console.error('[chat/webhook] generation failed:', (err as Error).message);
-      await recordChatFailure(db, 'messenger', (err as Error).message, { channel });
+      await recordChatFailure(db, 'messenger', (err as Error).message, {
+        channel,
+        // Says whose fault it was, so nobody has to guess next time.
+        probe: await probeGemini(),
+      });
       outcomes.length = 0;
 
       // A customer who asked and got "could not answer" has been handed a dead

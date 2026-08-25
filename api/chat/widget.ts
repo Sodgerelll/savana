@@ -25,6 +25,7 @@ import {
   geminiErrorToUserMessage,
   looksLikeOurOwnInstructions,
   primaryModel,
+  probeGemini,
   shouldEscalateAfterFailure,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
@@ -316,7 +317,10 @@ export default async function handler(req: any, res: any): Promise<void> {
       }
     } catch (err) {
       console.error('[chat/widget] generation failed:', (err as Error).message);
-      await recordChatFailure(db, 'widget', (err as Error).message);
+      await recordChatFailure(db, 'widget', (err as Error).message, {
+        // Says whose fault it was, so nobody has to guess next time.
+        probe: await probeGemini(),
+      });
 
       // See webhook.ts: a failure that is ours goes to a person rather than
       // leaving the customer with nowhere to go.
