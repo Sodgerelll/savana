@@ -9,6 +9,7 @@
 // One document per kind, overwritten, so the record cannot grow.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { probeGemini } from './gemini.js';
 
 const COLLECTION = 'chat_diagnostics';
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
@@ -71,8 +72,16 @@ export async function markModelUnhealthy(db: any, model: string): Promise<void> 
   }
 
   const wait = BACKOFF_MS[Math.min(strikes, BACKOFF_MS.length - 1)];
+
+  // Asked the smallest question there is, right after it failed a real one.
+  // A model that answers "hi" in a moment but not a catalogue prompt in
+  // eighteen seconds is telling us the size of the request is the problem; one
+  // that answers neither is telling us it is simply not serving us.
+  const probe = await probeGemini(model);
+
   await recordChatFailure(db, id, `timed out (${strikes + 1} in a row)`, {
     strikes: strikes + 1,
+    probe,
     unhealthyUntil: new Date(Date.now() + wait),
   });
 }
