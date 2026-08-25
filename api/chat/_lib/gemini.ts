@@ -40,7 +40,22 @@ const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-la
 // naming "gemini-2.5-flash" from pinning the bot to a model it cannot reach.
 const ALLOWED_REQUESTED = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 
+/**
+ * How long the last model in the chain is given. Generous, because there is
+ * nothing behind it: giving up early there is giving up entirely.
+ */
 const TIMEOUT_MS = 25_000;
+
+/**
+ * How long a model with a fallback behind it is given.
+ *
+ * A shorter leash is the whole advantage of having a chain. The preferred model
+ * answers in about eleven seconds when it is well; when it is not, waiting the
+ * full twenty-five before asking a model that answers in three is time taken
+ * from the customer for nothing. Short enough to cap the penalty, long enough
+ * that a merely slow answer still counts.
+ */
+const LEADING_TIMEOUT_MS = 18_000;
 
 /**
  * How long the whole chain may take, retries and fallbacks included.
@@ -376,7 +391,9 @@ async function generateParts(
   let liveCache = options.cache;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  for (const model of healthyChain(options.model, options.skipModels)) {
+  const chain = healthyChain(options.model, options.skipModels);
+
+  for (const model of chain) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining < MIN_ATTEMPT_MS) {
@@ -385,11 +402,12 @@ async function generateParts(
       }
 
       const usedCache = Boolean(liveCache && liveCache.model === model);
+      const isLast = model === chain[chain.length - 1];
       const result = await postToModel(
         apiKey,
         model,
         applyCache(body, model, liveCache),
-        Math.min(TIMEOUT_MS, remaining),
+        Math.min(isLast ? TIMEOUT_MS : LEADING_TIMEOUT_MS, remaining),
       );
 
       // A rejected handle is not a broken model. Drop it and let the retry

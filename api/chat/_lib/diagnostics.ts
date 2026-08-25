@@ -36,8 +36,15 @@ export async function recordChatFailure(
   }
 }
 
-/** How long a model that stopped answering is left out of the chain. */
-const UNHEALTHY_MS = 5 * 60 * 1000;
+/**
+ * How long a model that stopped answering is left out of the chain.
+ *
+ * Short on purpose. The preferred model is preferred for a reason, and a slow
+ * patch is not the same as being broken — five minutes of skipping it after one
+ * bad turn threw away a model that was answering most of the time. Ninety
+ * seconds spares a handful of customers the wait and asks again quickly.
+ */
+const UNHEALTHY_MS = 90 * 1000;
 const MODEL_PREFIX = 'model:';
 
 /**
