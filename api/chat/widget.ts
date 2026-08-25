@@ -32,6 +32,7 @@ import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, ORDER_DETAILS_ASK, runTool, type ToolContext } from './_lib/tools.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
+import { sweepPendingChatPayments } from './_lib/orderPaid.js';
 import { markModelUnhealthy, recordChatFailure, unhealthyModels } from './_lib/diagnostics.js';
 
 export const config = { maxDuration: 60 };
@@ -327,6 +328,16 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
 
     timing.mark('tools');
+
+    // The same net the Messenger webhook casts. A shop whose customers arrive
+    // through the site would otherwise never run it, and a payment the webhook
+    // dropped would sit unnoticed until somebody asked where their soap was.
+    try {
+      await sweepPendingChatPayments(db);
+    } catch (err) {
+      console.warn('[chat/widget] payment sweep failed:', (err as Error).message);
+    }
+
     res.setHeader('Server-Timing', timing.header());
     res.status(200).json({ reply: text, products, handedOver, payUrl });
   } catch (err) {
