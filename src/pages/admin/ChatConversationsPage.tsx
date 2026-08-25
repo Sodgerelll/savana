@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  Download,
   Facebook,
   Globe,
   Instagram,
@@ -9,6 +10,7 @@ import {
   TriangleAlert,
   UserCheck,
 } from "lucide-react";
+import { downloadCsv } from "../../lib/chat/exportCsv";
 import { ChatApiError, handConversationBackToBot, sendAdminReply } from "../../lib/chat/chatApi";
 import { subscribeToChatMessages, STATUS_LABELS } from "../../lib/chat/conversationStore";
 import type {
@@ -42,6 +44,7 @@ const COPY = {
     total: "Нийт яриа",
     awaitingCount: "Хүн хүлээж буй",
     botHandled: "Бот хариулж буй",
+    exportCsv: "Excel татах",
     handBack: "Ботод буцаах",
     handingBack: "Буцааж байна…",
     replyWarning:
@@ -67,6 +70,7 @@ const COPY = {
     total: "Conversations",
     awaitingCount: "Awaiting human",
     botHandled: "Bot handling",
+    exportCsv: "Export",
     handBack: "Hand back to bot",
     handingBack: "Handing back…",
     replyWarning:
@@ -185,6 +189,22 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
     }
   }
 
+  /** Exports the thread list as shown, filters included. */
+  function exportVisible() {
+    downloadCsv(
+      "chat-conversations",
+      [copy.customer, copy.total, copy.handoverNote, "channel", "status", "updated"],
+      visible.map((conversation) => [
+        conversation.customerName || copy.unnamed,
+        conversation.messageCount,
+        conversation.handoverReason ?? "",
+        conversation.channel,
+        STATUS_LABELS[conversation.status][language === "EN" ? "en" : "mn"],
+        formatTime(conversation.lastMessageAt, language as "MN" | "EN"),
+      ]),
+    );
+  }
+
   async function handBack() {
     if (!selectedId || handingBack) return;
 
@@ -208,6 +228,10 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
           <p>{copy.text}</p>
         </div>
         <div className="admin-topbar-actions">
+          <button type="button" className="btn" onClick={exportVisible} disabled={visible.length === 0}>
+            <Download size={15} />
+            {copy.exportCsv}
+          </button>
           <button
             type="button"
             className={`btn ${onlyAwaiting ? "btn-primary" : ""}`}

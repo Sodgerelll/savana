@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Facebook, Globe, Instagram, ShoppingBag, Trash2, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  Download,
+  Facebook,
+  Globe,
+  Instagram,
+  ShoppingBag,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { downloadCsv } from "../../lib/chat/exportCsv";
 import {
   convertLeadToSale,
   LeadConversionError,
@@ -23,6 +33,9 @@ const COPY = {
     channel: "Суваг",
     status: "Төлөв",
     received: "Ирсэн",
+    phone: "Утас",
+    address: "Хаяг",
+    note: "Тайлбар",
     actions: "Үйлдэл",
     convert: "Борлуулалт болгох",
     converting: "Үүсгэж байна…",
@@ -31,6 +44,7 @@ const COPY = {
     confirmDelete: "Энэ хүсэлтийг устгах уу?",
     missingContact: "Нэр/утас дутуу",
     missingAddress: "Хаяг дутуу",
+    exportCsv: "Excel татах",
     converted: (n: string) => `${n} дугаартай борлуулалт үүслээ.`,
     total: "Нийт хүсэлт",
     pending: "Хүлээгдэж буй",
@@ -60,6 +74,9 @@ const COPY = {
     channel: "Channel",
     status: "Status",
     received: "Received",
+    phone: "Phone",
+    address: "Address",
+    note: "Note",
     actions: "Actions",
     convert: "Convert to sale",
     converting: "Creating…",
@@ -68,6 +85,7 @@ const COPY = {
     confirmDelete: "Delete this request?",
     missingContact: "Name/phone missing",
     missingAddress: "Address missing",
+    exportCsv: "Export",
     converted: (n: string) => `Sale ${n} created.`,
     total: "Requests",
     pending: "Pending",
@@ -130,6 +148,33 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
     [leads],
   );
 
+  /** Exports what is on screen, filters included — what you see is what you get. */
+  function exportVisible() {
+    downloadCsv(
+      "chat-leads",
+      [
+        copy.received,
+        copy.customer,
+        copy.phone,
+        copy.address,
+        copy.items,
+        copy.channel,
+        copy.status,
+        copy.note,
+      ],
+      visible.map((lead) => [
+        formatDate(lead.createdAt, language as "MN" | "EN"),
+        lead.customerName,
+        lead.customerPhone,
+        lead.address,
+        lead.items.map((item) => `${item.name} × ${item.quantity}`).join("; "),
+        lead.channel,
+        copy.statusLabels[lead.status],
+        lead.note,
+      ]),
+    );
+  }
+
   async function convert(lead: ChatLeadRecord) {
     setBusyId(lead.id);
     setError("");
@@ -186,6 +231,10 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
           <p>{copy.text}</p>
         </div>
         <div className="admin-topbar-actions">
+          <button type="button" className="btn" onClick={exportVisible} disabled={visible.length === 0}>
+            <Download size={15} />
+            {copy.exportCsv}
+          </button>
           <button
             type="button"
             className={`btn ${newOnly ? "btn-primary" : ""}`}
