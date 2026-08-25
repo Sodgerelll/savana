@@ -23,7 +23,16 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // deprecation, so a chain that fell back to them fell back to nothing — and a
 // freshly issued key is exactly the case where the old fallback was already
 // dead on arrival.
-const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash'];
+/**
+ * Tried in order until one answers.
+ *
+ * Two was one too few. When 3.7 stopped answering the shop was one model away
+ * from having no bot at all, and the whole point of a chain is that it is not.
+ * `gemini-flash-latest` is an alias rather than a pinned version — a poor thing
+ * to build on and a good last resort, because whatever Google is currently
+ * calling its fast model is exactly what is wanted once the named ones are gone.
+ */
+const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
 
 // Models the caller is allowed to request explicitly (admin model picker). An
 // unknown value is ignored rather than rejected so a stale saved setting cannot

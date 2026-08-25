@@ -158,7 +158,10 @@ describe("callGemini", () => {
     responders = [() => jsonResponse(textPayload("tried anyway"))];
 
     await expect(
-      callGemini({ message: "hi", skipModels: ["gemini-3.7-flash", "gemini-3.6-flash"] }),
+      callGemini({
+        message: "hi",
+        skipModels: ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-flash-latest"],
+      }),
     ).resolves.toBe("tried anyway");
     expect(calls[0].url).toContain("gemini-3.7-flash");
   });
@@ -242,8 +245,8 @@ describe("callGemini", () => {
     await expect(callGemini({ message: "hi" })).rejects.toSatisfy((err: unknown) => {
       return err instanceof GeminiError && !err.message.includes(API_KEY);
     });
-    // 2 models × 1 attempt each (HTTP errors do not retry in place).
-    expect(calls).toHaveLength(2);
+    // 3 models × 1 attempt each (HTTP errors do not retry in place).
+    expect(calls).toHaveLength(3);
   });
 
   it("carries Google's own reason into the error, not just the status", async () => {
@@ -256,6 +259,8 @@ describe("callGemini", () => {
           { error: { message: "Unknown name \"thinkingLevel\" at 'generation_config'" } },
           400,
         ),
+      () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
+      // The last model in the chain is the one whose reason has to survive.
       () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
     ];
 
