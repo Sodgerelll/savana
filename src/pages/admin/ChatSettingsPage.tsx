@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Facebook, Link2, Power, RefreshCw, TriangleAlert } from "lucide-react";
+import { Bell, Check, Facebook, Link2, Power, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  alertPermission,
+  requestAlertPermission,
+  type AlertPermission,
+} from "../../lib/chat/chatAlerts";
 import { saveChatSettings } from "../../lib/chat/chatSettings";
 import {
   applyFacebookSetup,
@@ -19,6 +24,14 @@ const COPY = {
     botSection: "Ерөнхий",
     botActive: "Ботыг асаах",
     botActiveHelp: "Унтраалттай үед ямар ч суваг дээр бот хариулахгүй. Туршилтын чат ажиллана.",
+    alerts: "Ажилтанд мэдэгдэх",
+    alertsHelp:
+      "Хүн хүлээж буй яриа, шинэ захиалгын хүсэлт гарахад энэ компьютерт мэдэгдэл гаргана. " +
+      "Админ хуудсыг өөр таб дээр нээлттэй үлдээхэд ажиллана.",
+    alertsOn: "Асаах",
+    alertsGranted: "Асаалттай ✅",
+    alertsDenied: "Хөтөч хориглосон — хөтчийн тохиргооноос зөвшөөрнө үү",
+    alertsUnsupported: "Энэ хөтөч дэмждэггүй",
     webChat: "Вэб сайтын чат",
     webChatHelp:
       "Дэлгүүрийн сайт дээрх чат цонх. Унтраавал Messenger, Instagram дээр хэвээр хариулна.",
@@ -55,6 +68,14 @@ const COPY = {
     botSection: "General",
     botActive: "Enable the bot",
     botActiveHelp: "While off the bot answers on no channel. The test chat still works.",
+    alerts: "Notify staff",
+    alertsHelp:
+      "Shows a desktop notification on this computer when a conversation is waiting for a " +
+      "person or a new order request arrives. Works while the admin page is open in any tab.",
+    alertsOn: "Turn on",
+    alertsGranted: "On ✅",
+    alertsDenied: "Blocked by the browser — allow it in the browser's settings",
+    alertsUnsupported: "This browser does not support it",
     webChat: "Website chat",
     webChatHelp: "The chat bubble on the storefront. Off leaves Messenger and Instagram answering.",
     botName: "Bot name",
@@ -103,6 +124,7 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState<FacebookStatus | null>(null);
+  const [alerts, setAlerts] = useState<AlertPermission>("default");
   const [statusLoading, setStatusLoading] = useState(true);
 
   // Adopt server updates only while the form is untouched, so a save from
@@ -129,6 +151,10 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  useEffect(() => {
+    setAlerts(alertPermission());
+  }, []);
 
   function patch(next: Partial<ChatSettingsRecord>) {
     setDraft((current) => ({ ...current, ...next }));
@@ -226,6 +252,29 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
           />
           <span>{copy.botActive}</span>
         </label>
+
+        <div className="admin-field admin-field-wide">
+          <span>{copy.alerts}</span>
+          {alerts === "granted" ? (
+            <strong>{copy.alertsGranted}</strong>
+          ) : alerts === "denied" ? (
+            <strong>{copy.alertsDenied}</strong>
+          ) : alerts === "unsupported" ? (
+            <strong>{copy.alertsUnsupported}</strong>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-outline"
+              // Browsers refuse a permission request that is not tied to a
+              // click, so this is the only place it can be asked for.
+              onClick={() => void requestAlertPermission().then(setAlerts)}
+            >
+              <Bell size={15} />
+              {copy.alertsOn}
+            </button>
+          )}
+          <small>{copy.alertsHelp}</small>
+        </div>
 
         <label className="admin-field admin-field-toggle">
           <input

@@ -24,7 +24,21 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  alertFor,
+  showChatAlert,
+  titleWithCount,
+  type ChatAlertCounts,
+} from "../lib/chat/chatAlerts";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useStorefront } from "../context/StorefrontContext";
@@ -952,6 +966,30 @@ export default function Account() {
     () => chatLeads.filter((lead) => lead.status === "new").length,
     [chatLeads],
   );
+
+  // The sidebar count is enough while an admin is in the panel and useless when
+  // they are in another tab — and a customer who has just been told a person
+  // will answer is waiting on exactly that person noticing.
+  const previousChatCounts = useRef<ChatAlertCounts | null>(null);
+  useEffect(() => {
+    const current = { awaiting: chatAwaitingHumanCount, newLeads: chatPendingLeadCount };
+    const message = alertFor(previousChatCounts.current, current, {
+      awaiting: (n) =>
+        language === "EN" ? `${n} conversation(s) waiting for a person` : `${n} яриа хүн хүлээж байна`,
+      leads: (n) =>
+        language === "EN" ? `${n} new order request(s)` : `${n} шинэ захиалгын хүсэлт`,
+    });
+    previousChatCounts.current = current;
+
+    if (message) {
+      showChatAlert(language === "EN" ? "SAVANA chat" : "SAVANA чат", message);
+    }
+
+    document.title = titleWithCount(
+      document.title,
+      chatAwaitingHumanCount + chatPendingLeadCount,
+    );
+  }, [chatAwaitingHumanCount, chatPendingLeadCount, language]);
   const saleChannelOptions = useMemo(() => getSaleChannelOptions(language), [language]);
   const saleCustomerTypeOptions = useMemo(() => getSaleCustomerTypeOptions(language), [language]);
   const implementedSections = new Set<AdminSection>([
