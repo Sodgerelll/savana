@@ -35,7 +35,12 @@ import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, ORDER_DETAILS_ASK, runTool, type ToolContext } from './_lib/tools.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 import { sweepPendingChatPayments } from './_lib/orderPaid.js';
-import { markModelUnhealthy, recordChatFailure, unhealthyModels } from './_lib/diagnostics.js';
+import {
+  markModelHealthy,
+  markModelUnhealthy,
+  recordChatFailure,
+  unhealthyModels,
+} from './_lib/diagnostics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -272,6 +277,7 @@ export default async function handler(req: any, res: any): Promise<void> {
         // and the customer waits the full twenty-five seconds either way.
         skipModels: await unhealthyModels(db),
         onModelTimedOut: (model) => void markModelUnhealthy(db, model),
+        onModelAnswered: (model) => void markModelHealthy(db, model),
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
       timing.mark('model');

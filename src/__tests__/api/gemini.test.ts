@@ -166,6 +166,17 @@ describe("callGemini", () => {
     expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
+  it("reports the model that answered, so a past failure can be forgotten", async () => {
+    // Without this the strike count only ever climbs and a model that recovered
+    // hours ago is still being skipped half an hour at a time.
+    const answered: string[] = [];
+    responders = [() => jsonResponse(textPayload("ok"))];
+
+    await callGemini({ message: "hi", onModelAnswered: (model) => answered.push(model) });
+
+    expect(answered).toEqual(["gemini-3.7-flash"]);
+  });
+
   it("reports which model timed out so the caller can note it", async () => {
     const timedOut: string[] = [];
     responders = [

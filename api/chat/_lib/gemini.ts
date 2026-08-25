@@ -140,6 +140,8 @@ export interface GeminiCallOptions {
   skipModels?: string[];
   /** Called with a model that did not answer in time, so the caller can note it. */
   onModelTimedOut?: (model: string) => void;
+  /** Called with the model that answered, so a past failure can be forgotten. */
+  onModelAnswered?: (model: string) => void;
   /**
    * Names the one tool the model is allowed to call this turn.
    *
@@ -426,6 +428,7 @@ async function generateParts(
         const candidate = result.data?.candidates?.[0];
         const parts = candidate?.content?.parts;
         if (Array.isArray(parts) && parts.length > 0) {
+          options.onModelAnswered?.(model);
           return parts;
         }
 

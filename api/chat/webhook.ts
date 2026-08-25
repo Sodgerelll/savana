@@ -33,7 +33,12 @@ import {
   sendTypingOn,
 } from './_lib/facebook.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
-import { markModelUnhealthy, recordChatFailure, unhealthyModels } from './_lib/diagnostics.js';
+import {
+  markModelHealthy,
+  markModelUnhealthy,
+  recordChatFailure,
+  unhealthyModels,
+} from './_lib/diagnostics.js';
 import {
   callGemini,
   callGeminiAgent,
@@ -586,6 +591,7 @@ async function replyToEvent(
         // the customer waits the full twenty-five seconds either way.
         skipModels: await unhealthyModels(db),
         onModelTimedOut: (model) => void markModelUnhealthy(db, model),
+        onModelAnswered: (model) => void markModelHealthy(db, model),
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
 

@@ -37,14 +37,16 @@ export async function recordChatFailure(
 }
 
 /**
- * How long a model that stopped answering is left out of the chain.
+ * How long a model is left out of the chain, lengthening each time it fails again.
  *
- * Short on purpose. The preferred model is preferred for a reason, and a slow
- * patch is not the same as being broken — five minutes of skipping it after one
- * bad turn threw away a model that was answering most of the time. Ninety
- * seconds spares a handful of customers the wait and asks again quickly.
+ * A single bad turn says almost nothing, so the first wait is short — the
+ * preferred model is preferred for a reason and deserves another try. But a
+ * model that is genuinely down stays down, and asking it again every ninety
+ * seconds means one customer in every batch waits out the full timeout for a
+ * model nobody expects to answer. Each consecutive failure doubles the wait to
+ * half an hour; one success clears the record entirely.
  */
-const UNHEALTHY_MS = 90 * 1000;
+const BACKOFF_MS = [90 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000];
 const MODEL_PREFIX = 'model:';
 
 /**
@@ -56,9 +58,37 @@ const MODEL_PREFIX = 'model:';
  * short enough that a recovered model is tried again while anyone still cares.
  */
 export async function markModelUnhealthy(db: any, model: string): Promise<void> {
-  await recordChatFailure(db, `${MODEL_PREFIX}${model}`, 'timed out', {
-    unhealthyUntil: new Date(Date.now() + UNHEALTHY_MS),
+  const id = `${MODEL_PREFIX}${model}`;
+  let strikes = 0;
+
+  try {
+    const previous = await db.collection(COLLECTION).doc(id).get();
+    // Counted from the last failure, not from the last success: a note that has
+    // aged out of the longest wait is a fresh start either way.
+    strikes = Number(previous.data()?.strikes ?? 0);
+  } catch {
+    // No history to read is the same as no history.
+  }
+
+  const wait = BACKOFF_MS[Math.min(strikes, BACKOFF_MS.length - 1)];
+  await recordChatFailure(db, id, `timed out (${strikes + 1} in a row)`, {
+    strikes: strikes + 1,
+    unhealthyUntil: new Date(Date.now() + wait),
   });
+}
+
+/**
+ * Forgets a model's failures once it answers again.
+ *
+ * Without this the strike count only ever climbs, and a model that recovered
+ * hours ago is still being skipped for half an hour at a time.
+ */
+export async function markModelHealthy(db: any, model: string): Promise<void> {
+  try {
+    await db.collection(COLLECTION).doc(`${MODEL_PREFIX}${model}`).delete();
+  } catch {
+    // Nothing to forget, or Firestore is unhappy; neither is worth a failed reply.
+  }
 }
 
 /** Models to skip this turn. Any failure here returns none, never a wrong skip. */
