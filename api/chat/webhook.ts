@@ -43,6 +43,7 @@ import {
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { sweepStaleLeads } from './_lib/followUp.js';
+import { sweepPendingChatPayments } from './_lib/orderPaid.js';
 import { checkRateLimit, markEventProcessed, releaseEvent } from './_lib/guards.js';
 import {
   createChatLead,
@@ -289,6 +290,15 @@ async function processWebhookBody(body: any): Promise<void> {
     await sweepStaleLeads(db, { token: settings.facebook.pageAccessToken });
   } catch (err) {
     console.warn('[chat/webhook] follow-up sweep failed:', (err as Error).message);
+  }
+
+  // Catches what the payment webhook drops. Internally throttled, so this is
+  // one read on almost every request and a handful of calls to Bonum now and
+  // then — cheap next to a customer who paid and was never told.
+  try {
+    await sweepPendingChatPayments(db);
+  } catch (err) {
+    console.warn('[chat/webhook] payment sweep failed:', (err as Error).message);
   }
 }
 

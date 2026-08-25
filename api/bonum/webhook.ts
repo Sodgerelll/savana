@@ -13,9 +13,7 @@ import { createHmac } from 'node:crypto';
 import { getAdminFirestore } from './_firebaseAdmin.js';
 import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
-import { appendMessage } from '../chat/_lib/conversation.js';
-import { sendText } from '../chat/_lib/facebook.js';
-import { loadChatSettings } from '../chat/_lib/settings.js';
+import { tellTheChatCustomer } from '../chat/_lib/orderPaid.js';
 
 // Validate x-checksum-v2 header using HmacSHA256 over the compact JSON body string
 function isValidChecksum(bodyStr: string, signature: string): boolean {
@@ -107,40 +105,4 @@ async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPaymen
   } catch (err) {
     console.error('[bonum/webhook] chat confirmation failed:', err);
   }
-}
-
-/**
- * Tells a customer who ordered in a chat that their payment landed.
- *
- * They paid on Bonum's page, which knows nothing about the conversation they
- * came from, so without this the thread simply goes quiet at the moment the
- * customer most wants to hear something. Orders placed on the website carry no
- * `chat` block and are left alone — the site shows them the same news itself.
- */
-async function tellTheChatCustomer(db: any, orderId: string): Promise<void> {
-  const snapshot = await db.collection('orders').doc(orderId).get();
-  const order = snapshot.exists ? snapshot.data() : null;
-  const chat = order?.chat;
-
-  if (!chat?.conversationId) {
-    return;
-  }
-
-  const orderNumber = String(order.orderNumber ?? orderId);
-  const message =
-    `Төлбөр амжилттай хийгдлээ ✅ ${orderNumber} дугаартай захиалга баталгаажлаа.
-
-` +
-    'Захиалгаа бэлтгээд удахгүй хүргэлтэд гаргана. Баярлалаа 🌿';
-
-  // Recorded either way, so the thread and the admin panel both show what the
-  // customer was told even when Facebook refuses the send.
-  if (chat.externalUserId && (chat.channel === 'facebook' || chat.channel === 'instagram')) {
-    const settings = await loadChatSettings(db);
-    if (settings.facebook.pageAccessToken) {
-      await sendText(settings.facebook.pageAccessToken, String(chat.externalUserId), message);
-    }
-  }
-
-  await appendMessage(db, String(chat.conversationId), { role: 'assistant', content: message });
 }
