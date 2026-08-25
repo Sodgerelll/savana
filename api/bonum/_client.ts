@@ -163,3 +163,28 @@ export async function bonumGet<T>(path: string): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+/**
+ * Where Bonum should send its payment notification.
+ *
+ * `VERCEL_URL` is the deployment's own address and changes with every deploy,
+ * so an invoice raised today carried a callback pointing at today's build —
+ * which is a notification aimed at a moving target, and a payment that arrives
+ * with nobody listening looks exactly like a payment that never happened.
+ * `VERCEL_PROJECT_PRODUCTION_URL` is the stable one, and an explicit
+ * BONUM_CALLBACK_BASE_URL beats both.
+ *
+ * Mirrors storefrontUrl in api/chat/_lib/buildPrompt.ts, which resolves the
+ * same question for the same reason.
+ */
+export function bonumCallbackUrl(): string {
+  const configured = (process.env.BONUM_CALLBACK_BASE_URL ?? '').trim();
+  const vercel = (
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env.VERCEL_URL ??
+    ''
+  ).trim();
+  const origin = configured || (vercel ? `https://${vercel}` : 'http://localhost:3000');
+
+  return `${origin.replace(/\/+$/, '')}/api/bonum/webhook`;
+}

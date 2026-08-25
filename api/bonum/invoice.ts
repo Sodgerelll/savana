@@ -5,7 +5,7 @@
 // Body: { amount: number, transactionId: string }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { bonumPost } from './_client.js';
+import { bonumCallbackUrl, bonumPost } from './_client.js';
 
 interface InvoiceRequestBody {
   amount: number;
@@ -30,12 +30,6 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  // Build the webhook callback URL so Bonum can notify us when payment completes.
-  const baseUrl =
-    process.env.BONUM_CALLBACK_BASE_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-
-  const callbackUrl = `${baseUrl}/api/bonum/webhook`;
 
   try {
     const result = await bonumPost<BonumInvoiceResponse>(
@@ -43,7 +37,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       {
         amount,
         transactionId,
-        callback: callbackUrl,
+        callback: bonumCallbackUrl(),
         expiresIn: 3600, // 1 hour
       },
     );

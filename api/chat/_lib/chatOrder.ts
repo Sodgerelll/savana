@@ -11,7 +11,7 @@
 // payment webhook can tell that customer, on their own channel, that it landed.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { bonumPost } from '../../bonum/_client.js';
+import { bonumCallbackUrl, bonumPost } from '../../bonum/_client.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
 import { findOpenLead, updateChatLead } from './leads.js';
@@ -120,13 +120,6 @@ export function shippingFeeFor(subtotal: number, fee: number, threshold: number)
   return fee;
 }
 
-function callbackUrl(): string {
-  const base =
-    process.env.BONUM_CALLBACK_BASE_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-  return `${base}/api/bonum/webhook`;
-}
-
 export async function createChatOrder(
   db: any,
   input: CreateChatOrderInput,
@@ -163,7 +156,7 @@ export async function createChatOrder(
       // The document id doubles as the Bonum transactionId, which is how the
       // payment webhook finds this order again.
       transactionId: ref.id,
-      callback: callbackUrl(),
+      callback: bonumCallbackUrl(),
       expiresIn: INVOICE_TTL_SECONDS,
     },
   );

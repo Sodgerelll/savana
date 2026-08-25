@@ -76,6 +76,29 @@ const LEAKED_INSTRUCTION_REPLY =
   'Уучлаарай, сүүлийн мессежийг маань үл ойшооно уу 🌿 Та юу хүсэж байгаагаа дахин бичиж өгөхгүй юу?';
 
 /**
+ * How often the typing indicator is renewed while a reply is being written.
+ *
+ * Messenger drops the bubble after about twenty seconds. A turn that takes
+ * longer than that — and one waiting out a slow model does — leaves the
+ * customer looking at a thread with nothing happening in it, which reads as the
+ * shop having ignored them rather than as an answer on its way.
+ */
+const TYPING_REFRESH_MS = 8_000;
+
+/**
+ * Keeps the typing bubble alive until the reply is ready. Returns the function
+ * that stops it, which the caller must run — an interval left behind on a
+ * serverless invocation keeps it alive and billing.
+ */
+function keepTyping(token: string, senderId: string): () => void {
+  const timer = setInterval(() => void sendTypingOn(token, senderId), TYPING_REFRESH_MS);
+  // Node keeps the process alive for a pending interval; this one is a courtesy
+  // and must never be the reason a function does not finish.
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+/**
  * Tool calls acted on in one turn. "Хоёр саван, нэг шампунь" is two; a model
  * emitting a dozen is confused, and answering all of them would be a wall of
  * messages rather than a reply.
@@ -447,144 +470,153 @@ async function replyToEvent(
   }
 
   await sendTypingOn(token, senderId);
-
-  const storefront = await loadStorefrontContext(db, new Date());
-  const toolContext: ToolContext = {
-    storefront,
-    // Photos are stored inline as `data:` URIs, which Facebook cannot fetch,
-    // and reading them with the catalogue cost more than the rest of the prompt
-    // put together. Every card points at the image endpoint, which resolves the
-    // picture from the id and answers with a placeholder when there is none —
-    // so a card is never broken by a URL that fails to load.
-    imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
-    productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
-    lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
-    placeOrder: (details) =>
-      placeChatOrder(db, storefront, { ...conversation, channel, externalUserId: senderId }, details),
-    ownOrders: () => ordersForConversation(db, conversation.id),
-  };
-
-  // A button press is an explicit instruction — run the tool directly instead
-  // of asking the model to re-derive an intent the customer already stated.
-  const directTool = postbackPayload ? resolveDirectTool(postbackPayload) : null;
-  if (directTool) {
-    const outcome = await runTool(directTool.name, directTool.args, toolContext);
-    await deliverOutcome(db, token, senderId, { ...conversation, channel }, outcome, directTool.name);
-    return;
-  }
-
-  // Only the explicit Get Started button gets the canned welcome. An ordinary
-  // first message goes to the model, whose prompt already tells it to greet
-  // once at the start — and an unmapped payload is intent we should not throw
-  // away by answering with a greeting instead.
-  if (postbackPayload === 'GET_STARTED') {
-    await sendQuickReplies(
-      token,
-      senderId,
-      settings.welcomeMessage,
-      settings.quickReplies.map((button) => ({ title: button.title, payload: button.action })),
-    );
-    await appendMessage(db, conversation.id, {
-      role: 'assistant',
-      content: settings.welcomeMessage,
-    });
-    return;
-  }
-
-  const history = await readRecentMessages(db, conversation.id);
-  // The turn just stored is the message being answered — sending it as history
-  // as well makes the model see it twice and repeat itself.
-  const priorHistory = history.slice(0, -1);
-
-  if (imageUrl) {
-    await answerImage(db, token, senderId, conversation, {
-      imageUrl,
-      caption: text,
-      history: priorHistory,
-      storefront,
-      settings,
-    });
-    return;
-  }
-
-  /** One entry per tool the model called, delivered in the order it called them. */
-  const outcomes: Array<{ outcome: Awaited<ReturnType<typeof runTool>>; toolName: string | null }> = [];
-
-  // A question the shop has already answered is served from the knowledge base
-  // for nothing, in the shop's own approved wording. The bar for a hit is high
-  // on purpose — see faqMatch — and anything short of it falls through to the
-  // model, which is the expensive but always-correct path.
-  const faqHit = text
-    ? matchFaq(text, storefront.faqs, { isFirstTurn: priorHistory.length === 0 })
-    : null;
-
-  if (faqHit) {
-    console.log(`[chat/webhook] answered from FAQ (${faqHit.similarity.toFixed(2)}): ${faqHit.question}`);
-    await deliverOutcome(db, token, senderId, { ...conversation, channel }, { text: faqHit.answer }, null);
-    return;
-  }
+  const stopTyping = keepTyping(token, senderId);
 
   try {
-    // The prompt is the same ~15,600 characters on every turn, so it is sent
-    // once to a context cache and referenced thereafter at a tenth of the
-    // price. A null handle simply means paying full price this time.
-    const cacheOptions = {
-      model: primaryModel(settings.model || undefined),
-      systemPrompt: buildStorefrontPrompt(storefront, new Date()),
-      tools: CHAT_TOOLS,
+
+    const storefront = await loadStorefrontContext(db, new Date());
+    const toolContext: ToolContext = {
+      storefront,
+      // Photos are stored inline as `data:` URIs, which Facebook cannot fetch,
+      // and reading them with the catalogue cost more than the rest of the prompt
+      // put together. Every card points at the image endpoint, which resolves the
+      // picture from the id and answers with a placeholder when there is none —
+      // so a card is never broken by a URL that fails to load.
+      imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
+      productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
+      lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
+      placeOrder: (details) =>
+        placeChatOrder(db, storefront, { ...conversation, channel, externalUserId: senderId }, details),
+      ownOrders: () => ordersForConversation(db, conversation.id),
     };
-    const cache = settings.promptCacheEnabled
-        ? await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions)
-        : null;
 
-    // When the conversation itself says which step is next, say so rather than
-    // leaving it to the model — it looped on step one often enough that
-    // customers were sending their details twice.
-    const pending = await findOpenLead(db, conversation.id);
-    const pendingItems = Array.isArray(pending?.data.items) ? pending.data.items.length : 0;
-    const forceTool =
-      text && pendingItems > 0 && extractPhone(text) ? TOOL_NAMES.CONFIRM_ORDER : undefined;
-
-    const result = await callGeminiAgent({
-      systemPrompt: cacheOptions.systemPrompt,
-      history: priorHistory,
-      message: text || String(postbackPayload ?? ''),
-      tools: CHAT_TOOLS,
-      model: settings.model || undefined,
-      temperature: settings.temperature,
-      cache,
-      forceTool,
-      // A model that timed out a moment ago will most likely time out again, and
-      // the customer waits the full twenty-five seconds either way.
-      skipModels: await unhealthyModels(db),
-      onModelTimedOut: (model) => void markModelUnhealthy(db, model),
-      onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
-    });
-
-    if (result.functionCalls.length > 0) {
-      for (const call of result.functionCalls.slice(0, MAX_TOOL_CALLS_PER_TURN)) {
-        outcomes.push({ outcome: await runTool(call.name, call.args, toolContext), toolName: call.name });
-      }
-    } else {
-      const text = result.text ?? '';
-      if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
-        console.error('[chat/webhook] model echoed its own instructions; reply withheld');
-        outcomes.push({ outcome: { text: LEAKED_INSTRUCTION_REPLY }, toolName: null });
-      } else {
-        outcomes.push({ outcome: { text }, toolName: null });
-      }
+    // A button press is an explicit instruction — run the tool directly instead
+    // of asking the model to re-derive an intent the customer already stated.
+    const directTool = postbackPayload ? resolveDirectTool(postbackPayload) : null;
+    if (directTool) {
+      const outcome = await runTool(directTool.name, directTool.args, toolContext);
+      await deliverOutcome(db, token, senderId, { ...conversation, channel }, outcome, directTool.name);
+      return;
     }
-  } catch (err) {
-    console.error('[chat/webhook] generation failed:', (err as Error).message);
-    await recordChatFailure(db, 'messenger', (err as Error).message, { channel });
-    outcomes.length = 0;
-    outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
-  }
 
-  askForOrderDetailsOnce(outcomes);
+    // Only the explicit Get Started button gets the canned welcome. An ordinary
+    // first message goes to the model, whose prompt already tells it to greet
+    // once at the start — and an unmapped payload is intent we should not throw
+    // away by answering with a greeting instead.
+    if (postbackPayload === 'GET_STARTED') {
+      await sendQuickReplies(
+        token,
+        senderId,
+        settings.welcomeMessage,
+        settings.quickReplies.map((button) => ({ title: button.title, payload: button.action })),
+      );
+      await appendMessage(db, conversation.id, {
+        role: 'assistant',
+        content: settings.welcomeMessage,
+      });
+      return;
+    }
 
-  for (const entry of outcomes) {
-    await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
+    const history = await readRecentMessages(db, conversation.id);
+    // The turn just stored is the message being answered — sending it as history
+    // as well makes the model see it twice and repeat itself.
+    const priorHistory = history.slice(0, -1);
+
+    if (imageUrl) {
+      await answerImage(db, token, senderId, conversation, {
+        imageUrl,
+        caption: text,
+        history: priorHistory,
+        storefront,
+        settings,
+      });
+      return;
+    }
+
+    /** One entry per tool the model called, delivered in the order it called them. */
+    const outcomes: Array<{ outcome: Awaited<ReturnType<typeof runTool>>; toolName: string | null }> = [];
+
+    // A question the shop has already answered is served from the knowledge base
+    // for nothing, in the shop's own approved wording. The bar for a hit is high
+    // on purpose — see faqMatch — and anything short of it falls through to the
+    // model, which is the expensive but always-correct path.
+    const faqHit = text
+      ? matchFaq(text, storefront.faqs, { isFirstTurn: priorHistory.length === 0 })
+      : null;
+
+    if (faqHit) {
+      console.log(`[chat/webhook] answered from FAQ (${faqHit.similarity.toFixed(2)}): ${faqHit.question}`);
+      await deliverOutcome(db, token, senderId, { ...conversation, channel }, { text: faqHit.answer }, null);
+      return;
+    }
+
+    try {
+      // The prompt is the same ~15,600 characters on every turn, so it is sent
+      // once to a context cache and referenced thereafter at a tenth of the
+      // price. A null handle simply means paying full price this time.
+      const cacheOptions = {
+        model: primaryModel(settings.model || undefined),
+        systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+        tools: CHAT_TOOLS,
+      };
+      const cache = settings.promptCacheEnabled
+          ? await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions)
+          : null;
+
+      // When the conversation itself says which step is next, say so rather than
+      // leaving it to the model — it looped on step one often enough that
+      // customers were sending their details twice.
+      const pending = await findOpenLead(db, conversation.id);
+      const pendingItems = Array.isArray(pending?.data.items) ? pending.data.items.length : 0;
+      const forceTool =
+        text && pendingItems > 0 && extractPhone(text) ? TOOL_NAMES.CONFIRM_ORDER : undefined;
+
+      const result = await callGeminiAgent({
+        systemPrompt: cacheOptions.systemPrompt,
+        history: priorHistory,
+        message: text || String(postbackPayload ?? ''),
+        tools: CHAT_TOOLS,
+        model: settings.model || undefined,
+        temperature: settings.temperature,
+        cache,
+        forceTool,
+        // A model that timed out a moment ago will most likely time out again, and
+        // the customer waits the full twenty-five seconds either way.
+        skipModels: await unhealthyModels(db),
+        onModelTimedOut: (model) => void markModelUnhealthy(db, model),
+        onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
+      });
+
+      if (result.functionCalls.length > 0) {
+        for (const call of result.functionCalls.slice(0, MAX_TOOL_CALLS_PER_TURN)) {
+          outcomes.push({ outcome: await runTool(call.name, call.args, toolContext), toolName: call.name });
+        }
+      } else {
+        const text = result.text ?? '';
+        if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
+          console.error('[chat/webhook] model echoed its own instructions; reply withheld');
+          outcomes.push({ outcome: { text: LEAKED_INSTRUCTION_REPLY }, toolName: null });
+        } else {
+          outcomes.push({ outcome: { text }, toolName: null });
+        }
+      }
+    } catch (err) {
+      console.error('[chat/webhook] generation failed:', (err as Error).message);
+      await recordChatFailure(db, 'messenger', (err as Error).message, { channel });
+      outcomes.length = 0;
+      outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
+    }
+
+    askForOrderDetailsOnce(outcomes);
+
+    for (const entry of outcomes) {
+      await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
+    }
+  } finally {
+    // Every path out of here stops it: an early return that left the bubble
+    // running would show the customer a reply still being written after it
+    // had arrived.
+    stopTyping();
   }
 }
 
