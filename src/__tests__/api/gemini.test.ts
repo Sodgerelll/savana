@@ -140,6 +140,45 @@ describe("callGemini", () => {
     expect(calls[0].url).toBe(calls[1].url);
   });
 
+  it("leaves out a model that recently stopped answering", async () => {
+    // Its fallback works, so the shop keeps trading — but every turn pays the
+    // full timeout on the way past, and twenty-five seconds of nothing in front
+    // of every reply is its own outage.
+    responders = [() => jsonResponse(textPayload("straight to the fallback"))];
+
+    await expect(
+      callGemini({ message: "hi", skipModels: ["gemini-3.7-flash"] }),
+    ).resolves.toBe("straight to the fallback");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain("gemini-3.6-flash");
+  });
+
+  it("keeps the chain when every model in it is marked unhealthy", async () => {
+    // A stale note must never be the reason a shop's bot says nothing at all.
+    responders = [() => jsonResponse(textPayload("tried anyway"))];
+
+    await expect(
+      callGemini({ message: "hi", skipModels: ["gemini-3.7-flash", "gemini-3.6-flash"] }),
+    ).resolves.toBe("tried anyway");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
+  });
+
+  it("reports which model timed out so the caller can note it", async () => {
+    const timedOut: string[] = [];
+    responders = [
+      () => {
+        const abort = new Error("aborted");
+        abort.name = "AbortError";
+        throw abort;
+      },
+      () => jsonResponse(textPayload("ok")),
+    ];
+
+    await callGemini({ message: "hi", onModelTimedOut: (model) => timedOut.push(model) });
+
+    expect(timedOut).toEqual(["gemini-3.7-flash"]);
+  });
+
   it("asks the fallback model when the first one does not answer in time", async () => {
     // A model that has not answered in twenty-five seconds is unlikely to
     // answer in the next twenty-five. Retrying it in place spent the whole

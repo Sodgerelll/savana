@@ -33,7 +33,7 @@ import {
   sendTypingOn,
 } from './_lib/facebook.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
-import { recordChatFailure } from './_lib/diagnostics.js';
+import { markModelUnhealthy, recordChatFailure, unhealthyModels } from './_lib/diagnostics.js';
 import {
   callGemini,
   callGeminiAgent,
@@ -541,6 +541,10 @@ async function replyToEvent(
       temperature: settings.temperature,
       cache,
       forceTool,
+      // A model that timed out a moment ago will most likely time out again, and
+      // the customer waits the full twenty-five seconds either way.
+      skipModels: await unhealthyModels(db),
+      onModelTimedOut: (model) => void markModelUnhealthy(db, model),
       onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
     });
 

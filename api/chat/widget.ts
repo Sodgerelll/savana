@@ -32,7 +32,7 @@ import { createChatLead, extractName, extractPhone, findOpenLead, updateChatLead
 import { canAnswerOnChannel, loadChatSettings } from './_lib/settings.js';
 import { CHAT_TOOLS, ORDER_DETAILS_ASK, runTool, type ToolContext } from './_lib/tools.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
-import { recordChatFailure } from './_lib/diagnostics.js';
+import { markModelUnhealthy, recordChatFailure, unhealthyModels } from './_lib/diagnostics.js';
 
 export const config = { maxDuration: 60 };
 
@@ -263,6 +263,10 @@ export default async function handler(req: any, res: any): Promise<void> {
         temperature: settings.temperature,
         cache,
         forceTool,
+        // A model that timed out a moment ago will most likely time out again,
+        // and the customer waits the full twenty-five seconds either way.
+        skipModels: await unhealthyModels(db),
+        onModelTimedOut: (model) => void markModelUnhealthy(db, model),
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
       timing.mark('model');

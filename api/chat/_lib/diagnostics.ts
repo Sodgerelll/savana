@@ -35,3 +35,39 @@ export async function recordChatFailure(
     // A diagnostic that fails is not worth failing a reply over.
   }
 }
+
+/** How long a model that stopped answering is left out of the chain. */
+const UNHEALTHY_MS = 5 * 60 * 1000;
+const MODEL_PREFIX = 'model:';
+
+/**
+ * Notes that a model did not answer in time.
+ *
+ * Its fallback works, so the shop keeps trading — but every turn pays the full
+ * timeout on the way past, and twenty-five seconds of nothing in front of every
+ * reply is its own outage. A few minutes is long enough to skip a bad patch and
+ * short enough that a recovered model is tried again while anyone still cares.
+ */
+export async function markModelUnhealthy(db: any, model: string): Promise<void> {
+  await recordChatFailure(db, `${MODEL_PREFIX}${model}`, 'timed out', {
+    unhealthyUntil: new Date(Date.now() + UNHEALTHY_MS),
+  });
+}
+
+/** Models to skip this turn. Any failure here returns none, never a wrong skip. */
+export async function unhealthyModels(db: any): Promise<string[]> {
+  try {
+    const snapshot = await db.collection(COLLECTION).get();
+    const now = Date.now();
+
+    return (snapshot.docs ?? [])
+      .filter((doc: any) => String(doc.id).startsWith(MODEL_PREFIX))
+      .filter((doc: any) => {
+        const until = doc.data()?.unhealthyUntil?.toDate?.()?.getTime?.() ?? 0;
+        return until > now;
+      })
+      .map((doc: any) => String(doc.id).slice(MODEL_PREFIX.length));
+  } catch {
+    return [];
+  }
+}

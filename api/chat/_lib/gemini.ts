@@ -107,6 +107,13 @@ export interface GeminiCallOptions {
   /** Called when the API rejects the handle, so the caller can rebuild it. */
   onCacheRejected?: () => void;
   /**
+   * Models to leave out of the chain because they recently stopped answering.
+   * Ignored if it would empty the chain — a bad note must not silence the bot.
+   */
+  skipModels?: string[];
+  /** Called with a model that did not answer in time, so the caller can note it. */
+  onModelTimedOut?: (model: string) => void;
+  /**
    * Names the one tool the model is allowed to call this turn.
    *
    * Choosing between two ordered steps turned out to be something the model
@@ -352,17 +359,15 @@ async function postToModel(
 async function generateParts(
   apiKey: string,
   body: Record<string, unknown>,
-  requestedModel?: string,
-  cache?: { name: string; model: string } | null,
-  onCacheRejected?: () => void,
+  options: GeminiCallOptions,
 ): Promise<any[]> {
   let lastError = new GeminiError('Gemini API дуудлага амжилтгүй');
   // Cleared the first time the API refuses the handle, so the rest of the
   // chain — and the retry on this very model — carries the full prompt.
-  let liveCache = cache;
+  let liveCache = options.cache;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  for (const model of resolveModelChain(requestedModel)) {
+  for (const model of healthyChain(options.model, options.skipModels)) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining < MIN_ATTEMPT_MS) {
@@ -383,7 +388,7 @@ async function generateParts(
       if (!result.ok && usedCache && looksLikeCacheRejection(result.message)) {
         console.warn(`[chat/gemini] cache rejected, falling back: ${result.message}`);
         liveCache = null;
-        onCacheRejected?.();
+        options.onCacheRejected?.();
         continue;
       }
 
@@ -424,6 +429,7 @@ async function generateParts(
       // and the fallback never got asked at all. A timeout moves on; a dropped
       // connection is still worth one more go on the same model.
       if (result.timedOut) {
+        options.onModelTimedOut?.(model);
         break;
       }
       if (attempt < MAX_ATTEMPTS_PER_MODEL - 1) {
@@ -455,7 +461,7 @@ function firstText(parts: any[]): string | null {
 export async function callGemini(options: GeminiCallOptions): Promise<string> {
   const apiKey = readApiKey();
   const body = buildRequestBody(options);
-  const parts = await generateParts(apiKey, body, options.model, options.cache, options.onCacheRejected);
+  const parts = await generateParts(apiKey, body, options);
   const text = firstText(parts);
 
   if (!text) {
@@ -476,7 +482,7 @@ export async function callGemini(options: GeminiCallOptions): Promise<string> {
 export async function callGeminiAgent(options: GeminiCallOptions): Promise<GeminiAgentResult> {
   const apiKey = readApiKey();
   const body = buildRequestBody(options);
-  const parts = await generateParts(apiKey, body, options.model, options.cache, options.onCacheRejected);
+  const parts = await generateParts(apiKey, body, options);
 
   const calls = parts
     .map((entry) => entry?.functionCall)
@@ -542,6 +548,21 @@ function normaliseForLeakCheck(value: string): string {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * The chain minus any model that recently stopped answering — unless that would
+ * leave nothing, in which case the full chain stands. A stale note about an
+ * unhealthy model must never be the reason a shop's bot says nothing at all.
+ */
+function healthyChain(requested: string | undefined, skip: string[] | undefined): string[] {
+  const chain = resolveModelChain(requested);
+  if (!skip || skip.length === 0) {
+    return chain;
+  }
+
+  const healthy = chain.filter((model) => !skip.includes(model));
+  return healthy.length > 0 ? healthy : chain;
 }
 
 export function primaryModel(requested?: string): string {
