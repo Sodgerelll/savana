@@ -84,11 +84,7 @@ const MAX_TOOL_CALLS_PER_TURN = 4;
 /** Facebook resends when it does not see a 200 within roughly 20 seconds. */
 const PER_USER_RATE_LIMIT = { max: 12, windowMs: 60_000 };
 
-const START_QUICK_REPLIES = [
-  { title: 'Бүтээгдэхүүн 🌿', payload: 'SHOW_PRODUCTS' },
-  { title: 'Хямдрал 🎁', payload: 'SHOW_PROMOTIONS' },
-  { title: 'Ажилтантай ярих ☎️', payload: 'TRANSFER_TO_STAFF' },
-];
+
 
 /**
  * Asks for the bot back. Not a tool: it changes who owns the thread, and it has
@@ -472,7 +468,12 @@ async function replyToEvent(
   // once at the start — and an unmapped payload is intent we should not throw
   // away by answering with a greeting instead.
   if (postbackPayload === 'GET_STARTED') {
-    await sendQuickReplies(token, senderId, settings.welcomeMessage, START_QUICK_REPLIES);
+    await sendQuickReplies(
+      token,
+      senderId,
+      settings.welcomeMessage,
+      settings.quickReplies.map((button) => ({ title: button.title, payload: button.action })),
+    );
     await appendMessage(db, conversation.id, {
       role: 'assistant',
       content: settings.welcomeMessage,

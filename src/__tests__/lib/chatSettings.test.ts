@@ -126,3 +126,53 @@ describe("deserializeChatSettings", () => {
     expect(DEFAULT_CHAT_SETTINGS.widget.isActive).toBe(false);
   });
 });
+
+describe("deserializeChatSettings — buttons", () => {
+  it("starts with the shop's default menu and welcome buttons", () => {
+    const result = deserializeChatSettings({});
+
+    expect(result.menuButtons.map((b) => b.action)).toEqual([
+      "SHOW_PRODUCTS",
+      "SHOW_PROMOTIONS",
+      "TRANSFER_TO_STAFF",
+      "RESUME_BOT",
+    ]);
+    expect(result.quickReplies).toHaveLength(3);
+  });
+
+  it("keeps the buttons the shop configured", () => {
+    const result = deserializeChatSettings({
+      menuButtons: [{ title: "Саван 🧼", action: "SHOW_PRODUCTS" }],
+    });
+
+    expect(result.menuButtons).toEqual([{ title: "Саван 🧼", action: "SHOW_PRODUCTS" }]);
+  });
+
+  it("drops a button the webhook would not recognise", () => {
+    // Each action runs a tool. A button carrying anything else does nothing at
+    // all when a customer presses it, which is worse than not being there.
+    const result = deserializeChatSettings({
+      menuButtons: [
+        { title: "Сайн", action: "SHOW_PRODUCTS" },
+        { title: "Муу", action: "LAUNCH_ROCKET" },
+        { title: "", action: "SHOW_PROMOTIONS" },
+      ],
+    });
+
+    expect(result.menuButtons).toEqual([{ title: "Сайн", action: "SHOW_PRODUCTS" }]);
+  });
+
+  it("falls back to the defaults rather than showing an empty menu", () => {
+    // Deleting every button is a mistake, not an instruction.
+    expect(deserializeChatSettings({ menuButtons: [] }).menuButtons.length).toBeGreaterThan(0);
+    expect(deserializeChatSettings({ quickReplies: "nonsense" }).quickReplies.length).toBeGreaterThan(0);
+  });
+
+  it("trims a title padded with spaces", () => {
+    const result = deserializeChatSettings({
+      quickReplies: [{ title: "  Хямдрал  ", action: "SHOW_PROMOTIONS" }],
+    });
+
+    expect(result.quickReplies[0].title).toBe("Хямдрал");
+  });
+});

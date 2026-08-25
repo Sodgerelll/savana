@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Check, Facebook, Link2, Power, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Facebook,
+  Link2,
+  Plus,
+  Power,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import {
   alertPermission,
   requestAlertPermission,
@@ -12,7 +22,12 @@ import {
   fetchFacebookStatus,
   type FacebookStatus,
 } from "../../lib/chat/chatApi";
-import type { ChatSettingsRecord } from "../../lib/chat/types";
+import {
+  CHAT_BUTTON_ACTIONS,
+  type ChatButton,
+  type ChatButtonAction,
+  type ChatSettingsRecord,
+} from "../../lib/chat/types";
 import type { AdminCtx } from "./adminShellTypes";
 import "./ChatAdmin.css";
 
@@ -43,6 +58,14 @@ const COPY = {
     temperature: "Temperature",
     temperatureHelp:
       "0 = тогтвортой, 1 = уран сэтгэмжтэй. Дэлгүүрт 0.5-0.7 тохиромжтой. Gemini 3 загварууд энэ утгыг хүлээж авдаггүй тул зөвхөн 2.5-д үйлчилнэ.",
+    menuSection: "Товчнууд",
+    menuButtons: "Facebook-ийн байнгын цэс",
+    menuHelp:
+      "Гурав нь дээд түвшинд харагдана; түүнээс олон бол сүүлийнхүүд «Бусад» дэд цэсэнд орно. " +
+      "Өөрчилсний дараа доорх «Facebook-д цэс суулгах» дарж хадгална.",
+    quickReplies: "Мэндчилгээний товчнууд",
+    quickRepliesHelp: "Get Started дарсан хэрэглэгчид нэг удаа харагдана.",
+    addButton: "Товч нэмэх",
     connSection: "Холболт",
     connText: "Facebook, Instagram, Webhook-ийг серверийн орчинд тохируулсан. Энд оруулах зүйл байхгүй.",
     connMessenger: "Messenger",
@@ -86,6 +109,14 @@ const COPY = {
     temperature: "Temperature",
     temperatureHelp:
       "0 = consistent, 1 = creative. 0.5–0.7 suits a shop. Gemini 3 models reject this field, so it only applies to 2.5.",
+    menuSection: "Buttons",
+    menuButtons: "Facebook persistent menu",
+    menuHelp:
+      "Three show at the top level; any beyond that share an «Other» submenu. " +
+      "Press «Install menu on Facebook» below to apply a change.",
+    quickReplies: "Welcome buttons",
+    quickRepliesHelp: "Shown once, to a customer who pressed Get Started.",
+    addButton: "Add button",
     connSection: "Connection",
     connText: "Facebook, Instagram and the webhook are configured in the server environment. Nothing to fill in here.",
     connMessenger: "Messenger",
@@ -110,6 +141,88 @@ const COPY = {
 // those models 404 for keys issued after their deprecation, so offering them
 // here would only let an admin pick a model that cannot answer.
 const MODEL_OPTIONS = ["", "gemini-3.7-flash", "gemini-3.6-flash"];
+
+/** Titles the shop can read; the payloads behind them are fixed. */
+const ACTION_LABELS: Record<ChatButtonAction, { mn: string; en: string }> = {
+  SHOW_PRODUCTS: { mn: "Бүтээгдэхүүн үзүүлэх", en: "Show products" },
+  SHOW_PROMOTIONS: { mn: "Хямдрал үзүүлэх", en: "Show promotions" },
+  TRANSFER_TO_STAFF: { mn: "Ажилтан руу шилжүүлэх", en: "Transfer to staff" },
+  RESUME_BOT: { mn: "Ботруу буцаах", en: "Back to the bot" },
+};
+
+/**
+ * Edits one list of buttons.
+ *
+ * The action is a dropdown rather than a text field: each one runs a tool, and
+ * a button whose payload the webhook does not recognise is a button that does
+ * nothing when a customer presses it.
+ */
+function ButtonListEditor({
+  buttons,
+  language,
+  addLabel,
+  onChange,
+}: {
+  buttons: ChatButton[];
+  language: string;
+  addLabel: string;
+  onChange: (next: ChatButton[]) => void;
+}) {
+  const locale = language === "EN" ? "en" : "mn";
+
+  return (
+    <div className="chat-button-editor">
+      {buttons.map((button, index) => (
+        <div className="chat-button-row" key={`${button.action}-${index}`}>
+          <input
+            className="admin-input"
+            value={button.title}
+            maxLength={30}
+            onChange={(event) =>
+              onChange(buttons.map((b, i) => (i === index ? { ...b, title: event.target.value } : b)))
+            }
+          />
+          <select
+            className="admin-select"
+            value={button.action}
+            onChange={(event) =>
+              onChange(
+                buttons.map((b, i) =>
+                  i === index ? { ...b, action: event.target.value as ChatButtonAction } : b,
+                ),
+              )
+            }
+          >
+            {CHAT_BUTTON_ACTIONS.map((action) => (
+              <option key={action} value={action}>
+                {ACTION_LABELS[action][locale]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="admin-icon-btn admin-icon-btn-neutral"
+            onClick={() => onChange(buttons.filter((_, i) => i !== index))}
+            disabled={buttons.length <= 1}
+            aria-label="—"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        className="btn btn-outline"
+        onClick={() => onChange([...buttons, { title: "", action: "SHOW_PRODUCTS" }])}
+      >
+        <Plus size={15} />
+        {addLabel}
+      </button>
+    </div>
+  );
+}
+
 
 export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
   const { language, chatSettings, chatSettingsError } = ctx;
@@ -173,6 +286,10 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
         model: draft.model,
         temperature: draft.temperature,
         widget: draft.widget,
+        // Blank titles are dropped rather than saved: a nameless button is a
+        // gap on the customer's screen.
+        menuButtons: draft.menuButtons.filter((button) => button.title.trim().length > 0),
+        quickReplies: draft.quickReplies.filter((button) => button.title.trim().length > 0),
       });
       setDirty(false);
       setSaved(true);
@@ -340,6 +457,35 @@ export default function ChatSettingsPage({ ctx }: { ctx: AdminCtx }) {
       {/* Read-only on purpose. The page token, the verify token and the app
           secret are all deployment configuration; the admin needs to know
           whether they work, never what they are. */}
+      <div className="admin-section-card">
+        <div className="admin-section-head">
+          <div>
+            <h2>{copy.menuSection}</h2>
+          </div>
+        </div>
+
+        <div className="admin-field admin-field-wide">
+          <span>{copy.menuButtons}</span>
+          <ButtonListEditor
+            buttons={draft.menuButtons}
+            language={language}
+            addLabel={copy.addButton}
+            onChange={(menuButtons) => patch({ menuButtons })}
+          />
+          <small>{copy.menuHelp}</small>
+        </div>
+
+        <div className="admin-field admin-field-wide">
+          <span>{copy.quickReplies}</span>
+          <ButtonListEditor
+            buttons={draft.quickReplies}
+            language={language}
+            addLabel={copy.addButton}
+            onChange={(quickReplies) => patch({ quickReplies })}
+          />
+          <small>{copy.quickRepliesHelp}</small>
+        </div>
+      </div>
       <div className="admin-section-card">
         <div className="admin-section-head">
           <div>

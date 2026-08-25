@@ -11,25 +11,41 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { requirePrivilegedCaller } from './_lib/auth.js';
 import { applyMessengerProfile, getPageName } from './_lib/facebook.js';
-import { facebookComesFromEnv, loadChatSettings } from './_lib/settings.js';
+import { facebookComesFromEnv, loadChatSettings, type ChatButton } from './_lib/settings.js';
 
 export const config = { maxDuration: 30 };
 
-/** Matches START_QUICK_REPLIES in the webhook so both entry points agree. */
-const DEFAULT_MENU_ITEMS = [
-  { title: 'Бүтээгдэхүүн 🌿', payload: 'SHOW_PRODUCTS' },
-  { title: 'Хямдрал 🎁', payload: 'SHOW_PROMOTIONS' },
-  // Messenger shows three entries at the top, and both of these have to be
-  // reachable: quick replies vanish the moment the customer types anything, and
-  // the thread they are stuck in may be hours old by the time they want out.
-  {
-    title: 'Тусламж ☎️',
-    items: [
-      { title: 'Ажилтантай ярих', payload: 'TRANSFER_TO_STAFF' },
-      { title: 'Ботруу буцах 🤖', payload: 'RESUME_BOT' },
-    ],
-  },
-];
+/** Messenger shows three entries at the top level; the rest share a submenu. */
+const MAX_TOP_LEVEL = 3;
+const SUBMENU_TITLE = 'Бусад ☰';
+
+/**
+ * Lays the shop's buttons out the way Messenger will accept them.
+ *
+ * Three fit across the top. A fourth and beyond would be dropped silently, so
+ * the last slot becomes a submenu holding everything that did not fit — which
+ * is how four buttons were reachable before this was configurable, and stays
+ * true however many the shop adds.
+ */
+function toMenuItems(buttons: ChatButton[]) {
+  if (buttons.length <= MAX_TOP_LEVEL) {
+    return buttons.map((button) => ({ title: button.title, payload: button.action }));
+  }
+
+  return [
+    ...buttons.slice(0, MAX_TOP_LEVEL - 1).map((button) => ({
+      title: button.title,
+      payload: button.action,
+    })),
+    {
+      title: SUBMENU_TITLE,
+      items: buttons.slice(MAX_TOP_LEVEL - 1).map((button) => ({
+        title: button.title,
+        payload: button.action,
+      })),
+    },
+  ];
+}
 
 const NOT_CONFIGURED = 'Facebook холбогдоогүй байна. FB_PAGE_ACCESS_TOKEN тохируулна уу.';
 
@@ -78,7 +94,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     await applyMessengerProfile(settings.facebook.pageAccessToken, {
       greeting: settings.welcomeMessage,
-      menuItems: DEFAULT_MENU_ITEMS,
+      menuItems: toMenuItems(settings.menuButtons),
     });
 
     res.status(200).json({

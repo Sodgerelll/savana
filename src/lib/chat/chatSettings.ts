@@ -9,11 +9,36 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import {
+  CHAT_BUTTON_ACTIONS,
   CHAT_COLLECTIONS,
   CHAT_SETTINGS_DOC_ID,
   DEFAULT_CHAT_SETTINGS,
+  type ChatButton,
+  type ChatButtonAction,
   type ChatSettingsRecord,
 } from "./types";
+
+/** Mirrors asButtons in api/chat/_lib/settings.ts: unusable entries are dropped. */
+function asButtons(value: unknown, fallback: ChatButton[]): ChatButton[] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const buttons = value
+    .map((entry) => asRecord(entry))
+    .map((entry) => ({
+      title: typeof entry.title === "string" ? entry.title.trim() : "",
+      action: entry.action as ChatButtonAction,
+    }))
+    .filter(
+      (entry): entry is ChatButton =>
+        entry.title.length > 0 && CHAT_BUTTON_ACTIONS.includes(entry.action),
+    );
+
+  // An empty list is a mistake rather than an instruction — a menu with no
+  // buttons helps nobody, so the defaults stand.
+  return buttons.length > 0 ? buttons : fallback;
+}
 
 const settingsDocRef = doc(db, CHAT_COLLECTIONS.SETTINGS, CHAT_SETTINGS_DOC_ID);
 
@@ -72,6 +97,8 @@ export function deserializeChatSettings(data: Record<string, unknown> | undefine
     handoverThreshold: asNumber(source.handoverThreshold, DEFAULT_CHAT_SETTINGS.handoverThreshold),
     model: asString(source.model, DEFAULT_CHAT_SETTINGS.model),
     temperature: asNumber(source.temperature, DEFAULT_CHAT_SETTINGS.temperature),
+    menuButtons: asButtons(source.menuButtons, DEFAULT_CHAT_SETTINGS.menuButtons),
+    quickReplies: asButtons(source.quickReplies, DEFAULT_CHAT_SETTINGS.quickReplies),
     // `source.facebook` is read past on purpose: a document written before the
     // credentials moved into the environment may still carry a page token, and
     // nothing in the browser has any business holding one.

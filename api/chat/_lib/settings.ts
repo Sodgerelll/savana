@@ -9,6 +9,63 @@ import { resolvePageToken } from './pageToken.js';
 
 export const CHAT_SETTINGS_PATH = 'chat_settings/main';
 
+/**
+ * Buttons the shop can put in front of a customer.
+ *
+ * A fixed set on purpose: each one runs a tool, and a button whose payload the
+ * webhook does not recognise is a button that does nothing when pressed. The
+ * shop chooses which appear and what they say, not what they do.
+ */
+export const BUTTON_ACTIONS = [
+  'SHOW_PRODUCTS',
+  'SHOW_PROMOTIONS',
+  'TRANSFER_TO_STAFF',
+  'RESUME_BOT',
+] as const;
+
+export type ButtonAction = (typeof BUTTON_ACTIONS)[number];
+
+export interface ChatButton {
+  title: string;
+  action: ButtonAction;
+}
+
+/** Shown on the Facebook menu when the shop has not chosen its own. */
+export const DEFAULT_MENU_BUTTONS: ChatButton[] = [
+  { title: 'Бүтээгдэхүүн 🌿', action: 'SHOW_PRODUCTS' },
+  { title: 'Хямдрал 🎁', action: 'SHOW_PROMOTIONS' },
+  { title: 'Ажилтантай ярих ☎️', action: 'TRANSFER_TO_STAFF' },
+  { title: 'Ботруу буцах 🤖', action: 'RESUME_BOT' },
+];
+
+/** Offered after Get Started when the shop has not chosen its own. */
+export const DEFAULT_QUICK_REPLIES: ChatButton[] = [
+  { title: 'Бүтээгдэхүүн 🌿', action: 'SHOW_PRODUCTS' },
+  { title: 'Хямдрал 🎁', action: 'SHOW_PROMOTIONS' },
+  { title: 'Ажилтантай ярих ☎️', action: 'TRANSFER_TO_STAFF' },
+];
+
+/** Keeps a stored list usable: unknown actions and blank titles are dropped. */
+function asButtons(value: unknown, fallback: ChatButton[]): ChatButton[] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const buttons = value
+    .map((entry: any) => ({
+      title: typeof entry?.title === 'string' ? entry.title.trim() : '',
+      action: entry?.action,
+    }))
+    .filter(
+      (entry): entry is ChatButton =>
+        entry.title.length > 0 && BUTTON_ACTIONS.includes(entry.action),
+    );
+
+  // An empty list means the shop deleted everything, which is a mistake rather
+  // than an instruction — a menu with no buttons helps nobody.
+  return buttons.length > 0 ? buttons : fallback;
+}
+
 export interface ServerChatSettings {
   isActive: boolean;
   botName: string;
@@ -24,6 +81,10 @@ export interface ServerChatSettings {
    * deployment.
    */
   promptCacheEnabled: boolean;
+  /** Facebook's persistent menu, in order. */
+  menuButtons: ChatButton[];
+  /** Offered once, after Get Started. */
+  quickReplies: ChatButton[];
   facebook: {
     isActive: boolean;
     pageId: string;
@@ -46,6 +107,8 @@ export const DEFAULT_SERVER_CHAT_SETTINGS: ServerChatSettings = {
   model: '',
   temperature: 0.7,
   promptCacheEnabled: true,
+  menuButtons: DEFAULT_MENU_BUTTONS,
+  quickReplies: DEFAULT_QUICK_REPLIES,
   facebook: {
     isActive: false,
     pageId: '',
@@ -84,6 +147,8 @@ export function deserializeServerChatSettings(data: any): ServerChatSettings {
     model: asString(source.model, defaults.model),
     temperature: asNumber(source.temperature, defaults.temperature),
     promptCacheEnabled: asBoolean(source.promptCacheEnabled, defaults.promptCacheEnabled),
+    menuButtons: asButtons(source.menuButtons, defaults.menuButtons),
+    quickReplies: asButtons(source.quickReplies, defaults.quickReplies),
     facebook: {
       isActive: asBoolean(facebook.isActive, defaults.facebook.isActive),
       pageId: asString(facebook.pageId, defaults.facebook.pageId),

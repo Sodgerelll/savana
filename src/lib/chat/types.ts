@@ -140,6 +140,10 @@ export interface ChatSettingsRecord {
   /** Model id from the admin picker; empty means use the server's default chain. */
   model: string;
   temperature: number;
+  /** Facebook's persistent menu, in order. Mirrors api/chat/_lib/settings.ts. */
+  menuButtons: ChatButton[];
+  /** Offered once, after Get Started. */
+  quickReplies: ChatButton[];
   widget: ChatWidgetSettings;
   updatedAt: string | null;
 }
@@ -147,6 +151,38 @@ export interface ChatSettingsRecord {
 // credential that can post as the brand, so it is configured in the deployment
 // environment (FB_PAGE_ACCESS_TOKEN) and read only by api/chat/**. Nothing in
 // the admin bundle stores it, renders it, or can overwrite it.
+
+/**
+ * Buttons the shop can put in front of a customer. The action set is fixed —
+ * each one runs a tool, and a button the webhook does not recognise is a button
+ * that does nothing when pressed.
+ */
+export const CHAT_BUTTON_ACTIONS = [
+  "SHOW_PRODUCTS",
+  "SHOW_PROMOTIONS",
+  "TRANSFER_TO_STAFF",
+  "RESUME_BOT",
+] as const;
+
+export type ChatButtonAction = (typeof CHAT_BUTTON_ACTIONS)[number];
+
+export interface ChatButton {
+  title: string;
+  action: ChatButtonAction;
+}
+
+export const DEFAULT_MENU_BUTTONS: ChatButton[] = [
+  { title: "Бүтээгдэхүүн 🌿", action: "SHOW_PRODUCTS" },
+  { title: "Хямдрал 🎁", action: "SHOW_PROMOTIONS" },
+  { title: "Ажилтантай ярих ☎️", action: "TRANSFER_TO_STAFF" },
+  { title: "Ботруу буцах 🤖", action: "RESUME_BOT" },
+];
+
+export const DEFAULT_QUICK_REPLIES: ChatButton[] = [
+  { title: "Бүтээгдэхүүн 🌿", action: "SHOW_PRODUCTS" },
+  { title: "Хямдрал 🎁", action: "SHOW_PROMOTIONS" },
+  { title: "Ажилтантай ярих ☎️", action: "TRANSFER_TO_STAFF" },
+];
 
 export interface ChatWidgetSettings {
   isActive: boolean;
@@ -163,6 +199,8 @@ export const DEFAULT_CHAT_SETTINGS: ChatSettingsRecord = {
   handoverThreshold: 2,
   model: "",
   temperature: 0.7,
+  menuButtons: DEFAULT_MENU_BUTTONS,
+  quickReplies: DEFAULT_QUICK_REPLIES,
   widget: {
     isActive: false,
     primaryColor: "#3f5d45",
