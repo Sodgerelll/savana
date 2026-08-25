@@ -50,6 +50,31 @@ const MAX_TOOL_CALLS_PER_TURN = 4;
 const LEAKED_INSTRUCTION_REPLY =
   'Уучлаарай, сүүлийн мессежийг маань үл ойшооно уу 🌿 Та юу хүсэж байгаагаа дахин бичиж өгөхгүй юу?';
 
+/**
+ * Where a turn's time went, reported as a Server-Timing header.
+ *
+ * A reply that takes forty seconds and one that takes eight look the same from
+ * the outside — both arrive — so the only way to know which part is slow is to
+ * have the parts say so. Standard header, no payload change, and it costs a
+ * subtraction per phase.
+ */
+function stopwatch() {
+  const start = Date.now();
+  let last = start;
+  const marks: string[] = [];
+
+  return {
+    mark(name: string) {
+      const now = Date.now();
+      marks.push(`${name};dur=${now - last}`);
+      last = now;
+    },
+    header() {
+      return [...marks, `total;dur=${Date.now() - start}`].join(', ');
+    },
+  };
+}
+
 /** Mirrors the Messenger wording, so the two channels sound like one shop. */
 const RESUMED_REPLY = 'Дахин туслахад бэлэн боллоо 🌿 Юу асуух вэ?';
 
@@ -118,9 +143,12 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
+  const timing = stopwatch();
+
   try {
     const db = await dbPromise;
     const settings = await loadChatSettings(db);
+    timing.mark('settings');
 
     if (!canAnswerOnChannel(settings, 'widget')) {
       res.status(503).json({ error: 'Онлайн туслах одоогоор идэвхгүй байна.' });
@@ -164,6 +192,8 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
 
     const storefront = await loadStorefrontContext(db, new Date());
+    timing.mark('context');
+
     const toolContext: ToolContext = {
       storefront,
       // See the note in webhook.ts: the picture is resolved from the id rather
@@ -212,11 +242,14 @@ export default async function handler(req: any, res: any): Promise<void> {
         systemPrompt: buildStorefrontPrompt(storefront, new Date()),
         tools: CHAT_TOOLS,
       };
+      timing.mark('prompt');
       const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
+      timing.mark('cache');
 
       // See webhook.ts: where the conversation already says which step is next,
       // the caller decides and the model only reads out the details.
       const pending = await findOpenLead(db, conversation.id);
+      timing.mark('pending');
       const pendingItems = Array.isArray(pending?.data.items) ? pending.data.items.length : 0;
       const forceTool = pendingItems > 0 && extractPhone(message) ? 'confirm_order' : undefined;
 
@@ -231,6 +264,7 @@ export default async function handler(req: any, res: any): Promise<void> {
         forceTool,
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
+      timing.mark('model');
 
       // One message can name two products; the widget answers in one reply, so
       // the parts are joined rather than sent one after another.
@@ -284,6 +318,8 @@ export default async function handler(req: any, res: any): Promise<void> {
       });
     }
 
+    timing.mark('tools');
+    res.setHeader('Server-Timing', timing.header());
     res.status(200).json({ reply: text, products, handedOver, payUrl });
   } catch (err) {
     console.error('[chat/widget] failed:', (err as Error).message);
