@@ -25,7 +25,7 @@ import {
   geminiErrorToUserMessage,
   looksLikeOurOwnInstructions,
   primaryModel,
-  probeGemini,
+  probeEveryModel,
   shouldEscalateAfterFailure,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
