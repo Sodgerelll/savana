@@ -544,6 +544,21 @@ export function geminiErrorToUserMessage(err: unknown): string {
 }
 
 /**
+ * Whether a failed turn is worth putting in front of a person.
+ *
+ * Two of these are the model doing its job: a request it will not answer, and
+ * an answer that ran past its budget. Everything else — every model in the
+ * chain timing out, a quota, a key that stopped working — is the shop being
+ * unable to answer a customer who asked, which is exactly what a human is for.
+ */
+export function shouldEscalateAfterFailure(err: unknown): boolean {
+  if (err instanceof GeminiError) {
+    return err.message !== 'BLOCKED' && err.message !== 'MAX_TOKENS';
+  }
+  return true;
+}
+
+/**
  * The model a request will actually be sent to first.
  *
  * A context cache belongs to one model, so the caller has to build it for the

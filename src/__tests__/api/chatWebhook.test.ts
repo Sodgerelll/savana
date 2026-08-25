@@ -48,6 +48,7 @@ vi.mock("../../../api/chat/_lib/gemini.js", async () => {
 
 import handler from "../../../api/chat/webhook";
 import { clearStorefrontContextCache } from "../../../api/chat/_lib/buildPrompt";
+import { GeminiError } from "../../../api/chat/_lib/gemini";
 
 /** callGeminiAgent reports the first call and the full list; fixtures set both. */
 function agentCall(call: { name: string; args: Record<string, unknown> }) {
@@ -715,8 +716,31 @@ describe("text messages", () => {
     expect(history.map((entry: { content: string }) => entry.content)).not.toContain("хоёр");
   });
 
-  it("tells the customer something went wrong when generation fails", async () => {
+  it("hands the customer to a person when the model cannot answer at all", async () => {
+    // "Could not answer" is a dead end. The failure is the shop's, not the
+    // customer's, and a person is exactly what the shop has for that.
     mocks.callGeminiAgent.mockRejectedValue(new Error("gemini down"));
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
+
+    // Handed over, so it goes out with the way-back quick reply attached.
+    expect(mocks.sendQuickReplies).toHaveBeenCalledWith(
+      PAGE_TOKEN,
+      SENDER,
+      expect.stringContaining("Ажилтан"),
+      expect.arrayContaining([expect.objectContaining({ payload: "RESUME_BOT" })]),
+    );
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).toMatchObject({
+      status: "handover",
+      handoverReason: expect.stringContaining("gemini down"),
+    });
+  });
+
+  it("does not escalate a request the model refused on purpose", async () => {
+    // A blocked prompt is the model doing its job; waking a person for it would
+    // train the shop to ignore the queue.
+    mocks.callGeminiAgent.mockRejectedValue(new GeminiError("BLOCKED"));
     const { res } = mockRes();
 
     await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
@@ -724,8 +748,11 @@ describe("text messages", () => {
     expect(mocks.sendText).toHaveBeenCalledWith(
       PAGE_TOKEN,
       SENDER,
-      "Хариу авч чадсангүй. Дахин оролдоно уу.",
+      "Энэ хүсэлтэд хариулах боломжгүй байна.",
     );
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).not.toMatchObject({
+      status: "handover",
+    });
   });
 });
 

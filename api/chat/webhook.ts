@@ -40,6 +40,7 @@ import {
   geminiErrorToUserMessage,
   looksLikeOurOwnInstructions,
   primaryModel,
+  shouldEscalateAfterFailure,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { sweepStaleLeads } from './_lib/followUp.js';
@@ -604,7 +605,21 @@ async function replyToEvent(
       console.error('[chat/webhook] generation failed:', (err as Error).message);
       await recordChatFailure(db, 'messenger', (err as Error).message, { channel });
       outcomes.length = 0;
-      outcomes.push({ outcome: { text: geminiErrorToUserMessage(err) }, toolName: null });
+
+      // A customer who asked and got "could not answer" has been handed a dead
+      // end. When the failure is ours rather than theirs, give them a person
+      // instead: the shop sees a waiting thread and they get an answer.
+      outcomes.push(
+        shouldEscalateAfterFailure(err)
+          ? {
+              outcome: {
+                text: 'Уучлаарай, яг одоо хариулж чадахгүй байна. Ажилтан удахгүй хариу өгнө ☎️',
+                handoverReason: `Бот хариулж чадсангүй: ${(err as Error).message}`,
+              },
+              toolName: null,
+            }
+          : { outcome: { text: geminiErrorToUserMessage(err) }, toolName: null },
+      );
     }
 
     askForOrderDetailsOnce(outcomes);

@@ -25,6 +25,7 @@ import {
   geminiErrorToUserMessage,
   looksLikeOurOwnInstructions,
   primaryModel,
+  shouldEscalateAfterFailure,
 } from './_lib/gemini.js';
 import { forgetPromptCache, getOrCreatePromptCache } from './_lib/promptCache.js';
 import { checkRateLimit } from './_lib/guards.js';
@@ -316,7 +317,18 @@ export default async function handler(req: any, res: any): Promise<void> {
     } catch (err) {
       console.error('[chat/widget] generation failed:', (err as Error).message);
       await recordChatFailure(db, 'widget', (err as Error).message);
-      text = geminiErrorToUserMessage(err);
+
+      // See webhook.ts: a failure that is ours goes to a person rather than
+      // leaving the customer with nowhere to go.
+      if (shouldEscalateAfterFailure(err)) {
+        text = 'Уучлаарай, яг одоо хариулж чадахгүй байна. Ажилтан удахгүй хариу өгнө ☎️';
+        handedOver = true;
+        await setConversationStatus(db, conversation.id, 'handover', {
+          handoverReason: `Бот хариулж чадсангүй: ${(err as Error).message}`,
+        });
+      } else {
+        text = geminiErrorToUserMessage(err);
+      }
     }
 
     if (text || products.length > 0) {

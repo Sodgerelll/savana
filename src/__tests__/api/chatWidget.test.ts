@@ -338,14 +338,15 @@ describe("POST /api/chat/widget", () => {
     expect(rateLimitKeys).toEqual(["chat_rate_limits/widget-ip:203_0_113_9"]);
   });
 
-  it("returns a friendly message rather than an error when generation fails", async () => {
+  it("hands the visitor to a person when the model cannot answer at all", async () => {
     mocks.callGeminiAgent.mockRejectedValue(new Error("gemini down"));
     const { res, captured } = mockRes();
 
     await handler(post({ sessionId: SESSION, message: "сайн уу" }), res);
 
     expect(captured.status).toBe(200);
-    expect(captured.body.reply).toBe("Хариу авч чадсангүй. Дахин оролдоно уу.");
+    expect(String(captured.body.reply)).toContain("Ажилтан");
+    expect(captured.body.handedOver).toBe(true);
   });
 
   it("returns product cards when the bot shows the catalog", async () => {
