@@ -561,13 +561,12 @@ export function geminiErrorToUserMessage(err: unknown): string {
  *
  * Costs one call, and only on a turn that has already failed.
  */
-export async function probeGemini(): Promise<string> {
+export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return 'no api key';
   }
 
-  const model = DEFAULT_MODELS[DEFAULT_MODELS.length - 1];
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
@@ -585,21 +584,35 @@ export async function probeGemini(): Promise<string> {
 
     const ms = Date.now() - started;
     if (res.ok) {
-      return `reachable in ${ms}ms — the payload is ours to fix`;
+      return `${model} answered a two-word prompt in ${ms}ms — the payload is ours to fix`;
     }
 
     const detail = await res
       .json()
       .then((body: any) => body?.error?.message ?? '')
       .catch(() => '');
-    return `HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`;
+    return `${model} HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`;
   } catch (err) {
     const ms = Date.now() - started;
     const aborted = err instanceof Error && err.name === 'AbortError';
-    return aborted ? `unreachable — even a two-word prompt timed out after ${ms}ms` : `request failed after ${ms}ms`;
+    return aborted
+      ? `${model} did not answer even a two-word prompt in ${ms}ms`
+      : `${model} request failed after ${ms}ms`;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Probes each model in the chain and reports them together.
+ *
+ * Naming the unwell one matters: "3.7 did not answer a two-word prompt while
+ * 3.6 answered in 300ms" is a sentence somebody can act on, and it is not the
+ * same problem as every model being unreachable.
+ */
+export async function probeEveryModel(): Promise<string> {
+  const results = await Promise.all(DEFAULT_MODELS.map((model) => probeGemini(model)));
+  return results.join(' | ').slice(0, 600);
 }
 
 /**

@@ -325,7 +325,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       console.error('[chat/widget] generation failed:', (err as Error).message);
       await recordChatFailure(db, 'widget', (err as Error).message, {
         // Says whose fault it was, so nobody has to guess next time.
-        probe: await probeGemini(),
+        probe: await probeEveryModel(),
       });
 
       // See webhook.ts: a failure that is ours goes to a person rather than

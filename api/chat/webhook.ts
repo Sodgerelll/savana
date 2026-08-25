@@ -613,7 +613,7 @@ async function replyToEvent(
       await recordChatFailure(db, 'messenger', (err as Error).message, {
         channel,
         // Says whose fault it was, so nobody has to guess next time.
-        probe: await probeGemini(),
+        probe: await probeEveryModel(),
       });
       outcomes.length = 0;
 
