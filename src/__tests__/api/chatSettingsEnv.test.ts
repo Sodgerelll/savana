@@ -162,6 +162,16 @@ describe("Facebook credentials from the environment", () => {
     expect(canAnswerOnChannel(settings, "facebook")).toBe(false);
   });
 
+  it("caches the prompt unless the shop turns it off", async () => {
+    // A cache is a thing that can go wrong on the far side of an API, and when
+    // it does the shop needs to be able to stop using it without a deployment.
+    expect((await loadChatSettings(fakeDb({ isActive: true }))).promptCacheEnabled).toBe(true);
+    expect(
+      (await loadChatSettings(fakeDb({ isActive: true, promptCacheEnabled: false })))
+        .promptCacheEnabled,
+    ).toBe(false);
+  });
+
   it("answers on the site widget once the bot itself is switched on", async () => {
     // Unlike Facebook the widget has no credential to configure, so the master
     // switch is the only deliberate act there is. Documents written before the

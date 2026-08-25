@@ -244,7 +244,9 @@ export default async function handler(req: any, res: any): Promise<void> {
         tools: CHAT_TOOLS,
       };
       timing.mark('prompt');
-      const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
+      const cache = settings.promptCacheEnabled
+        ? await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions)
+        : null;
       timing.mark('cache');
 
       // See webhook.ts: where the conversation already says which step is next,

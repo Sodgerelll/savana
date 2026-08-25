@@ -522,7 +522,9 @@ async function replyToEvent(
       systemPrompt: buildStorefrontPrompt(storefront, new Date()),
       tools: CHAT_TOOLS,
     };
-    const cache = await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions);
+    const cache = settings.promptCacheEnabled
+        ? await getOrCreatePromptCache(db, process.env.GEMINI_API_KEY ?? '', cacheOptions)
+        : null;
 
     // When the conversation itself says which step is next, say so rather than
     // leaving it to the model — it looped on step one often enough that

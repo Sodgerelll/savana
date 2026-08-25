@@ -16,6 +16,14 @@ export interface ServerChatSettings {
   handoverThreshold: number;
   model: string;
   temperature: number;
+  /**
+   * Whether the system prompt is sent to a context cache and referenced
+   * thereafter. On by default because it cuts the input price roughly tenfold;
+   * a switch because a cache is a thing that can go wrong on the far side of an
+   * API, and when it does the shop needs to be able to turn it off without a
+   * deployment.
+   */
+  promptCacheEnabled: boolean;
   facebook: {
     isActive: boolean;
     pageId: string;
@@ -37,6 +45,7 @@ export const DEFAULT_SERVER_CHAT_SETTINGS: ServerChatSettings = {
   handoverThreshold: 2,
   model: '',
   temperature: 0.7,
+  promptCacheEnabled: true,
   facebook: {
     isActive: false,
     pageId: '',
@@ -74,6 +83,7 @@ export function deserializeServerChatSettings(data: any): ServerChatSettings {
     handoverThreshold: asNumber(source.handoverThreshold, defaults.handoverThreshold),
     model: asString(source.model, defaults.model),
     temperature: asNumber(source.temperature, defaults.temperature),
+    promptCacheEnabled: asBoolean(source.promptCacheEnabled, defaults.promptCacheEnabled),
     facebook: {
       isActive: asBoolean(facebook.isActive, defaults.facebook.isActive),
       pageId: asString(facebook.pageId, defaults.facebook.pageId),
