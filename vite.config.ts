@@ -471,6 +471,25 @@ function bonumDevPlugin(): Plugin {
     },
   }
 }
+// ─── Service worker guard ─────────────────────────────────────────────────────
+// Workbox writes the generated service worker by pasting absolute node_modules
+// paths into import statements, unquoted. A checkout under a directory whose
+// name contains an apostrophe — "C:Ganbayar's Work..." — therefore produces
+// a file that cannot parse, and the build fails with a syntax error nobody can
+// act on. The deployment path has no apostrophe and is unaffected.
+//
+// Rather than let `npm run build` be unusable on the machine the code is written
+// on, the PWA is skipped there and the build reports why. Everything else is
+// built exactly as it is in production.
+const PROJECT_PATH_IS_SW_SAFE = !process.cwd().includes("'")
+
+if (!PROJECT_PATH_IS_SW_SAFE) {
+  console.warn(
+    '[vite] project path contains an apostrophe; skipping the service worker. ' +
+      'Deployments are unaffected — rename the folder to build it here.',
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default defineConfig({
@@ -480,6 +499,7 @@ export default defineConfig({
     bonumDevPlugin(),
     analyticsDevPlugin(),
     VitePWA({
+      disable: !PROJECT_PATH_IS_SW_SAFE,
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png', 'vite.svg'],
       manifest: {

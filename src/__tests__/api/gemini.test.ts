@@ -140,6 +140,32 @@ describe("callGemini", () => {
     expect(calls[0].url).toBe(calls[1].url);
   });
 
+  it("stops trying when there is no time left rather than running past its host", async () => {
+    // Two models, two attempts each, twenty-five seconds apiece is a hundred
+    // seconds, and the function this runs in is cut off at sixty — so the slow
+    // path did not fail slowly, it failed with nothing at all.
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+
+    responders = [
+      () => {
+        // Each attempt burns most of the budget before failing at the transport
+        // level, which is the case that used to retry regardless.
+        now += 25_000;
+        throw new TypeError("network down");
+      },
+      () => {
+        now += 25_000;
+        throw new TypeError("network down");
+      },
+      () => jsonResponse(textPayload("never reached")),
+    ];
+
+    await expect(callGemini({ message: "hi" })).rejects.toThrow();
+    // Two attempts fit inside the budget; the third had nothing left to use.
+    expect(calls).toHaveLength(2);
+  });
+
   it("rejects with a key-free message once every model fails", async () => {
     responders = Array.from({ length: 6 }, () => () => jsonResponse({}, 503));
 

@@ -32,6 +32,20 @@ const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 const ALLOWED_REQUESTED = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 
 const TIMEOUT_MS = 25_000;
+
+/**
+ * How long the whole chain may take, retries and fallbacks included.
+ *
+ * Two models, two attempts each, twenty-five seconds apiece is a hundred
+ * seconds — and the function it runs in is cut off at sixty, so the slow path
+ * did not fail slowly, it failed with nothing at all. The budget is what keeps
+ * the arithmetic honest: attempts get whatever is left, and once too little is
+ * left to be worth starting, the last error is reported instead.
+ */
+const TOTAL_BUDGET_MS = 40_000;
+
+/** Below this there is not enough time left for a call to be worth starting. */
+const MIN_ATTEMPT_MS = 5_000;
 const MAX_ATTEMPTS_PER_MODEL = 2;
 const RETRY_BACKOFF_MS = 400;
 const DEFAULT_MAX_OUTPUT_TOKENS = 800;
@@ -275,10 +289,11 @@ async function postToModel(
   apiKey: string,
   model: string,
   requestBody: Record<string, unknown>,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<{ ok: true; data: any } | { ok: false; status: number | null; message: string }> {
   const body = configForModel(requestBody, model);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${API_BASE}/${model}:generateContent`, {
@@ -341,11 +356,23 @@ async function generateParts(
   // Cleared the first time the API refuses the handle, so the rest of the
   // chain — and the retry on this very model — carries the full prompt.
   let liveCache = cache;
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   for (const model of resolveModelChain(requestedModel)) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ATTEMPT_MS) {
+        console.warn('[chat/gemini] out of time; reporting the last error rather than trying again');
+        throw lastError;
+      }
+
       const usedCache = Boolean(liveCache && liveCache.model === model);
-      const result = await postToModel(apiKey, model, applyCache(body, model, liveCache));
+      const result = await postToModel(
+        apiKey,
+        model,
+        applyCache(body, model, liveCache),
+        Math.min(TIMEOUT_MS, remaining),
+      );
 
       // A rejected handle is not a broken model. Drop it and let the retry
       // below go out at full price rather than failing the customer's turn.
