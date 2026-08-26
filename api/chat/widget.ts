@@ -156,6 +156,17 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   try {
     const db = await dbPromise;
+
+    // Both start here. Each is a separate journey to Firestore, and on a cold
+    // instance the first of them pays for the handshake and the access token
+    // while the second waits its turn for no reason — nearly two seconds of a
+    // ten-second reply. Neither reads what the other writes.
+    //
+    // Ahead of the rate limit, unlike the checks below, because the catalogue
+    // is memoised for a minute: a flood costs one read per minute per instance,
+    // not one per request, and settings was already read before any check.
+    const storefrontPromise = loadStorefrontContext(db, new Date());
+    void storefrontPromise.catch(() => {});
     // Split from the read that follows it because the two have nothing in
     // common: this is the Admin SDK waking up — importing itself, parsing the
     // service account, trading it for an access token — and it is the same
@@ -180,14 +191,6 @@ export default async function handler(req: any, res: any): Promise<void> {
       res.status(429).json({ error: 'Хэт олон хүсэлт илгээлээ. Түр хүлээгээд дахин оролдоно уу.' });
       return;
     }
-
-    // Started here rather than where it is read. The catalogue is the slowest
-    // thing this route asks Firestore for and none of the bookkeeping below
-    // depends on it, so it runs alongside instead of after. After the rate
-    // limit, so hammering the endpoint cannot make us read it; the handler
-    // keeps an early return from leaving the rejection unobserved.
-    const storefrontPromise = loadStorefrontContext(db, new Date());
-    void storefrontPromise.catch(() => {});
 
     const conversation = await ensureConversation(db, {
       channel: 'widget',

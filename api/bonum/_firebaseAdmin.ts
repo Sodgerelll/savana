@@ -28,21 +28,15 @@ export function getAdminFirestore(): Promise<any> | null {
   if (!_dbPromise) {
     _dbPromise = (async () => {
       const app = await ensureApp(serviceAccountJson);
-      const { getFirestore, initializeFirestore } = await import('firebase-admin/firestore');
+      const { getFirestore } = await import('firebase-admin/firestore');
 
-      // REST rather than gRPC. The default transport loads the gRPC stack and
-      // opens a channel before it can ask for a single document, and on a cold
-      // function that showed up as two and a half seconds in front of the first
-      // read — on a shop this quiet, most customers are the cold one. The SDK
-      // documents onSnapshot() as the only operation that still needs gRPC, and
-      // nothing under api/ subscribes to anything; transactions and batched
-      // writes go over REST unchanged.
-      try {
-        return initializeFirestore(app, { preferRest: true });
-      } catch {
-        // Something in this instance got there first. Its settings stand.
-        return getFirestore(app);
-      }
+      // gRPC, the default. REST was tried here on the theory that loading the
+      // gRPC stack was what made a cold turn slow; measured across three cold
+      // starts it changed nothing, and it cannot multiplex the seven reads the
+      // prompt needs the way one HTTP/2 channel does. The cold cost is the
+      // first round trip to Firestore — the handshake and the token — and it is
+      // paid whichever transport asks.
+      return getFirestore(app);
     })();
   }
 
