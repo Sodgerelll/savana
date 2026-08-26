@@ -111,8 +111,8 @@ describe("callGemini", () => {
 
     await expect(callGemini({ message: "hi" })).resolves.toBe("second model answered");
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toContain("gemini-3.7-flash");
-    expect(calls[1].url).toContain("gemini-3.6-flash");
+    expect(calls[0].url).toContain("gemini-3.6-flash");
+    expect(calls[1].url).toContain("gemini-3.7-flash");
   });
 
   it("falls through a deterministic 400 rather than aborting the chain", async () => {
@@ -147,10 +147,10 @@ describe("callGemini", () => {
     responders = [() => jsonResponse(textPayload("straight to the fallback"))];
 
     await expect(
-      callGemini({ message: "hi", skipModels: ["gemini-3.7-flash"] }),
+      callGemini({ message: "hi", skipModels: ["gemini-3.6-flash"] }),
     ).resolves.toBe("straight to the fallback");
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toContain("gemini-3.6-flash");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
   it("keeps the chain when every model in it is marked unhealthy", async () => {
@@ -160,10 +160,10 @@ describe("callGemini", () => {
     await expect(
       callGemini({
         message: "hi",
-        skipModels: ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-flash-latest"],
+        skipModels: ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"],
       }),
     ).resolves.toBe("tried anyway");
-    expect(calls[0].url).toContain("gemini-3.7-flash");
+    expect(calls[0].url).toContain("gemini-3.6-flash");
   });
 
   it("reports the model that answered, so a past failure can be forgotten", async () => {
@@ -174,7 +174,7 @@ describe("callGemini", () => {
 
     await callGemini({ message: "hi", onModelAnswered: (model) => answered.push(model) });
 
-    expect(answered).toEqual(["gemini-3.7-flash"]);
+    expect(answered).toEqual(["gemini-3.6-flash"]);
   });
 
   it("reports which model timed out so the caller can note it", async () => {
@@ -190,7 +190,7 @@ describe("callGemini", () => {
 
     await callGemini({ message: "hi", onModelTimedOut: (model) => timedOut.push(model) });
 
-    expect(timedOut).toEqual(["gemini-3.7-flash"]);
+    expect(timedOut).toEqual(["gemini-3.6-flash"]);
   });
 
   it("asks the fallback model when the first one does not answer in time", async () => {
@@ -319,9 +319,9 @@ describe("callGemini", () => {
   it("puts an allow-listed requested model first, keeping the rest as fallback", async () => {
     responders = [() => jsonResponse(textPayload("pro"))];
 
-    await callGemini({ message: "hi", model: "gemini-3.6-flash" });
+    await callGemini({ message: "hi", model: "gemini-3.7-flash" });
 
-    expect(calls[0].url).toContain("gemini-3.6-flash");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
   it("ignores an unknown requested model instead of failing", async () => {
@@ -329,12 +329,12 @@ describe("callGemini", () => {
 
     await callGemini({ message: "hi", model: "gpt-4-turbo" });
 
-    expect(calls[0].url).toContain("gemini-3.7-flash");
+    expect(calls[0].url).toContain("gemini-3.6-flash");
   });
 });
 
 describe("context cache", () => {
-  const CACHE = { name: "cachedContents/abc", model: "gemini-3.7-flash" };
+  const CACHE = { name: "cachedContents/abc", model: "gemini-3.6-flash" };
 
   it("swaps the prompt and tools for the handle that already holds them", async () => {
     responders = [() => jsonResponse(textPayload("ok"))];
@@ -363,7 +363,7 @@ describe("context cache", () => {
 
     await callGemini({ message: "hi", systemPrompt: "Та SAVANA-гийн туслах.", cache: CACHE });
 
-    expect(calls[1].url).toContain("gemini-3.6-flash");
+    expect(calls[1].url).toContain("gemini-3.7-flash");
     expect(requestBody(calls[1]).cachedContent).toBeUndefined();
     expect(requestBody(calls[1]).system_instruction).toBeDefined();
   });
@@ -387,7 +387,7 @@ describe("context cache", () => {
     ).resolves.toBe("answered anyway");
 
     expect(rejected).toHaveBeenCalledOnce();
-    expect(calls[1].url).toContain("gemini-3.7-flash");
+    expect(calls[1].url).toContain("gemini-3.6-flash");
     expect(requestBody(calls[1]).cachedContent).toBeUndefined();
     expect(requestBody(calls[1]).system_instruction).toBeDefined();
   });

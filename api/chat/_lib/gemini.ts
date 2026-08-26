@@ -10,9 +10,10 @@
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Fallback chain — a 4xx/5xx from one model moves on to the next. Ordered
-// cheapest-and-fastest first; every entry must support function calling because
-// the assistant drives carousels and handover through tools.
+// Fallback chain — a 4xx/5xx from one model moves on to the next. Ordered by
+// which one actually answers, newest first among equals; every entry must
+// support function calling because the assistant drives carousels and handover
+// through tools.
 //
 // Every entry is an explicit version rather than a moving alias such as
 // `gemini-flash-latest`: Gemini 3 changed the request format (see
@@ -26,13 +27,24 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 /**
  * Tried in order until one answers.
  *
+ * 3.6 leads because it is the one that answers. Asked the same four-word
+ * question with thinking off, 3.6 replies in about two seconds while 3.7 takes
+ * twenty-five or never arrives at all — and those two requests differ only in
+ * the model name in the URL, so no smaller payload, shorter prompt or warmer
+ * cache would have helped. That was worth measuring rather than assuming: the
+ * catalogue prompt looked like the obvious culprit and was not the culprit.
+ *
+ * 3.7 stays in the chain rather than being deleted. It is the better model when
+ * it is well, this is Google's serving and not a property of the model, and the
+ * admin model picker can put it back in front to find out whether it recovered.
+ *
  * Two was one too few. When 3.7 stopped answering the shop was one model away
  * from having no bot at all, and the whole point of a chain is that it is not.
  * `gemini-flash-latest` is an alias rather than a pinned version — a poor thing
  * to build on and a good last resort, because whatever Google is currently
  * calling its fast model is exactly what is wanted once the named ones are gone.
  */
-const DEFAULT_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+const DEFAULT_MODELS = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
 
 // Models the caller is allowed to request explicitly (admin model picker). An
 // unknown value is ignored rather than rejected so a stale saved setting cannot

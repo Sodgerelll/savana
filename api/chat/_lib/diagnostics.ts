@@ -44,10 +44,23 @@ export async function recordChatFailure(
  * preferred model is preferred for a reason and deserves another try. But a
  * model that is genuinely down stays down, and asking it again every ninety
  * seconds means one customer in every batch waits out the full timeout for a
- * model nobody expects to answer. Each consecutive failure doubles the wait to
- * half an hour; one success clears the record entirely.
+ * model nobody expects to answer. Each consecutive failure lengthens the wait;
+ * one success clears the record entirely.
+ *
+ * The tail runs to six hours because this shop is quiet. Half an hour was the
+ * old ceiling and it protected nobody: messages arrive further apart than that,
+ * so nearly every customer landed after the wait had expired and paid the full
+ * timeout anyway. The ceiling has to outlast the gaps between customers before
+ * it means anything.
  */
-const BACKOFF_MS = [90 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000];
+const BACKOFF_MS = [
+  90 * 1000,
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  30 * 60 * 1000,
+  2 * 60 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+];
 const MODEL_PREFIX = 'model:';
 
 /**
