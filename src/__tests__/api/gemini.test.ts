@@ -153,6 +153,22 @@ describe("callGemini", () => {
     expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
+  it("still tries a model the settings screen asked for, however unhealthy", async () => {
+    // Choosing one there is how somebody finds out whether it has recovered, so
+    // a health note must not quietly overrule the choice — least of all now the
+    // note can outlast the working day.
+    responders = [() => jsonResponse(textPayload("asked for anyway"))];
+
+    await expect(
+      callGemini({
+        message: "hi",
+        model: "gemini-3.7-flash",
+        skipModels: ["gemini-3.7-flash"],
+      }),
+    ).resolves.toBe("asked for anyway");
+    expect(calls[0].url).toContain("gemini-3.7-flash");
+  });
+
   it("keeps the chain when every model in it is marked unhealthy", async () => {
     // A stale note must never be the reason a shop's bot says nothing at all.
     responders = [() => jsonResponse(textPayload("tried anyway"))];

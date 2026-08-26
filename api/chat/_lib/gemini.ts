@@ -680,6 +680,12 @@ function normaliseForLeakCheck(value: string): string {
  * The chain minus any model that recently stopped answering — unless that would
  * leave nothing, in which case the full chain stands. A stale note about an
  * unhealthy model must never be the reason a shop's bot says nothing at all.
+ *
+ * A model named in the settings screen is never skipped. Choosing one there is
+ * how somebody finds out whether it has recovered, and a health note silently
+ * overruling that choice would make the screen lie — the more so now the note
+ * can last six hours. It costs one slow turn to learn the answer, and the rest
+ * of the chain is still behind it if the answer is no.
  */
 function healthyChain(requested: string | undefined, skip: string[] | undefined): string[] {
   const chain = resolveModelChain(requested);
@@ -687,7 +693,8 @@ function healthyChain(requested: string | undefined, skip: string[] | undefined)
     return chain;
   }
 
-  const healthy = chain.filter((model) => !skip.includes(model));
+  const asked = requested && ALLOWED_REQUESTED.includes(requested) ? requested : null;
+  const healthy = chain.filter((model) => model === asked || !skip.includes(model));
   return healthy.length > 0 ? healthy : chain;
 }
 
