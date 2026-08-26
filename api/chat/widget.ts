@@ -156,23 +156,27 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   try {
     const db = await dbPromise;
-
-    // Both start here. Each is a separate journey to Firestore, and on a cold
-    // instance the first of them pays for the handshake and the access token
-    // while the second waits its turn for no reason — nearly two seconds of a
-    // ten-second reply. Neither reads what the other writes.
-    //
-    // Ahead of the rate limit, unlike the checks below, because the catalogue
-    // is memoised for a minute: a flood costs one read per minute per instance,
-    // not one per request, and settings was already read before any check.
-    const storefrontPromise = loadStorefrontContext(db, new Date());
-    void storefrontPromise.catch(() => {});
-    // Split from the read that follows it because the two have nothing in
-    // common: this is the Admin SDK waking up — importing itself, parsing the
+    // Timed on its own because it is a different problem from the read that
+    // follows: this is the Admin SDK waking up — importing itself, parsing the
     // service account, trading it for an access token — and it is the same
     // whatever is read afterwards. Told apart, a slow cold turn says which of
     // the two to go after.
     timing.mark('db');
+
+    // The catalogue and the settings document start together. Each is its own
+    // journey to Firestore, and on a cold instance the first of them pays for
+    // the handshake while the second waits behind it for no reason — most of
+    // two seconds out of a ten-second reply. Neither reads what the other
+    // writes.
+    //
+    // Ahead of the rate limit, unlike the checks below, because the catalogue
+    // is memoised for a minute: a flood costs one read per minute per instance
+    // rather than one per request, and settings was already being read before
+    // any check ran. The handler keeps an early return from leaving the
+    // rejection unobserved.
+    const storefrontPromise = loadStorefrontContext(db, new Date());
+    void storefrontPromise.catch(() => {});
+
     const settings = await loadChatSettings(db);
     timing.mark('settings');
 
