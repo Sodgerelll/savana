@@ -69,7 +69,15 @@ const TIMEOUT_MS = 25_000;
  */
 const LEADING_TIMEOUT_MS = 18_000;
 
-/** The health probe answers quickly or not at all; there is nothing to wait for. */
+/**
+ * How long the health probe waits.
+ *
+ * Short because it runs after a turn has already spent its whole budget, and
+ * the function has sixty seconds in total. That bounds what a timeout here can
+ * mean: it says the model did not answer a trivial question within ten seconds,
+ * which is enough to make it unfit to lead the chain — not that it is dead. One
+ * that is merely slow will time out here too, and the wording says so.
+ */
 const PROBE_TIMEOUT_MS = 10_000;
 
 /**
@@ -568,8 +576,18 @@ export function geminiErrorToUserMessage(err: unknown): string {
  * When every model in the chain times out there are two very different stories
  * and no way to tell them apart from the outside: the API is unreachable, or
  * our own request has grown into something it will not answer in time. One
- * question with a two-word prompt, no tools and no cache settles it — if that
+ * question with a four-word prompt, no tools and no cache settles it — if that
  * comes back, the problem is what we are sending.
+ *
+ * Shaped by `configForModel`, like a real turn. An earlier version sent a bare
+ * body, which left thinking at the model's own default and had it deliberating
+ * over "hi" — so the probe measured a request the assistant never makes and
+ * reported a healthy model as dead. It also capped output at a single token,
+ * which on a thinking model is a cap on the thinking rather than the answer.
+ * A probe that does not resemble the thing it is diagnosing is worse than none.
+ *
+ * The thinking-token count comes back with it: thoughts near zero and a long
+ * wait is a model that is slow to serve us, which no change of ours will fix.
  *
  * Costs one call, and only on a turn that has already failed.
  */
@@ -587,28 +605,27 @@ export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<string> {
     const res = await fetch(`${API_BASE}/${model}:generateContent`, {
       method: 'POST',
       headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-        generationConfig: { maxOutputTokens: 1 },
-      }),
+      body: JSON.stringify(
+        configForModel({ contents: [{ role: 'user', parts: [{ text: 'Say OK.' }] }] }, model),
+      ),
       signal: controller.signal,
     });
 
     const ms = Date.now() - started;
+    const body: any = await res.json().catch(() => ({}));
+
     if (res.ok) {
-      return `${model} answered a two-word prompt in ${ms}ms — the payload is ours to fix`;
+      const thoughts = body?.usageMetadata?.thoughtsTokenCount ?? 0;
+      return `${model} answered a four-word prompt in ${ms}ms (thinking ${thoughts} tokens)`;
     }
 
-    const detail = await res
-      .json()
-      .then((body: any) => body?.error?.message ?? '')
-      .catch(() => '');
+    const detail = body?.error?.message ?? '';
     return `${model} HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`;
   } catch (err) {
     const ms = Date.now() - started;
     const aborted = err instanceof Error && err.name === 'AbortError';
     return aborted
-      ? `${model} did not answer even a two-word prompt in ${ms}ms`
+      ? `${model} did not answer even a four-word prompt in ${ms}ms`
       : `${model} request failed after ${ms}ms`;
   } finally {
     clearTimeout(timer);
