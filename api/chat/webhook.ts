@@ -440,6 +440,14 @@ async function replyToEvent(
     return;
   }
 
+  // Started here rather than where it is read. The catalogue is the slowest
+  // thing this route asks Firestore for and nothing between here and the model
+  // depends on it, so it runs alongside the name lookup and the bookkeeping
+  // instead of after them. After the rate limit, so a flood cannot make us read
+  // it; the handler keeps an early return from leaving the rejection unobserved.
+  const storefrontPromise = loadStorefrontContext(db, new Date());
+  void storefrontPromise.catch(() => {});
+
   const customerName = await getUserName(token, senderId);
   const conversation = await ensureConversation(db, {
     channel,
@@ -449,19 +457,19 @@ async function replyToEvent(
   });
 
   // Record what the customer sent before anything can fail, so the admin sees
-  // the message even if the reply never gets generated.
-  await appendMessage(db, conversation.id, {
-    role: 'user',
-    content: postbackPayload
-      ? `[${postbackPayload}] ${text}`.trim()
-      : text || (imageUrl ? '[зураг]' : ''),
-  });
-
-  // Contact details often arrive a message or two after the order request, so
-  // every incoming message tops up an open lead before anything else.
-  if (text) {
-    await captureContactDetails(db, conversation.id, text);
-  }
+  // the message even if the reply never gets generated. Alongside it, because
+  // contact details often arrive a message or two after the order request and
+  // every incoming message tops up an open lead — the two touch different
+  // documents and neither reads what the other writes.
+  await Promise.all([
+    appendMessage(db, conversation.id, {
+      role: 'user',
+      content: postbackPayload
+        ? `[${postbackPayload}] ${text}`.trim()
+        : text || (imageUrl ? '[зураг]' : ''),
+    }),
+    text ? captureContactDetails(db, conversation.id, text) : Promise.resolve(),
+  ]);
 
   // Checked before the silence rule, which is the whole point: the customer is
   // asking to be let out of a thread the bot is deliberately quiet in.
@@ -481,7 +489,7 @@ async function replyToEvent(
 
   try {
 
-    const storefront = await loadStorefrontContext(db, new Date());
+    const storefront = await storefrontPromise;
     const toolContext: ToolContext = {
       storefront,
       // Photos are stored inline as `data:` URIs, which Facebook cannot fetch,

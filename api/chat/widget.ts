@@ -164,12 +164,24 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const withinSession = await checkRateLimit(db, `widget:${sessionId}`, PER_SESSION_LIMIT);
-    const withinIp = await checkRateLimit(db, `widget-ip:${clientIp(req)}`, PER_IP_LIMIT);
+    // Both counters are incremented either way, so asking for them together
+    // costs nothing and saves a round trip — each one is a transaction.
+    const [withinSession, withinIp] = await Promise.all([
+      checkRateLimit(db, `widget:${sessionId}`, PER_SESSION_LIMIT),
+      checkRateLimit(db, `widget-ip:${clientIp(req)}`, PER_IP_LIMIT),
+    ]);
     if (!withinSession || !withinIp) {
       res.status(429).json({ error: 'Хэт олон хүсэлт илгээлээ. Түр хүлээгээд дахин оролдоно уу.' });
       return;
     }
+
+    // Started here rather than where it is read. The catalogue is the slowest
+    // thing this route asks Firestore for and none of the bookkeeping below
+    // depends on it, so it runs alongside instead of after. After the rate
+    // limit, so hammering the endpoint cannot make us read it; the handler
+    // keeps an early return from leaving the rejection unobserved.
+    const storefrontPromise = loadStorefrontContext(db, new Date());
+    void storefrontPromise.catch(() => {});
 
     const conversation = await ensureConversation(db, {
       channel: 'widget',
@@ -188,8 +200,12 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    await appendMessage(db, conversation.id, { role: 'user', content: message });
-    await captureContactDetails(db, conversation.id, message);
+    // Independent writes: one records the message, the other reads a name or a
+    // phone number out of it.
+    await Promise.all([
+      appendMessage(db, conversation.id, { role: 'user', content: message }),
+      captureContactDetails(db, conversation.id, message),
+    ]);
 
     if (botShouldStaySilent(conversation)) {
       res.status(200).json({
@@ -200,7 +216,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const storefront = await loadStorefrontContext(db, new Date());
+    const storefront = await storefrontPromise;
     timing.mark('context');
 
     const toolContext: ToolContext = {
