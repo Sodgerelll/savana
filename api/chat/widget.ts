@@ -156,6 +156,12 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   try {
     const db = await dbPromise;
+    // Split from the read that follows it because the two have nothing in
+    // common: this is the Admin SDK waking up — importing itself, parsing the
+    // service account, trading it for an access token — and it is the same
+    // whatever is read afterwards. Told apart, a slow cold turn says which of
+    // the two to go after.
+    timing.mark('db');
     const settings = await loadChatSettings(db);
     timing.mark('settings');
 
