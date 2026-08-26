@@ -1,27 +1,22 @@
 // TEMPORARY diagnostic — delete after use.
-// Asks one model the same tiny question several ways, to find out which
-// thinking-level spelling it actually honours. Returns latency and the
-// thinking-token count for each; no shop data, no secrets.
+// Asks one model the same tiny question several ways, one at a time, to find
+// out where the time goes. No shop data, no secrets.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GUARD = '7b765372c331bd4f0172faccb745981c3b43';
-const PROBE_MS = 25_000;
+const PROBE_MS = 40_000;
 
-const VARIANTS: Array<[string, Record<string, unknown>]> = [
-  ['bare', {}],
-  ['nested.low', { thinkingConfig: { thinkingLevel: 'low' } }],
-  ['flat.low', { thinkingLevel: 'low' }],
-  ['flat.minimal', { thinkingLevel: 'minimal' }],
-  ['nested.minimal', { thinkingConfig: { thinkingLevel: 'minimal' } }],
-  ['snake.low', { thinking_level: 'low' }],
-];
+const VARIANTS: Record<string, Record<string, unknown>> = {
+  bare: {},
+  'nested.low': { thinkingConfig: { thinkingLevel: 'low' } },
+  'nested.minimal': { thinkingConfig: { thinkingLevel: 'minimal' } },
+};
 
-async function tryVariant(
+async function tryOnce(
   apiKey: string,
   model: string,
-  name: string,
   generationConfig: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const started = Date.now();
@@ -40,25 +35,18 @@ async function tryVariant(
     const ms = Date.now() - started;
     const json: any = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { name, ms, http: res.status, error: String(json?.error?.message ?? '').slice(0, 200) };
+      return { ms, http: res.status, error: String(json?.error?.message ?? '').slice(0, 120) };
     }
     const usage = json?.usageMetadata ?? {};
-    return {
-      name,
-      ms,
-      http: 200,
-      thoughts: usage.thoughtsTokenCount ?? 0,
-      output: usage.candidatesTokenCount ?? 0,
-      prompt: usage.promptTokenCount ?? 0,
-    };
+    return { ms, http: 200, thoughts: usage.thoughtsTokenCount ?? 0, output: usage.candidatesTokenCount ?? 0 };
   } catch (err) {
-    return { name, ms: Date.now() - started, error: (err as Error).name };
+    return { ms: Date.now() - started, error: (err as Error).name };
   } finally {
     clearTimeout(timer);
   }
 }
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 export default async function handler(req: any, res: any): Promise<void> {
   if (String(req.query?.key ?? '') !== GUARD) {
@@ -72,19 +60,19 @@ export default async function handler(req: any, res: any): Promise<void> {
   }
 
   const model = String(req.query?.model ?? 'gemini-3.7-flash');
-
-  if (req.query?.list === '1') {
-    const listed = await fetch(`${API_BASE}?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
-    const body: any = await listed.json().catch(() => ({}));
-    res.status(200).json({
-      http: listed.status,
-      models: (body?.models ?? []).map((m: any) => m.name).filter((n: string) => /flash|pro/.test(n)),
-    });
+  const variant = String(req.query?.variant ?? 'nested.low');
+  const n = Math.min(Number(req.query?.n ?? 3) || 3, 6);
+  const generationConfig = VARIANTS[variant];
+  if (!generationConfig) {
+    res.status(400).json({ error: `unknown variant; try ${Object.keys(VARIANTS).join(', ')}` });
     return;
   }
 
-  const results = await Promise.all(
-    VARIANTS.map(([name, generationConfig]) => tryVariant(apiKey, model, name, generationConfig)),
-  );
-  res.status(200).json({ model, results });
+  // Sequential on purpose: six at once queue against each other and the
+  // numbers stop meaning anything.
+  const runs: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < n; i += 1) {
+    runs.push(await tryOnce(apiKey, model, generationConfig));
+  }
+  res.status(200).json({ model, variant, runs });
 }
