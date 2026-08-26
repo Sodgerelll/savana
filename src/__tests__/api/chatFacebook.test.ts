@@ -6,6 +6,7 @@ import {
   sendCarousel,
   sendQuickReplies,
   sendText,
+  sendTypingOff,
   sendTypingOn,
   splitText,
   TEXT_LIMIT,
@@ -283,6 +284,29 @@ describe("sendTypingOn", () => {
   it("does nothing without a token or recipient", async () => {
     await sendTypingOn("", "PSID-1");
     await sendTypingOn(TOKEN, "");
+
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("sendTypingOff", () => {
+  it("takes the indicator back down", async () => {
+    // A thread a person has taken over ends without a reply. Leaving the dots
+    // to expire on their own is twenty seconds of a promise nobody will keep.
+    await sendTypingOff(TOKEN, "PSID-1");
+
+    expect(body()).toEqual({ recipient: { id: "PSID-1" }, sender_action: "typing_off" });
+  });
+
+  it("never throws — a failed indicator must not break anything", async () => {
+    responder = () => jsonResponse({ error: { message: "nope" } }, 500);
+
+    await expect(sendTypingOff(TOKEN, "PSID-1")).resolves.toBeUndefined();
+  });
+
+  it("does nothing without a token or recipient", async () => {
+    await sendTypingOff("", "PSID-1");
+    await sendTypingOff(TOKEN, "");
 
     expect(calls).toHaveLength(0);
   });

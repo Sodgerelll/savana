@@ -203,6 +203,24 @@ export async function sendTypingOn(token: string, recipientId: string): Promise<
   );
 }
 
+/**
+ * Takes the typing bubble back down.
+ *
+ * Messenger drops it on its own after about twenty seconds, but a turn that
+ * ends without a reply — a thread a person has taken over — should not leave
+ * the customer watching dots that were never going to become anything.
+ */
+export async function sendTypingOff(token: string, recipientId: string): Promise<void> {
+  if (!token || !recipientId) return;
+
+  await graphPost(
+    token,
+    '/me/messages',
+    { recipient: { id: recipientId }, sender_action: 'typing_off' },
+    { throwOnError: false },
+  );
+}
+
 export async function sendQuickReplies(
   token: string,
   recipientId: string,

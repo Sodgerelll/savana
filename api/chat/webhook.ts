@@ -30,6 +30,7 @@ import {
   sendCarousel,
   sendQuickReplies,
   sendText,
+  sendTypingOff,
   sendTypingOn,
 } from './_lib/facebook.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
@@ -96,8 +97,14 @@ const TYPING_REFRESH_MS = 8_000;
  * Keeps the typing bubble alive until the reply is ready. Returns the function
  * that stops it, which the caller must run — an interval left behind on a
  * serverless invocation keeps it alive and billing.
+ *
+ * Raises it once on the way in as well. One was already sent when the message
+ * arrived, but that was however long the bookkeeping took ago, and an interval
+ * that first fires eight seconds from now cannot refresh a bubble that expired
+ * before it started.
  */
 function keepTyping(token: string, senderId: string): () => void {
+  void sendTypingOn(token, senderId);
   const timer = setInterval(() => void sendTypingOn(token, senderId), TYPING_REFRESH_MS);
   // Node keeps the process alive for a pending interval; this one is a courtesy
   // and must never be the reason a function does not finish.
@@ -435,6 +442,15 @@ async function replyToEvent(
   const { channel, pageId, senderId, text, postbackPayload, imageUrl } = params;
   const token = settings.facebook.pageAccessToken;
 
+  // Before a single round trip to Firestore. Everything below it — the rate
+  // limit, the name lookup, recording what was said — is time the customer
+  // spends watching a thread in which nothing is happening, and on a cold
+  // instance that ran to several seconds. Silence reads as being ignored; the
+  // bubble reads as an answer on its way, and it is the same wait either way.
+  //
+  // Deliberately not awaited. This is here to take a wait away, not to add one.
+  void sendTypingOn(token, senderId);
+
   if (!(await checkRateLimit(db, `${channel}:${senderId}`, PER_USER_RATE_LIMIT))) {
     console.warn(`[chat/webhook] rate limit hit for ${channel}:${senderId}`);
     return;
@@ -481,10 +497,13 @@ async function replyToEvent(
   }
 
   if (botShouldStaySilent(conversation)) {
+    // Raised on the way in, before there was any way to know a person had taken
+    // this thread over. Put it back down rather than leaving the customer with
+    // dots that were never going to become a reply.
+    void sendTypingOff(token, senderId);
     return;
   }
 
-  await sendTypingOn(token, senderId);
   const stopTyping = keepTyping(token, senderId);
 
   try {
