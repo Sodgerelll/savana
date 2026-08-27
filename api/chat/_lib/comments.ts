@@ -12,7 +12,7 @@
 
 import { buildStorefrontPrompt, type StorefrontContext } from './buildPrompt.js';
 import { callGemini, looksLikeOurOwnInstructions } from './gemini.js';
-import { replyToComment, sendPrivateReply } from './facebook.js';
+import { getPostContext, replyToComment, sendPrivateReply } from './facebook.js';
 import { markEventProcessed } from './guards.js';
 
 export const COMMENT_LOG_COLLECTION = 'chat_comment_replies';
@@ -108,11 +108,24 @@ export async function handleCommentEvent(
 
   const systemPrompt = `${buildStorefrontPrompt(options.storefront, new Date())}\n${PUBLIC_REPLY_RULES}`;
 
+  // A comment is half a sentence. "Энэ хэдэн вэ?" names no product because the
+  // customer already named it by commenting where they did, and without the
+  // post the bot is guessing between forty-six of them.
+  //
+  // It goes in the message rather than the system prompt on purpose. Quoting
+  // the shop's own public post back is a perfectly good answer, and the leak
+  // guard below would read that as the model reciting its instructions and
+  // throw the reply away.
+  const postText = await getPostContext(options.token, event.postId, event.channel);
+  const message = postText
+    ? `Хэрэглэгч энэ постын доор сэтгэгдэл бичлээ.\n\nПОСТ: ${postText}\n\nСЭТГЭГДЭЛ: ${event.message}`
+    : event.message;
+
   let reply: string;
   try {
     reply = await callGemini({
       systemPrompt,
-      message: event.message,
+      message,
       model: options.model,
       temperature: options.temperature,
       maxOutputTokens: PUBLIC_REPLY_MAX_TOKENS,

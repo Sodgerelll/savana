@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   applyMessengerProfile,
+  forgetPostContext,
+  getPostContext,
   getUserName,
   sendCarousel,
   sendQuickReplies,
@@ -284,6 +286,65 @@ describe("sendTypingOn", () => {
   it("does nothing without a token or recipient", async () => {
     await sendTypingOn("", "PSID-1");
     await sendTypingOn(TOKEN, "");
+
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("getPostContext", () => {
+  beforeEach(() => {
+    // Per-instance and would otherwise carry an answer between cases.
+    forgetPostContext();
+  });
+
+  it("returns the post's own words, attachment included", async () => {
+    responder = () =>
+      jsonResponse({
+        message: "Шинэ саван ирлээ",
+        attachments: { data: [{ title: "Сүүлэн тостой саван", description: "8800₮" }] },
+      });
+
+    await expect(getPostContext(TOKEN, "p1")).resolves.toBe(
+      "Шинэ саван ирлээ · Сүүлэн тостой саван · 8800₮",
+    );
+    expect(calls[0].url).toContain("/p1?fields=message,attachments");
+  });
+
+  it("asks Instagram for a caption, which is what a media object has", async () => {
+    responder = () => jsonResponse({ caption: "Шинэ багц" });
+
+    await expect(getPostContext(TOKEN, "m1", "instagram")).resolves.toBe("Шинэ багц");
+    expect(calls[0].url).toContain("fields=caption");
+  });
+
+  it("asks once for a post however many comments it collects", async () => {
+    responder = () => jsonResponse({ message: "Шинэ саван ирлээ" });
+
+    await getPostContext(TOKEN, "p1");
+    await getPostContext(TOKEN, "p1");
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("remembers a refusal too, so every comment does not pay for it again", async () => {
+    // A post the token cannot read will not become readable within the minute.
+    responder = () => jsonResponse({ error: { message: "no permission" } }, 403);
+
+    await expect(getPostContext(TOKEN, "p1")).resolves.toBeNull();
+    await expect(getPostContext(TOKEN, "p1")).resolves.toBeNull();
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("is null rather than throwing when the post has nothing to say", async () => {
+    responder = () => jsonResponse({});
+
+    await expect(getPostContext(TOKEN, "p1")).resolves.toBeNull();
+  });
+
+  it("does nothing without a token or a post", async () => {
+    await getPostContext("", "p1");
+    await getPostContext(TOKEN, "");
 
     expect(calls).toHaveLength(0);
   });

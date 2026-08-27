@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   replyToComment: vi.fn(),
   sendPrivateReply: vi.fn(),
   markEventProcessed: vi.fn(),
+  getPostContext: vi.fn(),
 }));
 
 vi.mock("../../../api/chat/_lib/gemini.js", async () => {
@@ -17,6 +18,7 @@ vi.mock("../../../api/chat/_lib/gemini.js", async () => {
 vi.mock("../../../api/chat/_lib/facebook.js", () => ({
   replyToComment: mocks.replyToComment,
   sendPrivateReply: mocks.sendPrivateReply,
+  getPostContext: mocks.getPostContext,
 }));
 
 vi.mock("../../../api/chat/_lib/guards.js", () => ({
@@ -75,6 +77,9 @@ beforeEach(() => {
   mocks.callGemini.mockResolvedValue("25,000₮ байна. Дэлгэрэнгүйг мессежээр илгээлээ 📩");
   mocks.replyToComment.mockResolvedValue(true);
   mocks.sendPrivateReply.mockResolvedValue(true);
+  // Most cases are about what happens once a reply exists; the post is a
+  // separate question and gets its own tests below.
+  mocks.getPostContext.mockResolvedValue(null);
 });
 
 describe("parseCommentChange", () => {
@@ -216,6 +221,46 @@ describe("handleCommentEvent", () => {
 
     expect(mocks.replyToComment).not.toHaveBeenCalled();
     expect(mocks.sendPrivateReply).not.toHaveBeenCalled();
+  });
+
+  it("gives the model the post the comment is sitting under", async () => {
+    // "Үнэ хэд вэ?" names no product. The customer named it by commenting where
+    // they did, and without the post the bot is choosing between the whole
+    // catalogue.
+    const { db } = fakeDb();
+    mocks.getPostContext.mockResolvedValue("Шинэ сүүлэн тостой саван ирлээ");
+
+    await handleCommentEvent(db, event, options());
+
+    expect(mocks.getPostContext).toHaveBeenCalledWith("PAGE-TOKEN", "p1", "facebook");
+    const sent = mocks.callGemini.mock.calls[0][0].message;
+    expect(sent).toContain("Шинэ сүүлэн тостой саван ирлээ");
+    expect(sent).toContain("Үнэ хэд вэ?");
+  });
+
+  it("sends the comment on its own when the post cannot be read", async () => {
+    // No permission, a deleted post, a timeout — none of them are a reason to
+    // leave the comment unanswered.
+    const { db } = fakeDb();
+    mocks.getPostContext.mockResolvedValue(null);
+
+    await handleCommentEvent(db, event, options());
+
+    expect(mocks.callGemini.mock.calls[0][0].message).toBe("Үнэ хэд вэ?");
+  });
+
+  it("keeps the post out of the system prompt, so quoting it is not a leak", async () => {
+    // The guard treats anything echoed back from the system prompt as the model
+    // reciting its instructions. The shop's own public post is a fine thing to
+    // repeat, and putting it there would have thrown that reply away.
+    const { db } = fakeDb();
+    mocks.getPostContext.mockResolvedValue("Шинэ сүүлэн тостой саван ирлээ");
+
+    await handleCommentEvent(db, event, options());
+
+    expect(mocks.callGemini.mock.calls[0][0].systemPrompt).not.toContain(
+      "Шинэ сүүлэн тостой саван ирлээ",
+    );
   });
 
   it("claims the comment id so a redelivery cannot burn the single private reply", async () => {

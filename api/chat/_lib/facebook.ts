@@ -519,6 +519,88 @@ export async function getUserName(token: string, userId: string): Promise<string
   }
 }
 
+/** How long a post's own words are kept before being asked for again. */
+const POST_CACHE_TTL_MS = 10 * 60 * 1000;
+/** Enough for a busy morning; the map is per-instance and short-lived anyway. */
+const POST_CACHE_MAX = 50;
+/** A caption is context, not the answer — a long one is trimmed, not carried. */
+const POST_TEXT_LIMIT = 400;
+
+const postCache = new Map<string, { text: string | null; at: number }>();
+
+/**
+ * What the post a comment sits under actually says.
+ *
+ * Without it "энэ хэдэн вэ?" is unanswerable: the comment names no product and
+ * the catalogue holds forty-six, so the bot either guesses or asks a question
+ * the customer already answered by commenting where they did. The post is the
+ * missing half of the sentence.
+ *
+ * Cached because one post collects many comments and they all want the same
+ * few words. Null on any failure — no permission, a deleted post, a timeout —
+ * and the caller carries on without it, which is exactly how it behaved before
+ * this existed.
+ */
+export async function getPostContext(
+  token: string,
+  postId: string,
+  channel: 'facebook' | 'instagram' = 'facebook',
+): Promise<string | null> {
+  if (!token || !postId) return null;
+
+  const key = `${channel}:${postId}`;
+  const hit = postCache.get(key);
+  if (hit && Date.now() - hit.at < POST_CACHE_TTL_MS) {
+    return hit.text;
+  }
+
+  // Instagram media carry a caption; a Facebook post carries a message and,
+  // when it is a shared link or a photo album, the attachment's own wording.
+  const fields =
+    channel === 'instagram' ? 'caption' : 'message,attachments{title,description}';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let text: string | null = null;
+  try {
+    const res = await fetch(`${GRAPH_URL}/${postId}?fields=${fields}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const attachment = data?.attachments?.data?.[0] ?? {};
+      text =
+        [data?.message, data?.caption, attachment?.title, attachment?.description]
+          .map((part: unknown) => String(part ?? '').trim())
+          .filter(Boolean)
+          .join(' · ')
+          .slice(0, POST_TEXT_LIMIT) || null;
+    }
+  } catch {
+    text = null;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Failures are cached too. A post the token cannot read will not become
+  // readable within the minute, and every comment on it would otherwise pay
+  // the timeout again.
+  if (postCache.size >= POST_CACHE_MAX) {
+    postCache.clear();
+  }
+  postCache.set(key, { text, at: Date.now() });
+
+  return text;
+}
+
+/** Test seam: the cache is per-instance and would otherwise leak between cases. */
+export function forgetPostContext(): void {
+  postCache.clear();
+}
+
 /**
  * Installs the greeting, Get Started button and persistent menu on the page.
  * Called from the admin settings screen, not from the webhook.
