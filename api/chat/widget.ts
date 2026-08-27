@@ -12,6 +12,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
+import { getRecentPosts } from './_lib/facebook.js';
 import {
   appendMessage,
   botShouldStaySilent,
@@ -180,6 +181,12 @@ export default async function handler(req: any, res: any): Promise<void> {
     const settings = await loadChatSettings(db);
     timing.mark('settings');
 
+    // The page's own announcements, alongside everything else. Cached for a
+    // quarter of an hour, so this is a round trip once in a while rather than
+    // once a turn, and an empty list is a perfectly good answer.
+    const postsPromise = getRecentPosts(settings.facebook.pageAccessToken);
+    void postsPromise.catch(() => {});
+
     if (!canAnswerOnChannel(settings, 'widget')) {
       res.status(503).json({ error: 'Онлайн туслах одоогоор идэвхгүй байна.' });
       return;
@@ -277,7 +284,10 @@ export default async function handler(req: any, res: any): Promise<void> {
       // tools, so both channels share one cached copy.
       const cacheOptions = {
         model: primaryModel(settings.model || undefined),
-        systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+        systemPrompt: buildStorefrontPrompt(
+          { ...storefront, posts: await postsPromise },
+          new Date(),
+        ),
         tools: CHAT_TOOLS,
       };
       timing.mark('prompt');

@@ -109,6 +109,13 @@ export interface PromptFaq {
   answer: string;
 }
 
+/** One post from the shop's own Facebook page. */
+export interface PromptPost {
+  /** YYYY-MM-DD. "Did you post that this week?" is asked far more than the date is. */
+  postedAt: string;
+  text: string;
+}
+
 export interface PromptShopInfo {
   brandName: string;
   brandDescription: string;
@@ -139,6 +146,14 @@ export interface StorefrontContext {
   products: PromptProduct[];
   discounts: PromptDiscount[];
   faqs: PromptFaq[];
+  /**
+   * What the shop has been posting on Facebook.
+   *
+   * Optional because it comes from Meta rather than Firestore, so every caller
+   * holding a page token supplies it and the admin preview, which holds none,
+   * simply does without.
+   */
+  posts?: PromptPost[];
   /** Admin-authored extras from chat_settings. */
   basePrompt: string;
   knowledgePoints: string[];
@@ -331,6 +346,29 @@ function formatFaqs(faqs: PromptFaq[]): string {
   return `# ТҮГЭЭМЭЛ АСУУЛТ\n${lines.join('\n\n')}`;
 }
 
+/**
+ * The shop's own recent posts, as reference material.
+ *
+ * A customer who saw an announcement on the page does not repeat it — they ask
+ * "энэ хямдрал хэвээрээ юу?" and expect the shop to know what they mean. The
+ * catalogue cannot answer that: a post is an event, not a product.
+ *
+ * Public writing, so none of it is internal. The instruction below is against
+ * inventing posts, not against quoting them.
+ */
+function formatPosts(posts: PromptPost[]): string {
+  if (posts.length === 0) {
+    return '';
+  }
+  const lines = posts.map((post) => `- (${post.postedAt}) ${post.text}`);
+  return [
+    '# ФЕЙСБҮҮК ХУУДСАН ДЭЭР НИЙТЛЭСЭН ЗАР',
+    'Хэрэглэгч "постонд бичсэн", "зараа харсан", "зарлаж байсан" гэвэл эндээс хар.',
+    'Энд байхгүй зарыг БҮҮ зохио. Байхгүй бол мэдэхгүй гэж хэл.',
+    lines.join('\n'),
+  ].join('\n');
+}
+
 function formatShopInfo(shop: PromptShopInfo): string {
   const lines: string[] = [];
   if (shop.brandDescription) lines.push(shop.brandDescription);
@@ -383,6 +421,7 @@ export function buildStorefrontPrompt(context: StorefrontContext, now: Date): st
     formatCatalog(context),
     formatDiscounts(context.discounts),
     formatFaqs(context.faqs),
+    formatPosts(context.posts ?? []),
   ];
 
   if (context.knowledgePoints.length > 0) {

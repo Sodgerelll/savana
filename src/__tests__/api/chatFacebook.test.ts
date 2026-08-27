@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   applyMessengerProfile,
   forgetPostContext,
+  forgetRecentPosts,
   getPostContext,
+  getRecentPosts,
   getUserName,
   sendCarousel,
   sendQuickReplies,
@@ -286,6 +288,65 @@ describe("sendTypingOn", () => {
   it("does nothing without a token or recipient", async () => {
     await sendTypingOn("", "PSID-1");
     await sendTypingOn(TOKEN, "");
+
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("getRecentPosts", () => {
+  beforeEach(() => {
+    forgetRecentPosts();
+  });
+
+  it("returns what the page has been announcing, newest first as Meta sends it", () => {
+    responder = () =>
+      jsonResponse({
+        data: [
+          { message: "Шинэ жилийн багц", created_time: "2026-08-20T09:00:00+0800" },
+          {
+            message: "Саван ирлээ",
+            created_time: "2026-08-18T09:00:00+0800",
+            attachments: { data: [{ title: "Сүүлэн тос", description: "8800₮" }] },
+          },
+        ],
+      });
+
+    return expect(getRecentPosts(TOKEN)).resolves.toEqual([
+      { postedAt: "2026-08-20", text: "Шинэ жилийн багц" },
+      { postedAt: "2026-08-18", text: "Саван ирлээ · Сүүлэн тос · 8800₮" },
+    ]);
+  });
+
+  it("drops a post with no words in it", async () => {
+    // A bare photo says nothing the model can use.
+    responder = () =>
+      jsonResponse({ data: [{ created_time: "2026-08-20T09:00:00+0800" }] });
+
+    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
+  });
+
+  it("asks once a quarter hour, not once a turn", async () => {
+    // The prompt goes to a shared context cache; a feed that changed per
+    // request would throw that away for the sake of a post nobody made.
+    responder = () => jsonResponse({ data: [{ message: "Саван", created_time: "2026-08-20" }] });
+
+    await getRecentPosts(TOKEN);
+    await getRecentPosts(TOKEN);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("remembers a refusal too, so no turn pays the timeout twice", async () => {
+    responder = () => jsonResponse({ error: { message: "no permission" } }, 403);
+
+    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
+    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does nothing without a token", async () => {
+    await expect(getRecentPosts("")).resolves.toEqual([]);
 
     expect(calls).toHaveLength(0);
   });

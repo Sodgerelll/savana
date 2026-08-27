@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   sendPrivateReply: vi.fn(),
   markEventProcessed: vi.fn(),
   getPostContext: vi.fn(),
+  getRecentPosts: vi.fn(),
 }));
 
 vi.mock("../../../api/chat/_lib/gemini.js", async () => {
@@ -19,6 +20,7 @@ vi.mock("../../../api/chat/_lib/facebook.js", () => ({
   replyToComment: mocks.replyToComment,
   sendPrivateReply: mocks.sendPrivateReply,
   getPostContext: mocks.getPostContext,
+  getRecentPosts: mocks.getRecentPosts,
 }));
 
 vi.mock("../../../api/chat/_lib/guards.js", () => ({
@@ -80,6 +82,7 @@ beforeEach(() => {
   // Most cases are about what happens once a reply exists; the post is a
   // separate question and gets its own tests below.
   mocks.getPostContext.mockResolvedValue(null);
+  mocks.getRecentPosts.mockResolvedValue([]);
 });
 
 describe("parseCommentChange", () => {

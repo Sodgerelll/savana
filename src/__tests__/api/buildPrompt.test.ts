@@ -218,6 +218,36 @@ describe("buildStorefrontPrompt", () => {
     expect(buildStorefrontPrompt(context(), NOW)).not.toContain("ИДЭВХТЭЙ ХЯМДРАЛ");
   });
 
+  it("puts the page's own posts in front of the model", () => {
+    // A post is an event, not a product: the catalogue can say what a soap
+    // costs and never that the bundle runs to the fifteenth.
+    const text = buildStorefrontPrompt(
+      context({
+        posts: [{ postedAt: "2026-08-20", text: "Шинэ жилийн багц 15 хүртэл" }],
+      }),
+      NOW,
+    );
+
+    expect(text).toContain("ФЕЙСБҮҮК ХУУДСАН ДЭЭР НИЙТЛЭСЭН ЗАР");
+    expect(text).toContain("2026-08-20");
+    expect(text).toContain("Шинэ жилийн багц 15 хүртэл");
+  });
+
+  it("tells the model not to invent a post that was never made", () => {
+    const text = buildStorefrontPrompt(
+      context({ posts: [{ postedAt: "2026-08-20", text: "Шинэ багц" }] }),
+      NOW,
+    );
+
+    expect(text).toContain("БҮҮ зохио");
+  });
+
+  it("says nothing about posts when there are none", () => {
+    // A shop that does not post, or a token that cannot read the feed, should
+    // not get an empty heading suggesting the bot looked and found nothing.
+    expect(buildStorefrontPrompt(context(), NOW)).not.toContain("НИЙТЛЭСЭН ЗАР");
+  });
+
   it("renders the FAQ list", () => {
     const text = buildStorefrontPrompt(
       context({ faqs: [{ question: "Хүргэлт хэдэн хоног вэ?", answer: "1-2 ажлын өдөр." }] }),

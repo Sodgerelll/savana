@@ -12,7 +12,12 @@
 
 import { buildStorefrontPrompt, type StorefrontContext } from './buildPrompt.js';
 import { callGemini, looksLikeOurOwnInstructions } from './gemini.js';
-import { getPostContext, replyToComment, sendPrivateReply } from './facebook.js';
+import {
+  getPostContext,
+  getRecentPosts,
+  replyToComment,
+  sendPrivateReply,
+} from './facebook.js';
 import { markEventProcessed } from './guards.js';
 
 export const COMMENT_LOG_COLLECTION = 'chat_comment_replies';
@@ -106,7 +111,8 @@ export async function handleCommentEvent(
     return false;
   }
 
-  const systemPrompt = `${buildStorefrontPrompt(options.storefront, new Date())}\n${PUBLIC_REPLY_RULES}`;
+  const context = { ...options.storefront, posts: await getRecentPosts(options.token) };
+  const systemPrompt = `${buildStorefrontPrompt(context, new Date())}\n${PUBLIC_REPLY_RULES}`;
 
   // A comment is half a sentence. "Энэ хэдэн вэ?" names no product because the
   // customer already named it by commenting where they did, and without the

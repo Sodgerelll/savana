@@ -11,6 +11,9 @@
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
+
+// Type-only, so nothing at runtime crosses between these two modules.
+import type { PromptPost } from './buildPrompt.js';
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Messenger caps a text message near 2000 chars; stay clear of the edge. */
@@ -517,6 +520,78 @@ export async function getUserName(token: string, userId: string): Promise<string
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** How long the page's own feed is kept before being asked for again. */
+const FEED_CACHE_TTL_MS = 15 * 60 * 1000;
+/** Enough to cover a season of announcements without crowding the catalogue. */
+const FEED_LIMIT = 15;
+/** A post is context, not the answer; a long one is trimmed, not carried whole. */
+const FEED_TEXT_LIMIT = 300;
+
+let feedCache: { posts: PromptPost[]; at: number } | null = null;
+
+/**
+ * What the shop has been announcing on its own page.
+ *
+ * The catalogue says what is for sale; it cannot say "the New Year bundle runs
+ * to the 15th", because that is an event rather than a product. A customer who
+ * read it on the page does not repeat it — they ask whether it still stands,
+ * and until now the bot had never seen it.
+ *
+ * Cached for a quarter of an hour. The prompt is sent to a Gemini context cache
+ * and shared by both channels, so a feed that changed per request would throw
+ * that away on every turn for the sake of a post nobody made.
+ *
+ * An empty list on any failure, which is what the shop had before this existed.
+ */
+export async function getRecentPosts(token: string): Promise<PromptPost[]> {
+  if (!token) return [];
+
+  if (feedCache && Date.now() - feedCache.at < FEED_CACHE_TTL_MS) {
+    return feedCache.posts;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let posts: PromptPost[] = [];
+  try {
+    const res = await fetch(
+      `${GRAPH_URL}/me/posts?fields=message,created_time,attachments{title,description}&limit=${FEED_LIMIT}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
+    );
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      posts = (Array.isArray(data?.data) ? data.data : [])
+        .map((post: any) => {
+          const attachment = post?.attachments?.data?.[0] ?? {};
+          const text = [post?.message, attachment?.title, attachment?.description]
+            .map((part: unknown) => String(part ?? '').trim())
+            .filter(Boolean)
+            .join(' · ')
+            .slice(0, FEED_TEXT_LIMIT);
+          return { postedAt: String(post?.created_time ?? '').slice(0, 10), text };
+        })
+        .filter((post: PromptPost) => post.text.length > 0);
+    }
+  } catch {
+    posts = [];
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Failures are cached too, at the same length. A token without the permission
+  // will not grow it within the quarter hour, and every turn would otherwise
+  // pay the timeout in front of the customer's answer.
+  feedCache = { posts, at: Date.now() };
+  return posts;
+}
+
+/** Test seam: the cache is per-instance and would otherwise leak between cases. */
+export function forgetRecentPosts(): void {
+  feedCache = null;
 }
 
 /** How long a post's own words are kept before being asked for again. */

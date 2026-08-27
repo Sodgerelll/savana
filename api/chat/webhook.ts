@@ -25,6 +25,7 @@ import {
 import {
   fetchImageAsBase64,
   firstImageAttachmentUrl,
+  getRecentPosts,
   getUserName,
   sendButtons,
   sendCarousel,
@@ -464,6 +465,11 @@ async function replyToEvent(
   const storefrontPromise = loadStorefrontContext(db, new Date());
   void storefrontPromise.catch(() => {});
 
+  // The page's own announcements. Cached for a quarter of an hour, so this is a
+  // round trip once in a while rather than once a turn.
+  const postsPromise = getRecentPosts(token);
+  void postsPromise.catch(() => {});
+
   const customerName = await getUserName(token, senderId);
   const conversation = await ensureConversation(db, {
     channel,
@@ -590,7 +596,10 @@ async function replyToEvent(
       // price. A null handle simply means paying full price this time.
       const cacheOptions = {
         model: primaryModel(settings.model || undefined),
-        systemPrompt: buildStorefrontPrompt(storefront, new Date()),
+        systemPrompt: buildStorefrontPrompt(
+          { ...storefront, posts: await postsPromise },
+          new Date(),
+        ),
         tools: CHAT_TOOLS,
       };
       const cache = settings.promptCacheEnabled
@@ -758,7 +767,8 @@ async function answerImage(
     return;
   }
 
-  const systemPrompt = `${buildStorefrontPrompt(params.storefront, new Date())}\n${IMAGE_REPLY_RULES}`;
+  const context = { ...params.storefront, posts: await getRecentPosts(token) };
+  const systemPrompt = `${buildStorefrontPrompt(context, new Date())}\n${IMAGE_REPLY_RULES}`;
 
   let reply: string;
   try {
