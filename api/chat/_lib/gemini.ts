@@ -172,6 +172,8 @@ export interface GeminiCallOptions {
   skipModels?: string[];
   /** Called with a model that did not answer in time, so the caller can note it. */
   onModelTimedOut?: (model: string) => void;
+  /** Answered "I am busy" and went on answering it after being asked again. */
+  onModelBusy?: (model: string) => void;
   /** Called with the model that answered, so a past failure can be forgotten. */
   onModelAnswered?: (model: string) => void;
   /**
@@ -502,6 +504,16 @@ async function generateParts(
       // gets. It comes back fast when it refuses, so this is cheap.
       if (result.status !== null && !isBusy(result.status)) {
         break;
+      }
+
+      // Busy, and asked again, and still busy. A model refusing every request
+      // is as unusable as one that never answers, and until now only a timeout
+      // could earn a demotion — so a model saying 503 to everything stayed at
+      // the front of the chain being asked, turn after turn, for as long as the
+      // outage lasted. It only goes to the back of the queue, so it is still
+      // tried when nothing else answers.
+      if (result.status !== null && attempt === MAX_ATTEMPTS_PER_MODEL - 1) {
+        options.onModelBusy?.(model);
       }
 
       // A model that did not answer in twenty-five seconds is unlikely to

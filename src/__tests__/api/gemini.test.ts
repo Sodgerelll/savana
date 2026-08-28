@@ -188,6 +188,36 @@ describe("callGemini", () => {
     expect(calls[1].url).toContain("gemini-3.6-flash");
   });
 
+  it("reports a model that is still busy after being asked twice", async () => {
+    // Measured: 3.7 refused five real turns out of five in under a second each.
+    // Only a timeout could earn a demotion, so it stayed at the front of the
+    // chain being asked again on every turn for as long as the outage lasted.
+    const busy: string[] = [];
+    responders = [
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse(textPayload("the next model answered")),
+    ];
+
+    await expect(
+      callGemini({ message: "hi", onModelBusy: (model) => busy.push(model) }),
+    ).resolves.toBe("the next model answered");
+
+    expect(busy).toEqual(["gemini-3.6-flash"]);
+  });
+
+  it("says nothing about a model that was busy once and then answered", async () => {
+    const busy: string[] = [];
+    responders = [
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse(textPayload("second time lucky")),
+    ];
+
+    await callGemini({ message: "hi", onModelBusy: (model) => busy.push(model) });
+
+    expect(busy).toEqual([]);
+  });
+
   it("still tries a benched model once everything in front of it has failed", async () => {
     // This cost a shop its bot for a whole outage. The two models ahead were
     // answering 503 to everything and never benched for it, while the one that

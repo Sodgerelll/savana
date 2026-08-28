@@ -71,7 +71,11 @@ const MODEL_PREFIX = 'model:';
  * reply is its own outage. A few minutes is long enough to skip a bad patch and
  * short enough that a recovered model is tried again while anyone still cares.
  */
-export async function markModelUnhealthy(db: any, model: string): Promise<void> {
+export async function markModelUnhealthy(
+  db: any,
+  model: string,
+  how: 'timed out' | 'refused every request' = 'timed out',
+): Promise<void> {
   const id = `${MODEL_PREFIX}${model}`;
   let strikes = 0;
 
@@ -98,8 +102,8 @@ export async function markModelUnhealthy(db: any, model: string): Promise<void> 
   const strikesNow = probe.ok ? strikes : strikes + 1;
   const wait = probe.ok ? BACKOFF_MS[0] : BACKOFF_MS[Math.min(strikes, BACKOFF_MS.length - 1)];
   const reason = probe.ok
-    ? 'timed out on a real turn, but answered a small prompt straight after'
-    : `timed out (${strikesNow} in a row)`;
+    ? `${how} on a real turn, but answered a small prompt straight after`
+    : `${how} (${strikesNow} in a row)`;
 
   await recordChatFailure(db, id, reason, {
     strikes: strikesNow,

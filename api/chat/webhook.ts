@@ -627,6 +627,7 @@ async function replyToEvent(
         // the customer waits the full twenty-five seconds either way.
         skipModels: await unhealthyModels(db),
         onModelTimedOut: (model) => void markModelUnhealthy(db, model),
+        onModelBusy: (model) => void markModelUnhealthy(db, model, 'refused every request'),
         onModelAnswered: (model) => void markModelHealthy(db, model),
         onCacheRejected: () => void forgetPromptCache(db, cacheOptions),
       });
