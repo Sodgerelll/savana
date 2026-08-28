@@ -43,8 +43,20 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
  * `gemini-flash-latest` is an alias rather than a pinned version — a poor thing
  * to build on and a good last resort, because whatever Google is currently
  * calling its fast model is exactly what is wanted once the named ones are gone.
+ *
+ * Three was also one too few, for a subtler reason: they were all the same
+ * thing. 3.6, 3.7 and whatever the alias points at are the current flash family
+ * sharing the capacity that gets scarce first, and a morning came when all
+ * three answered 503 to everything within a second of each other. A chain whose
+ * links fail together is a single link. 3.5 is a generation back and out of
+ * that queue — slower to reach for, and the whole point of reaching for it.
  */
-const DEFAULT_MODELS = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+const DEFAULT_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+  'gemini-3.5-flash',
+  'gemini-flash-latest',
+];
 
 // Models the caller is allowed to request explicitly (admin model picker). An
 // unknown value is ignored rather than rejected so a stale saved setting cannot

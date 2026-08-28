@@ -193,10 +193,10 @@ describe("callGemini", () => {
     // answering 503 to everything and never benched for it, while the one that
     // still worked sat out its wait and was never asked.
     responders = [
-      () => jsonResponse({ error: { message: "high demand" } }, 503),
-      () => jsonResponse({ error: { message: "high demand" } }, 503),
-      () => jsonResponse({ error: { message: "high demand" } }, 503),
-      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      ...Array.from(
+        { length: 6 },
+        () => () => jsonResponse({ error: { message: "high demand" } }, 503),
+      ),
       () => jsonResponse(textPayload("the benched one answered")),
     ];
 
@@ -216,7 +216,12 @@ describe("callGemini", () => {
     await expect(
       callGemini({
         message: "hi",
-        skipModels: ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"],
+        skipModels: [
+          "gemini-3.6-flash",
+          "gemini-3.7-flash",
+          "gemini-3.5-flash",
+          "gemini-flash-latest",
+        ],
       }),
     ).resolves.toBe("tried anyway");
     expect(calls[0].url).toContain("gemini-3.6-flash");
@@ -307,13 +312,13 @@ describe("callGemini", () => {
   });
 
   it("rejects with a key-free message once every model fails", async () => {
-    responders = Array.from({ length: 6 }, () => () => jsonResponse({}, 404));
+    responders = Array.from({ length: 8 }, () => () => jsonResponse({}, 404));
 
     await expect(callGemini({ message: "hi" })).rejects.toSatisfy((err: unknown) => {
       return err instanceof GeminiError && !err.message.includes(API_KEY);
     });
-    // 3 models × 1 attempt each (HTTP errors do not retry in place).
-    expect(calls).toHaveLength(3);
+    // One attempt per model: a 404 means the same thing however often it is asked.
+    expect(calls).toHaveLength(4);
   });
 
   it("carries Google's own reason into the error, not just the status", async () => {
@@ -326,6 +331,7 @@ describe("callGemini", () => {
           { error: { message: "Unknown name \"thinkingLevel\" at 'generation_config'" } },
           400,
         ),
+      () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
       () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
       // The last model in the chain is the one whose reason has to survive.
       () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
