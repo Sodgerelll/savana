@@ -569,6 +569,13 @@ export function geminiErrorToUserMessage(err: unknown): string {
   return 'Хариу авч чадсангүй. Дахин оролдоно уу.';
 }
 
+/** What the smallest question there is came back with. */
+export interface GeminiProbe {
+  /** The model answered. Whatever went wrong on the real turn, it is still serving us. */
+  ok: boolean;
+  detail: string;
+}
+
 /**
  * Asks the API the smallest question there is, to find out whose fault a
  * failure was.
@@ -591,10 +598,10 @@ export function geminiErrorToUserMessage(err: unknown): string {
  *
  * Costs one call, and only on a turn that has already failed.
  */
-export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<string> {
+export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<GeminiProbe> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return 'no api key';
+    return { ok: false, detail: 'no api key' };
   }
 
   const started = Date.now();
@@ -616,17 +623,26 @@ export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<string> {
 
     if (res.ok) {
       const thoughts = body?.usageMetadata?.thoughtsTokenCount ?? 0;
-      return `${model} answered a four-word prompt in ${ms}ms (thinking ${thoughts} tokens)`;
+      return {
+        ok: true,
+        detail: `${model} answered a four-word prompt in ${ms}ms (thinking ${thoughts} tokens)`,
+      };
     }
 
     const detail = body?.error?.message ?? '';
-    return `${model} HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`;
+    return {
+      ok: false,
+      detail: `${model} HTTP ${res.status} in ${ms}ms${detail ? `: ${detail}` : ''}`,
+    };
   } catch (err) {
     const ms = Date.now() - started;
     const aborted = err instanceof Error && err.name === 'AbortError';
-    return aborted
-      ? `${model} did not answer even a four-word prompt in ${ms}ms`
-      : `${model} request failed after ${ms}ms`;
+    return {
+      ok: false,
+      detail: aborted
+        ? `${model} did not answer even a four-word prompt in ${ms}ms`
+        : `${model} request failed after ${ms}ms`,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -641,7 +657,7 @@ export async function probeGemini(model = DEFAULT_MODELS[0]): Promise<string> {
  */
 export async function probeEveryModel(): Promise<string> {
   const results = await Promise.all(DEFAULT_MODELS.map((model) => probeGemini(model)));
-  return results.join(' | ').slice(0, 600);
+  return results.map((result) => result.detail).join(' | ').slice(0, 600);
 }
 
 /**
@@ -711,8 +727,14 @@ function healthyChain(requested: string | undefined, skip: string[] | undefined)
   }
 
   const asked = requested && ALLOWED_REQUESTED.includes(requested) ? requested : null;
-  const healthy = chain.filter((model) => model === asked || !skip.includes(model));
-  return healthy.length > 0 ? healthy : chain;
+  const benched = (model: string) => model !== asked && skip.includes(model);
+
+  // Demoted to the back, not dropped. Excluding them cost a shop its bot for
+  // the length of a whole outage: the two models in front were answering 503 to
+  // everything and were never benched for it, while the one model that still
+  // worked sat out its wait. A bench is for saving a customer the wait in front
+  // of a model that is unwell — not for refusing the only one that answers.
+  return [...chain.filter((model) => !benched(model)), ...chain.filter(benched)];
 }
 
 export function primaryModel(requested?: string): string {

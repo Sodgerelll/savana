@@ -169,6 +169,25 @@ describe("callGemini", () => {
     expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
+  it("still tries a benched model once everything in front of it has failed", async () => {
+    // This cost a shop its bot for a whole outage. The two models ahead were
+    // answering 503 to everything and never benched for it, while the one that
+    // still worked sat out its wait and was never asked.
+    responders = [
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse(textPayload("the benched one answered")),
+    ];
+
+    await expect(
+      callGemini({ message: "hi", skipModels: ["gemini-3.6-flash"] }),
+    ).resolves.toBe("the benched one answered");
+
+    // Demoted, not dropped: tried after the healthy ones rather than first.
+    expect(calls[0].url).toContain("gemini-3.7-flash");
+    expect(calls[calls.length - 1].url).toContain("gemini-3.6-flash");
+  });
+
   it("keeps the chain when every model in it is marked unhealthy", async () => {
     // A stale note must never be the reason a shop's bot says nothing at all.
     responders = [() => jsonResponse(textPayload("tried anyway"))];

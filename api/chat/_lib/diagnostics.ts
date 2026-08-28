@@ -84,17 +84,26 @@ export async function markModelUnhealthy(db: any, model: string): Promise<void> 
     // No history to read is the same as no history.
   }
 
-  const wait = BACKOFF_MS[Math.min(strikes, BACKOFF_MS.length - 1)];
-
   // Asked the smallest question there is, right after it failed a real one.
   // A model that answers "hi" in a moment but not a catalogue prompt in
   // eighteen seconds is telling us the size of the request is the problem; one
   // that answers neither is telling us it is simply not serving us.
   const probe = await probeGemini(model);
 
-  await recordChatFailure(db, id, `timed out (${strikes + 1} in a row)`, {
-    strikes: strikes + 1,
-    probe,
+  // The probe is evidence and it has just said this model answers. A turn can
+  // fail for reasons that are not the model's — a spike, a long prompt, one bad
+  // patch — and letting the strike count climb on a model that is plainly alive
+  // is how the wait grows to hours for the one model still working. Note it,
+  // wait the shortest step, and try again soon.
+  const strikesNow = probe.ok ? strikes : strikes + 1;
+  const wait = probe.ok ? BACKOFF_MS[0] : BACKOFF_MS[Math.min(strikes, BACKOFF_MS.length - 1)];
+  const reason = probe.ok
+    ? 'timed out on a real turn, but answered a small prompt straight after'
+    : `timed out (${strikesNow} in a row)`;
+
+  await recordChatFailure(db, id, reason, {
+    strikes: strikesNow,
+    probe: probe.detail,
     unhealthyUntil: new Date(Date.now() + wait),
   });
 }
