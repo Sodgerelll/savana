@@ -223,6 +223,14 @@ function resolveModelChain(requested?: string): string[] {
   return base;
 }
 
+/**
+ * Whether the API is refusing because it is overloaded rather than because the
+ * request is wrong. 429 is the quota version of the same sentence.
+ */
+function isBusy(status: number | null): boolean {
+  return status === 429 || status === 503;
+}
+
 function clampTemperature(value: unknown): number {
   return typeof value === 'number' && value >= 0 && value <= 2 ? value : 0.7;
 }
@@ -472,7 +480,15 @@ async function generateParts(
 
       // An HTTP-level rejection is deterministic for this model — move on.
       // Only transport errors (status null) are worth retrying in place.
-      if (result.status !== null) {
+      //
+      // Except when the answer is "I am busy", which is not a verdict on the
+      // request at all: Google says so in those words — "spikes in demand are
+      // usually temporary, please try again later" — and on the morning every
+      // model in the chain was saying it, moving on meant asking three models
+      // the same question inside two seconds and telling the customer to wait
+      // for a person. A busy model gets the one retry a dropped connection
+      // gets. It comes back fast when it refuses, so this is cheap.
+      if (result.status !== null && !isBusy(result.status)) {
         break;
       }
 

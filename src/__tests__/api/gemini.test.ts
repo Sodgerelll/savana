@@ -104,8 +104,10 @@ describe("callGemini", () => {
   });
 
   it("moves to the next model on an HTTP error instead of retrying the same one", async () => {
+    // A status that describes the request rather than the moment. 429 and 503
+    // are the exception and are covered above.
     responders = [
-      () => jsonResponse({ error: "rate limited" }, 429),
+      () => jsonResponse({ error: "model is no longer available" }, 404),
       () => jsonResponse(textPayload("second model answered")),
     ];
 
@@ -169,11 +171,30 @@ describe("callGemini", () => {
     expect(calls[0].url).toContain("gemini-3.7-flash");
   });
 
+  it("asks a busy model again before giving up on it", async () => {
+    // 503 is not a verdict on the request. Google's own words are "spikes in
+    // demand are usually temporary, please try again later", and on the morning
+    // every model was saying it, moving straight on meant asking three models
+    // the same question inside two seconds and handing the customer to a person.
+    responders = [
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse(textPayload("second time lucky")),
+    ];
+
+    await expect(callGemini({ message: "hi" })).resolves.toBe("second time lucky");
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toContain("gemini-3.6-flash");
+    expect(calls[1].url).toContain("gemini-3.6-flash");
+  });
+
   it("still tries a benched model once everything in front of it has failed", async () => {
     // This cost a shop its bot for a whole outage. The two models ahead were
     // answering 503 to everything and never benched for it, while the one that
     // still worked sat out its wait and was never asked.
     responders = [
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
+      () => jsonResponse({ error: { message: "high demand" } }, 503),
       () => jsonResponse({ error: { message: "high demand" } }, 503),
       () => jsonResponse({ error: { message: "high demand" } }, 503),
       () => jsonResponse(textPayload("the benched one answered")),
@@ -286,7 +307,7 @@ describe("callGemini", () => {
   });
 
   it("rejects with a key-free message once every model fails", async () => {
-    responders = Array.from({ length: 6 }, () => () => jsonResponse({}, 503));
+    responders = Array.from({ length: 6 }, () => () => jsonResponse({}, 404));
 
     await expect(callGemini({ message: "hi" })).rejects.toSatisfy((err: unknown) => {
       return err instanceof GeminiError && !err.message.includes(API_KEY);
@@ -392,7 +413,7 @@ describe("context cache", () => {
     // A cache belongs to one model. Carrying the handle down the chain would
     // turn one model's outage into every model's 400.
     responders = [
-      () => jsonResponse({ error: { message: "overloaded" } }, 503),
+      () => jsonResponse({ error: { message: "model is no longer available" } }, 404),
       () => jsonResponse(textPayload("ok")),
     ];
 
