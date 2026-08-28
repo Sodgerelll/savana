@@ -242,6 +242,30 @@ describe("buildStorefrontPrompt", () => {
     expect(text).toContain("БҮҮ зохио");
   });
 
+  it("forbids offering an announcement whose season has passed", () => {
+    // The feed is trimmed to a month, but a bundle posted three weeks ago can
+    // still have ended. The date is in front of the model; this tells it to use it.
+    const text = buildStorefrontPrompt(
+      context({ posts: [{ postedAt: "2026-08-20", text: "Шинэ жилийн багц" }] }),
+      NOW,
+    );
+
+    expect(text).toContain("ӨНГӨРСӨН");
+    expect(text).toContain("өнөөдрийн огноотой заавал харьцуул");
+    expect(text).toContain("санал болгож БОЛОХГҮЙ");
+  });
+
+  it("keeps the catalogue the only source of a price", () => {
+    // A post is an announcement and an announcement goes stale. Quoting last
+    // month's price at a customer is a promise the shop has to keep.
+    const text = buildStorefrontPrompt(
+      context({ posts: [{ postedAt: "2026-08-20", text: "Саван 8800₮" }] }),
+      NOW,
+    );
+
+    expect(text).toContain("ҮНЭ, ҮЛДЭГДЛИЙГ постоос БҮҮ ав");
+  });
+
   it("says nothing about posts when there are none", () => {
     // A shop that does not post, or a token that cannot read the feed, should
     // not get an empty heading suggesting the bot looked and found nothing.

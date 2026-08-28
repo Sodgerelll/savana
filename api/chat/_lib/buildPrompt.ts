@@ -353,8 +353,15 @@ function formatFaqs(faqs: PromptFaq[]): string {
  * "энэ хямдрал хэвээрээ юу?" and expect the shop to know what they mean. The
  * catalogue cannot answer that: a post is an event, not a product.
  *
- * Public writing, so none of it is internal. The instruction below is against
- * inventing posts, not against quoting them.
+ * Public writing, so none of it is internal. The instructions below are against
+ * repeating a post as though it were still true, not against quoting it: a
+ * promotion that ended, or a New Year bundle read out in July, is worse than no
+ * answer at all, because the customer acts on it. The feed is already trimmed
+ * to the last month; this says what to do with what survives.
+ *
+ * Prices are the other half. A post is an announcement, and an announcement
+ * goes stale — the catalogue above is the only thing that knows what a product
+ * costs today.
  */
 function formatPosts(posts: PromptPost[]): string {
   if (posts.length === 0) {
@@ -364,7 +371,11 @@ function formatPosts(posts: PromptPost[]): string {
   return [
     '# ФЕЙСБҮҮК ХУУДСАН ДЭЭР НИЙТЛЭСЭН ЗАР',
     'Хэрэглэгч "постонд бичсэн", "зараа харсан", "зарлаж байсан" гэвэл эндээс хар.',
-    'Энд байхгүй зарыг БҮҮ зохио. Байхгүй бол мэдэхгүй гэж хэл.',
+    'Эдгээр нь ӨНГӨРСӨН нийтлэлүүд. Огноог нь дээрх өнөөдрийн огноотой заавал харьцуул.',
+    '- Хугацаа нь дууссан урамшуулал, өөр улирлын буюу баярын барааг ОДОО санал болгож БОЛОХГҮЙ.',
+    '- Урамшуулал хүчинтэй эсэх эргэлзээтэй бол "ажилтнаас лавлаад хэлье" гэж хэл.',
+    '- ҮНЭ, ҮЛДЭГДЛИЙГ постоос БҮҮ ав. Зөвхөн дээрх каталог зөв — пост нь зар мэдээ.',
+    '- Энд байхгүй зарыг БҮҮ зохио. Байхгүй бол мэдэхгүй гэж хэл.',
     lines.join('\n'),
   ].join('\n');
 }

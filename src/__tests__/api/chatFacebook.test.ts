@@ -294,6 +294,10 @@ describe("sendTypingOn", () => {
 });
 
 describe("getRecentPosts", () => {
+  // Fixed, so the month-old cutoff is not measured against whenever the suite
+  // happens to run.
+  const NOW = new Date("2026-08-28T09:00:00+0800");
+
   beforeEach(() => {
     forgetRecentPosts();
   });
@@ -311,7 +315,7 @@ describe("getRecentPosts", () => {
         ],
       });
 
-    return expect(getRecentPosts(TOKEN)).resolves.toEqual([
+    return expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([
       { postedAt: "2026-08-20", text: "Шинэ жилийн багц" },
       { postedAt: "2026-08-18", text: "Саван ирлээ · Сүүлэн тос · 8800₮" },
     ]);
@@ -319,19 +323,42 @@ describe("getRecentPosts", () => {
 
   it("drops a post with no words in it", async () => {
     // A bare photo says nothing the model can use.
-    responder = () =>
-      jsonResponse({ data: [{ created_time: "2026-08-20T09:00:00+0800" }] });
+    responder = () => jsonResponse({ data: [{ created_time: "2026-08-26T09:00:00+0800" }] });
 
-    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
+    await expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([]);
+  });
+
+  it("forgets a promotion that ended a season ago", async () => {
+    // A New Year bundle read out in July is worse than no answer at all,
+    // because the customer acts on it. No wording in the prompt is as reliable
+    // as the post not being there.
+    responder = () =>
+      jsonResponse({
+        data: [
+          { message: "Шинэ жилийн багц", created_time: "2025-12-20T09:00:00+0800" },
+          { message: "Энэ долоо хоногт", created_time: "2026-08-25T09:00:00+0800" },
+        ],
+      });
+
+    await expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([
+      { postedAt: "2026-08-25", text: "Энэ долоо хоногт" },
+    ]);
+  });
+
+  it("drops a post it cannot place in time rather than treating it as today's", async () => {
+    responder = () => jsonResponse({ data: [{ message: "Хямдрал", created_time: "" }] });
+
+    await expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([]);
   });
 
   it("asks once a quarter hour, not once a turn", async () => {
     // The prompt goes to a shared context cache; a feed that changed per
     // request would throw that away for the sake of a post nobody made.
-    responder = () => jsonResponse({ data: [{ message: "Саван", created_time: "2026-08-20" }] });
+    responder = () =>
+      jsonResponse({ data: [{ message: "Саван", created_time: "2026-08-26T09:00:00+0800" }] });
 
-    await getRecentPosts(TOKEN);
-    await getRecentPosts(TOKEN);
+    await getRecentPosts(TOKEN, NOW);
+    await getRecentPosts(TOKEN, NOW);
 
     expect(calls).toHaveLength(1);
   });
@@ -339,14 +366,14 @@ describe("getRecentPosts", () => {
   it("remembers a refusal too, so no turn pays the timeout twice", async () => {
     responder = () => jsonResponse({ error: { message: "no permission" } }, 403);
 
-    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
-    await expect(getRecentPosts(TOKEN)).resolves.toEqual([]);
+    await expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([]);
+    await expect(getRecentPosts(TOKEN, NOW)).resolves.toEqual([]);
 
     expect(calls).toHaveLength(1);
   });
 
   it("does nothing without a token", async () => {
-    await expect(getRecentPosts("")).resolves.toEqual([]);
+    await expect(getRecentPosts("", NOW)).resolves.toEqual([]);
 
     expect(calls).toHaveLength(0);
   });

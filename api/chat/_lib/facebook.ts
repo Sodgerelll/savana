@@ -528,6 +528,15 @@ const FEED_CACHE_TTL_MS = 15 * 60 * 1000;
 const FEED_LIMIT = 15;
 /** A post is context, not the answer; a long one is trimmed, not carried whole. */
 const FEED_TEXT_LIMIT = 300;
+/**
+ * How far back a post is still worth knowing about.
+ *
+ * The point of the feed is what the shop is saying now. A New Year bundle read
+ * out in July is worse than no answer at all — the customer acts on it — and no
+ * wording in the prompt is as reliable as the post simply not being there. A
+ * month covers a running promotion and drops one that has been over for weeks.
+ */
+const FEED_MAX_AGE_DAYS = 30;
 
 let feedCache: { posts: PromptPost[]; at: number } | null = null;
 
@@ -545,7 +554,7 @@ let feedCache: { posts: PromptPost[]; at: number } | null = null;
  *
  * An empty list on any failure, which is what the shop had before this existed.
  */
-export async function getRecentPosts(token: string): Promise<PromptPost[]> {
+export async function getRecentPosts(token: string, now: Date = new Date()): Promise<PromptPost[]> {
   if (!token) return [];
 
   if (feedCache && Date.now() - feedCache.at < FEED_CACHE_TTL_MS) {
@@ -572,9 +581,20 @@ export async function getRecentPosts(token: string): Promise<PromptPost[]> {
             .filter(Boolean)
             .join(' · ')
             .slice(0, FEED_TEXT_LIMIT);
-          return { postedAt: String(post?.created_time ?? '').slice(0, 10), text };
+          return {
+            postedAt: String(post?.created_time ?? '').slice(0, 10),
+            text,
+            at: Date.parse(String(post?.created_time ?? '')),
+          };
         })
-        .filter((post: PromptPost) => post.text.length > 0);
+        .filter((post: PromptPost & { at: number }) => {
+          if (post.text.length === 0) return false;
+          // An unparseable date is treated as too old rather than as today: a
+          // post we cannot place in time is exactly the one not to repeat.
+          if (!Number.isFinite(post.at)) return false;
+          return now.getTime() - post.at <= FEED_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+        })
+        .map(({ postedAt, text }: PromptPost) => ({ postedAt, text }));
     }
   } catch {
     posts = [];
