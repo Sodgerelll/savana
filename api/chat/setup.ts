@@ -15,36 +15,17 @@ import { facebookComesFromEnv, loadChatSettings, type ChatButton } from './_lib/
 
 export const config = { maxDuration: 30 };
 
-/** Messenger shows three entries at the top level; the rest share a submenu. */
-const MAX_TOP_LEVEL = 3;
-const SUBMENU_TITLE = 'Бусад ☰';
-
 /**
  * Lays the shop's buttons out the way Messenger will accept them.
  *
- * Three fit across the top. A fourth and beyond would be dropped silently, so
- * the last slot becomes a submenu holding everything that did not fit — which
- * is how four buttons were reachable before this was configurable, and stays
- * true however many the shop adds.
+ * One flat list. There used to be a submenu here, because Messenger showed
+ * three entries at the top and a fourth was dropped in silence. Asked directly,
+ * Meta took four and then eight in one flat list and refused the submenu —
+ * "(#100) Invalid button type" — which failed the whole request and left the
+ * page with no menu at all rather than an incomplete one.
  */
 function toMenuItems(buttons: ChatButton[]) {
-  if (buttons.length <= MAX_TOP_LEVEL) {
-    return buttons.map((button) => ({ title: button.title, payload: button.action }));
-  }
-
-  return [
-    ...buttons.slice(0, MAX_TOP_LEVEL - 1).map((button) => ({
-      title: button.title,
-      payload: button.action,
-    })),
-    {
-      title: SUBMENU_TITLE,
-      items: buttons.slice(MAX_TOP_LEVEL - 1).map((button) => ({
-        title: button.title,
-        payload: button.action,
-      })),
-    },
-  ];
+  return buttons.map((button) => ({ title: button.title, payload: button.action }));
 }
 
 const NOT_CONFIGURED = 'Facebook холбогдоогүй байна. FB_PAGE_ACCESS_TOKEN тохируулна уу.';
@@ -93,13 +74,12 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
 
     await applyMessengerProfile(settings.facebook.pageAccessToken, {
-      greeting: settings.welcomeMessage,
       menuItems: toMenuItems(settings.menuButtons),
     });
 
     res.status(200).json({
       ok: true,
-      message: 'Facebook хуудсанд цэс болон мэндчилгээ суулаа.',
+      message: 'Facebook хуудсанд цэс суулаа.',
     });
   } catch (err) {
     // The Graph error text is what tells an admin whether the token is expired

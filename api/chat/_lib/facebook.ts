@@ -21,8 +21,15 @@ export const TEXT_LIMIT = 1900;
 /** Messenger's cap on the text above a button template. */
 const BUTTON_TEXT_LIMIT = 640;
 /** Messenger's persistent menu limits. */
-const MAX_TOP_LEVEL_MENU_ITEMS = 3;
-const MAX_SUBMENU_ITEMS = 5;
+/**
+ * How many entries Messenger takes at the top level of the persistent menu.
+ *
+ * It was three, and everything else here was built around squeezing past that:
+ * a fourth button went into a submenu. Asked directly, Meta accepted four and
+ * then eight without complaint, and its own reference now documents twenty —
+ * so the squeeze was solving a problem that had gone away.
+ */
+const MAX_TOP_LEVEL_MENU_ITEMS = 20;
 const MENU_TITLE_LIMIT = 30;
 /** Messenger shows at most 13 quick replies, each title at most 20 chars. */
 const MAX_QUICK_REPLIES = 13;
@@ -703,29 +710,32 @@ export function forgetPostContext(): void {
 export async function applyMessengerProfile(
   token: string,
   profile: {
-    greeting?: string;
-    /** A entry with `items` becomes a submenu; Messenger allows three at the top. */
-    menuItems?: Array<{ title: string; payload?: string; items?: Array<{ title: string; payload: string }> }>;
+    menuItems?: Array<{ title: string; payload: string }>;
   },
 ): Promise<void> {
   if (!token) throw new Error('Page access token тохируулаагүй байна.');
 
+  // No greeting. Meta lists what this endpoint accepts when you send it
+  // something it does not — get_started, persistent_menu, whitelisted_domains,
+  // account_linking_url, home_url, ice_breakers, platform, description,
+  // commands — and greeting is not among them any more. It was being sent for
+  // as long as this function existed and had never once been applied. The
+  // shop's welcome still reaches the customer: the Get Started postback answers
+  // with it, which is the path that was doing the work all along.
   const body: Record<string, unknown> = {
     get_started: { payload: 'GET_STARTED' },
   };
 
-  if (profile.greeting) {
-    body.greeting = [{ locale: 'default', text: profile.greeting.slice(0, 160) }];
-  }
-
   if (profile.menuItems && profile.menuItems.length > 0) {
-    // Messenger takes three entries at the top level and five inside a submenu.
-    // Anything past three used to be dropped here without a word, which is how
-    // a menu item can be added, deployed, and never appear.
+    // Flat. A submenu was how a fourth button got past a three-item ceiling,
+    // and `type: "nested"` is refused outright now — "(#100) Invalid button
+    // type", which failed the whole request and took the other three buttons
+    // down with it. Asked directly, Meta took four and then eight in one flat
+    // list, so there is nothing left for a submenu to solve.
     if (profile.menuItems.length > MAX_TOP_LEVEL_MENU_ITEMS) {
       console.warn(
-        `[chat/facebook] persistent menu has ${profile.menuItems.length} top-level items; ` +
-          `Messenger shows ${MAX_TOP_LEVEL_MENU_ITEMS}. Nest the rest under a submenu.`,
+        `[chat/facebook] persistent menu has ${profile.menuItems.length} items; ` +
+          `Messenger shows ${MAX_TOP_LEVEL_MENU_ITEMS}.`,
       );
     }
 
@@ -733,23 +743,11 @@ export async function applyMessengerProfile(
       {
         locale: 'default',
         composer_input_disabled: false,
-        call_to_actions: profile.menuItems.slice(0, MAX_TOP_LEVEL_MENU_ITEMS).map((item) =>
-          item.items && item.items.length > 0
-            ? {
-                type: 'nested',
-                title: item.title.slice(0, MENU_TITLE_LIMIT),
-                call_to_actions: item.items.slice(0, MAX_SUBMENU_ITEMS).map((child) => ({
-                  type: 'postback',
-                  title: child.title.slice(0, MENU_TITLE_LIMIT),
-                  payload: child.payload,
-                })),
-              }
-            : {
-                type: 'postback',
-                title: item.title.slice(0, MENU_TITLE_LIMIT),
-                payload: item.payload,
-              },
-        ),
+        call_to_actions: profile.menuItems.slice(0, MAX_TOP_LEVEL_MENU_ITEMS).map((item) => ({
+          type: 'postback',
+          title: item.title.slice(0, MENU_TITLE_LIMIT),
+          payload: item.payload,
+        })),
       },
     ];
   }

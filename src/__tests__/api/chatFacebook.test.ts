@@ -119,48 +119,41 @@ describe("splitText", () => {
 });
 
 describe("applyMessengerProfile menu", () => {
-  it("nests a submenu rather than dropping what will not fit", async () => {
-    // Messenger shows three entries at the top level. A fourth used to be sliced
-    // off without a word, which is how a menu item gets added, deployed, and
-    // never appears — the way "Ботруу буцах" did.
+  it("sends every button flat, because a fourth one no longer needs hiding", async () => {
+    // A submenu was how a fourth button got past a three-item ceiling. Asked
+    // directly, Meta took four in one flat list and refused the submenu —
+    // "(#100) Invalid button type" — which failed the whole request and left
+    // the page with no menu at all rather than an incomplete one.
     await applyMessengerProfile(TOKEN, {
       menuItems: [
         { title: "Бүтээгдэхүүн", payload: "SHOW_PRODUCTS" },
         { title: "Хямдрал", payload: "SHOW_PROMOTIONS" },
-        {
-          title: "Тусламж",
-          items: [
-            { title: "Ажилтантай ярих", payload: "TRANSFER_TO_STAFF" },
-            { title: "Ботруу буцах", payload: "RESUME_BOT" },
-          ],
-        },
+        { title: "Ажилтантай ярих", payload: "TRANSFER_TO_STAFF" },
+        { title: "Ботруу буцах", payload: "RESUME_BOT" },
       ],
     });
 
     const menu = body().persistent_menu as Array<{ call_to_actions: Array<Record<string, unknown>> }>;
     const actions = menu[0].call_to_actions;
 
-    expect(actions).toHaveLength(3);
-    expect(actions[2]).toMatchObject({ type: "nested", title: "Тусламж" });
-    expect((actions[2].call_to_actions as Array<{ payload: string }>).map((a) => a.payload)).toEqual([
+    expect(actions).toHaveLength(4);
+    expect(actions.every((action) => action.type === "postback")).toBe(true);
+    expect(actions.map((action) => action.payload)).toEqual([
+      "SHOW_PRODUCTS",
+      "SHOW_PROMOTIONS",
       "TRANSFER_TO_STAFF",
       "RESUME_BOT",
     ]);
   });
 
-  it("says so when more top-level items are given than Messenger will show", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
+  it("never sends a greeting, which this endpoint stopped accepting", async () => {
+    // Meta answers a lone greeting by listing what it does take, and greeting is
+    // not on the list. It was sent on every install and applied on none of them.
     await applyMessengerProfile(TOKEN, {
-      menuItems: [
-        { title: "A", payload: "A" },
-        { title: "B", payload: "B" },
-        { title: "C", payload: "C" },
-        { title: "D", payload: "D" },
-      ],
+      menuItems: [{ title: "Бүтээгдэхүүн", payload: "SHOW_PRODUCTS" }],
     });
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("top-level"));
+    expect(body().greeting).toBeUndefined();
   });
 });
 
@@ -643,24 +636,23 @@ describe("applyMessengerProfile", () => {
     expect(body().get_started).toEqual({ payload: "GET_STARTED" });
   });
 
-  it("installs the greeting and persistent menu", async () => {
+  it("installs Get Started and the persistent menu", async () => {
     await applyMessengerProfile(TOKEN, {
-      greeting: "Сайн байна уу!",
       menuItems: [{ title: "Бүтээгдэхүүн", payload: "SHOW_PRODUCTS" }],
     });
 
-    expect(body().greeting).toEqual([{ locale: "default", text: "Сайн байна уу!" }]);
+    expect(body().get_started).toEqual({ payload: "GET_STARTED" });
     expect(body().persistent_menu[0].call_to_actions).toEqual([
       { type: "postback", title: "Бүтээгдэхүүн", payload: "SHOW_PRODUCTS" },
     ]);
   });
 
-  it("caps the persistent menu at 3 entries", async () => {
+  it("caps the persistent menu where Messenger does", async () => {
     await applyMessengerProfile(TOKEN, {
-      menuItems: Array.from({ length: 6 }, (_, i) => ({ title: `M${i}`, payload: `P${i}` })),
+      menuItems: Array.from({ length: 25 }, (_, i) => ({ title: `M${i}`, payload: `P${i}` })),
     });
 
-    expect(body().persistent_menu[0].call_to_actions).toHaveLength(3);
+    expect(body().persistent_menu[0].call_to_actions).toHaveLength(20);
   });
 
   it("refuses to run without a token", async () => {
