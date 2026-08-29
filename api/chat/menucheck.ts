@@ -51,6 +51,20 @@ export default async function handler(req: any, res: any): Promise<void> {
     ['menu.noEmoji', { persistent_menu: menu(FLAT.map((b) => ({ ...b, title: b.title.replace(/[^\u0400-\u04FF\s]/g, '').trim() }))) }],
   ];
 
+  const back = { type: 'postback', title: 'Ботруу буцах', payload: 'RESUME_BOT' };
+  variants.push(['menu.flat4', { persistent_menu: menu([...FLAT, back]) }]);
+  variants.push([
+    'menu.flat8',
+    {
+      persistent_menu: menu([
+        ...FLAT,
+        back,
+        ...FLAT.map((b, i) => ({ ...b, title: b.title + ' ' + (i + 5) })),
+        { ...back, title: 'Найм' },
+      ]),
+    },
+  ]);
+
   const results: Array<Record<string, unknown>> = [];
   for (const [name, body] of variants) {
     const graph = await fetch(`${GRAPH_URL}/me/messenger_profile`, {
