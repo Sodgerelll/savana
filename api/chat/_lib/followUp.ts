@@ -32,9 +32,21 @@ const SCAN_LIMIT = 60;
  */
 const SWEEP_THROTTLE = { max: 1, windowMs: 5 * 60 * 1000 };
 
+/**
+ * Asks for a name and a number, and stops there.
+ *
+ * It used to ask for a delivery address too and promise the order was being
+ * prepared. This sweep does not know what is in the basket or what it comes to,
+ * and the shop does not deliver below a minimum — so for a customer who set
+ * aside one 9,900₮ shampoo, that was an address collected for a delivery that
+ * cannot happen and a promise that cannot be kept.
+ *
+ * A phone number is worth having either way: it is what turns a lead nobody can
+ * reach into one somebody can ring.
+ */
 const NUDGE_MESSAGE =
-  'Сайн байна уу 🌿 Захиалгаа үргэлжлүүлэх үү? Нэр, утасны дугаар, хүргэлтийн хаягаа ' +
-  'бичиж өгвөл бид бэлтгэж эхэлнэ.';
+  'Сайн байна уу 🌿 Сонирхсон бараагаа захиалах уу? Нэр, утасны дугаараа ' +
+  'үлдээвэл бид тодруулж холбогдоё.';
 
 function toMillis(value: any): number {
   if (!value) return 0;

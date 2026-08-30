@@ -144,8 +144,25 @@ describe("sweepStaleLeads", () => {
     const result = await sweepStaleLeads(db, { token: "T", now: NOW });
 
     expect(result.nudged).toBe(1);
-    expect(mocks.sendText).toHaveBeenCalledWith("T", "PSID-1", expect.stringContaining("Захиалгаа"));
+    expect(mocks.sendText).toHaveBeenCalledWith(
+      "T",
+      "PSID-1",
+      expect.stringContaining("утасны дугаараа"),
+    );
     expect(messages[0]).toMatchObject({ role: "assistant", toolName: "follow_up" });
+  });
+
+  it("does not ask for an address or promise the order is being prepared", async () => {
+    // The sweep does not know what is in the basket or what it comes to, and the
+    // shop does not deliver below a minimum. For one 9,900₮ shampoo that was an
+    // address collected for a delivery that cannot happen.
+    const { db } = fakeDb([lead()]);
+
+    await sweepStaleLeads(db, { token: "T", now: NOW });
+
+    const sent = String(mocks.sendText.mock.calls[0][2]);
+    expect(sent).not.toContain("хаяг");
+    expect(sent).not.toContain("бэлтгэж");
   });
 
   it("stamps followUpSentAt so it never nudges twice", async () => {
