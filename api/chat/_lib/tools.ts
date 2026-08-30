@@ -80,7 +80,9 @@ export const CHAT_TOOLS = [
               type: 'array',
               description:
                 'Захиалах бүтээгдэхүүнүүд. Хэрэглэгч нэг мессежид хэд хэдэн бараа нэрлэсэн бол ' +
-                'БҮГДИЙГ энэ жагсаалтад оруулна — тус бүрд тусад нь дуудахгүй.',
+                'БҮГДИЙГ энэ жагсаалтад оруулна — тус бүрд тусад нь дуудахгүй. ' +
+                'quantity нь тухайн бараанаас хэрэглэгчийн авах НИЙТ тоо — нэмж байгаа тоо биш. ' +
+                'Сагсанд 1 байхад "бас нэг" гэвэл quantity=2.',
               items: {
                 type: 'object',
                 properties: {
@@ -453,8 +455,22 @@ export async function runTool(
       // added: the lead is written after this returns, so the two halves are
       // added up here rather than read back.
       const already = context.basket ? await context.basket() : [];
-      // The lead shape calls it productName; the stored basket calls it name.
-      const basket = [
+      // Merged by identity, not appended. The model re-lists what is already in
+      // the basket as often as not — that is the natural way to answer "and one
+      // of those too" — and appending turned a restatement into a second unit
+      // the customer never asked for and would have been charged for.
+      //
+      // Quantity is the total wanted, which is what the tool now asks the model
+      // for, so the larger figure wins: an item named again without a number
+      // must not quietly reduce what was already set aside.
+      const basket: Array<{
+        productId: number | null;
+        name: string;
+        variant: string | null;
+        quantity: number;
+      }> = [];
+      const seen = new Map<string, number>();
+      for (const item of [
         ...already,
         ...leads.map((lead) => ({
           productId: lead.productId,
@@ -462,9 +478,31 @@ export async function runTool(
           variant: lead.variant,
           quantity: lead.quantity,
         })),
-      ];
+      ]) {
+        const key = `${item.productId ?? item.name.toLowerCase()}|${(item.variant ?? '').toLowerCase()}`;
+        const at = seen.get(key);
+        if (at === undefined) {
+          seen.set(key, basket.length);
+          basket.push({ ...item });
+        } else if (item.quantity > basket[at].quantity) {
+          basket[at].quantity = item.quantity;
+        }
+      }
 
-      const priced = basket.map((item) => {
+      // The whole basket goes back, not just this turn's additions: the caller
+      // stores exactly what the customer was shown, so the two can never drift.
+      const basketLeads = basket.map((item) => ({
+        productName: item.name,
+        productId: item.productId,
+        variant: item.variant,
+        quantity: item.quantity,
+      }));
+
+      // A line the catalogue no longer has cannot be priced, and showing it at
+      // zero would understate the total and tell the customer they are closer to
+      // the delivery minimum than they are. confirm_order refuses it outright,
+      // so it is dropped here rather than carried as free.
+      const priced = basket.flatMap((item) => {
         const product =
           context.storefront.products.find((entry) => entry.id === Number(item.productId)) ??
           context.storefront.products.find(
@@ -475,12 +513,16 @@ export async function runTool(
               (entry) => entry.name.toLowerCase() === String(item.variant).toLowerCase(),
             )
           : undefined;
-        const listPrice = variant ? variant.price : (product?.price ?? 0);
+        if (!product) {
+          return [];
+        }
+
+        const listPrice = variant ? variant.price : product.price;
         // Priced the way the storefront prices it, because the bot has been
         // quoting the discounted figure all along.
-        const unitPrice = product ? discountedPrice(listPrice, context.storefront.discounts, product.id) : 0;
+        const unitPrice = discountedPrice(listPrice, context.storefront.discounts, product.id);
         const label = variant ? `${item.name} (${variant.name})` : item.name;
-        return { label, quantity: item.quantity, lineTotal: unitPrice * item.quantity };
+        return [{ label, quantity: item.quantity, lineTotal: unitPrice * item.quantity }];
       });
 
       const subtotal = priced.reduce((sum, line) => sum + line.lineTotal, 0);
@@ -500,14 +542,14 @@ export async function runTool(
             `${formatTugrik(shortBy)} дутуу байна 📦`,
             'Өөр юу нэмэх вэ?'].join('\n'),
           needsOrderDetails: false,
-          leads,
+          leads: basketLeads,
         };
       }
 
       return {
         text: [...notices, running].join('\n'),
         needsOrderDetails: leads.length > 0,
-        leads,
+        leads: basketLeads,
       };
     }
 

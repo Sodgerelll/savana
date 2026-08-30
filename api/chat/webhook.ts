@@ -923,8 +923,10 @@ async function recordOrderLead(
 
   const open = await findOpenLead(db, conversation.id);
   if (open) {
-    const existing = Array.isArray(open.data.items) ? open.data.items : [];
-    await updateChatLead(db, open.id, { items: [...existing, ...items] });
+    // Replaced, not appended. What arrives here is the whole basket as the
+    // customer was just shown it — already merged with what was set aside
+    // earlier — so appending would put every existing line in a second time.
+    await updateChatLead(db, open.id, { items });
     return;
   }
 

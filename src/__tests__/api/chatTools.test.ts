@@ -650,6 +650,34 @@ describe("start_order", () => {
     // The customer collects across several messages. A basket that only showed
     // the last thing named would tell them they are further from the delivery
     // minimum than they really are.
+    const ctx = context({
+      storefront: storefront({
+        products: [
+          product({ id: 1, name: "Хужирт саван", price: 25000 }),
+          product({ id: 2, name: "Ванны сүү", price: 13200 }),
+        ],
+      }),
+    });
+    ctx.basket = async () => [
+      { productId: 2, name: "Ванны сүү", variant: null, quantity: 1 },
+    ];
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { productName: "Хужирт саван", quantity: 1 },
+      ctx,
+    );
+
+    expect(result.text).toContain("Ванны сүү");
+    expect(result.text).toContain("Хужирт саван");
+    expect(result.text).toContain("Нийт: 38,200₮");
+  });
+
+  it("does not charge twice for an item the model lists again", async () => {
+    // The model re-lists what is already in the basket as often as not — it is
+    // the natural way to answer "and one of those too". Appending turned that
+    // restatement into a second unit nobody asked for, on a real order, with a
+    // payment link attached.
     const ctx = context();
     ctx.basket = async () => [
       { productId: 1, name: "Хужирт саван", variant: null, quantity: 1 },
@@ -661,7 +689,27 @@ describe("start_order", () => {
       ctx,
     );
 
-    expect(result.text).toContain("Нийт: 50,000₮");
+    expect(result.leads).toEqual([
+      { productName: "Хужирт саван", productId: 1, variant: null, quantity: 1 },
+    ]);
+    expect(result.text).toContain("Нийт: 25,000₮");
+  });
+
+  it("takes the larger figure when the model restates a total", async () => {
+    // quantity is what the customer wants in all, so "бас нэг" on a basket of
+    // one arrives as two. Naming it again without a number must not reduce it.
+    const ctx = context();
+    ctx.basket = async () => [
+      { productId: 1, name: "Хужирт саван", variant: null, quantity: 3 },
+    ];
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { productName: "Хужирт саван", quantity: 1 },
+      ctx,
+    );
+
+    expect(result.leads?.[0]).toMatchObject({ quantity: 3 });
   });
 
   it("says how much is missing rather than asking for an address it cannot use", async () => {
