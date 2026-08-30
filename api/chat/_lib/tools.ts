@@ -5,7 +5,12 @@
 // answers in prose or calls exactly one of these. Keep the descriptions written
 // for the model, not for a developer — they are the only spec it sees.
 
-import { formatTugrik, type PromptProduct, type StorefrontContext } from './buildPrompt.js';
+import {
+  discountedPrice,
+  formatTugrik,
+  type PromptProduct,
+  type StorefrontContext,
+} from './buildPrompt.js';
 import type { CarouselCard, QuickReply } from './facebook.js';
 
 export const TOOL_NAMES = {
@@ -223,6 +228,17 @@ export function buildProductCards(
 
 export interface ToolContext {
   storefront: StorefrontContext;
+  /**
+   * What the customer has already put aside in this conversation.
+   *
+   * Needed at the moment a product is added, not at the end: a shop with a
+   * delivery minimum has to say "you are 31,200₮ short" while there is still
+   * something the customer can do about it, rather than after they have handed
+   * over a name, a phone number and an address for an order that cannot ship.
+   */
+  basket?: () => Promise<
+    Array<{ productId: number | null; name: string; variant: string | null; quantity: number }>
+  >;
   /** Resolves a product's primary image to an absolute, publicly reachable URL. */
   imageUrlFor: (product: PromptProduct) => string | undefined;
   /** Storefront page for a product. Omitted when the site address is unknown. */
@@ -382,7 +398,8 @@ export async function runTool(
         ? (args.items as Array<Record<string, unknown>>)
         : [{ productName: args.productName, quantity: args.quantity, variant: args.variant }];
 
-      const lines: string[] = [];
+      /** Only what went wrong. What went right is shown as the basket below. */
+      const notices: string[] = [];
       const leads: NonNullable<ToolOutcome['leads']> = [];
 
       for (const entry of requested.slice(0, MAX_ORDER_LINES)) {
@@ -411,11 +428,10 @@ export async function runTool(
         // and an address and only then saying the product is gone is a worse
         // conversation than saying so now.
         if (product && !product.inStock) {
-          lines.push(`Уучлаарай, "${product.name}" одоогоор дууссан байна 🌿`);
+          notices.push(`Уучлаарай, "${product.name}" одоогоор дууссан байна 🌿`);
           continue;
         }
 
-        lines.push(`${productName} — ${quantity} ширхэг ✅`);
         leads.push({
           productName,
           productId: product?.id ?? null,
@@ -429,12 +445,67 @@ export async function runTool(
         });
       }
 
-      if (lines.length === 0) {
+      if (notices.length === 0 && leads.length === 0) {
         return { text: 'Аль бүтээгдэхүүнийг захиалах вэ?' };
       }
 
+      // Everything set aside in this conversation, including what was just
+      // added: the lead is written after this returns, so the two halves are
+      // added up here rather than read back.
+      const already = context.basket ? await context.basket() : [];
+      // The lead shape calls it productName; the stored basket calls it name.
+      const basket = [
+        ...already,
+        ...leads.map((lead) => ({
+          productId: lead.productId,
+          name: lead.productName,
+          variant: lead.variant,
+          quantity: lead.quantity,
+        })),
+      ];
+
+      const priced = basket.map((item) => {
+        const product =
+          context.storefront.products.find((entry) => entry.id === Number(item.productId)) ??
+          context.storefront.products.find(
+            (entry) => entry.name.toLowerCase() === item.name.toLowerCase(),
+          );
+        const variant = item.variant
+          ? product?.variants.find(
+              (entry) => entry.name.toLowerCase() === String(item.variant).toLowerCase(),
+            )
+          : undefined;
+        const listPrice = variant ? variant.price : (product?.price ?? 0);
+        // Priced the way the storefront prices it, because the bot has been
+        // quoting the discounted figure all along.
+        const unitPrice = product ? discountedPrice(listPrice, context.storefront.discounts, product.id) : 0;
+        const label = variant ? `${item.name} (${variant.name})` : item.name;
+        return { label, quantity: item.quantity, lineTotal: unitPrice * item.quantity };
+      });
+
+      const subtotal = priced.reduce((sum, line) => sum + line.lineTotal, 0);
+      const summary = priced
+        .map((line) => `• ${line.label} — ${line.quantity}ш ${formatTugrik(line.lineTotal)}`)
+        .join('\n');
+      const running = `${summary}\n**Нийт: ${formatTugrik(subtotal)}**`;
+      const shortBy = context.storefront.shop.minOrderForDelivery - subtotal;
+
+      // Said now, while the customer can still act on it. Asking for a name, a
+      // phone number and an address and only then refusing the order over a
+      // minimum the shop never mentioned is the worst version of this.
+      if (context.storefront.shop.minOrderForDelivery > 0 && shortBy > 0) {
+        return {
+          text: [...notices, running, '', 
+            `Хүргэлт ${formatTugrik(context.storefront.shop.minOrderForDelivery)}-өөс дээш захиалгад хийгддэг — ` +
+            `${formatTugrik(shortBy)} дутуу байна 📦`,
+            'Өөр юу нэмэх вэ?'].join('\n'),
+          needsOrderDetails: false,
+          leads,
+        };
+      }
+
       return {
-        text: lines.join('\n'),
+        text: [...notices, running].join('\n'),
         needsOrderDetails: leads.length > 0,
         leads,
       };

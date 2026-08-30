@@ -252,6 +252,18 @@ export default async function handler(req: any, res: any): Promise<void> {
           { id: conversation.id, channel: 'widget', externalUserId: sessionId },
           details,
         ),
+      // Read fresh each turn rather than carried in the conversation: the
+      // customer may have added something from a carousel button since.
+      basket: async () => {
+        const open = await findOpenLead(db, conversation.id);
+        const items = Array.isArray(open?.data.items) ? (open.data.items as any[]) : [];
+        return items.map((item) => ({
+          productId: typeof item?.productId === 'number' ? item.productId : null,
+          name: String(item?.name ?? ''),
+          variant: typeof item?.variant === 'string' ? item.variant : null,
+          quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+        }));
+      },
       ownOrders: () => ordersForConversation(db, conversation.id),
     };
 

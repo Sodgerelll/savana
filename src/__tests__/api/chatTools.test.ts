@@ -114,7 +114,11 @@ describe("start_order with several products", () => {
       { productName: "Хужирт саван", productId: 1, variant: null, quantity: 3 },
       { productName: "Ванны сүү", productId: 2, variant: null, quantity: 2 },
     ]);
-    expect(result.text).toBe("Хужирт саван — 3 ширхэг ✅\nВанны сүү — 2 ширхэг ✅");
+    // Priced and totalled, because a shop with a delivery minimum has to let
+    // the customer see how close they are while they can still act on it.
+    expect(result.text).toContain("Хужирт саван — 3ш");
+    expect(result.text).toContain("Ванны сүү — 2ш");
+    expect(result.text).toContain("Нийт:");
   });
 
   it("still accepts the single product a carousel button names", async () => {
@@ -642,6 +646,56 @@ describe("check_order", () => {
 });
 
 describe("start_order", () => {
+  it("adds what is already set aside to what was just asked for", async () => {
+    // The customer collects across several messages. A basket that only showed
+    // the last thing named would tell them they are further from the delivery
+    // minimum than they really are.
+    const ctx = context();
+    ctx.basket = async () => [
+      { productId: 1, name: "Хужирт саван", variant: null, quantity: 1 },
+    ];
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { productName: "Хужирт саван", quantity: 1 },
+      ctx,
+    );
+
+    expect(result.text).toContain("Нийт: 50,000₮");
+  });
+
+  it("says how much is missing rather than asking for an address it cannot use", async () => {
+    // Asking for a name, a phone number and an address and only then refusing
+    // the order over a minimum the shop never mentioned is the worst version
+    // of this conversation.
+    const ctx = context();
+    ctx.storefront.shop.minOrderForDelivery = 100_000;
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { productName: "Хужирт саван", quantity: 1 },
+      ctx,
+    );
+
+    expect(result.needsOrderDetails).toBe(false);
+    expect(result.text).toContain("дутуу байна");
+    expect(result.text).toContain("Өөр юу нэмэх вэ?");
+  });
+
+  it("asks for the details once the basket clears the minimum", async () => {
+    const ctx = context();
+    ctx.storefront.shop.minOrderForDelivery = 10_000;
+
+    const result = await runTool(
+      TOOL_NAMES.START_ORDER,
+      { productName: "Хужирт саван", quantity: 1 },
+      ctx,
+    );
+
+    expect(result.needsOrderDetails).toBe(true);
+    expect(result.text).not.toContain("дутуу байна");
+  });
+
   it("captures a lead with the product and quantity", async () => {
     const result = await runTool(
       TOOL_NAMES.START_ORDER,
@@ -660,7 +714,7 @@ describe("start_order", () => {
     // The tool confirms the line and flags that details are still needed; the
     // question itself is added once per turn by the caller, so two products
     // named in one message are not asked for them twice.
-    expect(result.text).toBe("Хужирт саван — 3 ширхэг ✅");
+    expect(result.text).toContain("Хужирт саван — 3ш");
     expect(result.needsOrderDetails).toBe(true);
     expect(ORDER_DETAILS_ASK).toContain("Утасны дугаар");
     expect(ORDER_DETAILS_ASK).toContain("Хүргэлтийн хаяг");
