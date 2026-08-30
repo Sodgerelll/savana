@@ -18,7 +18,9 @@ import type {
   ChatConversationRecord,
   ChatConversationStatus,
   ChatMessageRecord,
+  ChatTopic,
 } from "../../lib/chat/types";
+import { CHAT_TOPIC_LABELS, CHAT_TOPIC_VALUES } from "../../lib/chat/types";
 import type { AdminCtx } from "./adminShellTypes";
 import "../../components/chat/ChatPanel.css";
 import "./ChatAdmin.css";
@@ -112,6 +114,7 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
   );
 
   const [onlyAwaiting, setOnlyAwaiting] = useState(false);
+  const [topicFilter, setTopicFilter] = useState<ChatTopic | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [messagesError, setMessagesError] = useState("");
@@ -122,9 +125,22 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const visible = useMemo(
-    () => (onlyAwaiting ? conversations.filter((c) => c.status === "handover") : conversations),
-    [conversations, onlyAwaiting],
+    () =>
+      conversations
+        .filter((c) => (onlyAwaiting ? c.status === "handover" : true))
+        .filter((c) => (topicFilter ? c.topic === topicFilter : true)),
+    [conversations, onlyAwaiting, topicFilter],
   );
+
+  // Derived from the loaded threads rather than from the full vocabulary, so
+  // the filter only ever offers something that will match.
+  const presentTopics = useMemo(() => {
+    const seen = new Set<ChatTopic>();
+    for (const conversation of conversations) {
+      if (conversation.topic) seen.add(conversation.topic);
+    }
+    return CHAT_TOPIC_VALUES.filter((topic) => seen.has(topic));
+  }, [conversations]);
 
   const selected = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) ?? null,
@@ -240,6 +256,23 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
             <UserCheck size={16} />
             {onlyAwaiting ? copy.all : copy.awaiting}
           </button>
+          {/* Only the topics that actually appear: a dropdown of seven when six
+              of them match nothing is a list to read rather than a filter. */}
+          {presentTopics.length > 0 && (
+            <select
+              className="admin-input"
+              value={topicFilter}
+              onChange={(event) => setTopicFilter(event.target.value as ChatTopic | "")}
+              aria-label={language === "EN" ? "Filter by topic" : "Сэдвээр шүүх"}
+            >
+              <option value="">{language === "EN" ? "All topics" : "Бүх сэдэв"}</option>
+              {presentTopics.map((topic) => (
+                <option key={topic} value={topic}>
+                  {CHAT_TOPIC_LABELS[topic]}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -284,6 +317,9 @@ export default function ChatConversationsPage({ ctx }: { ctx: AdminCtx }) {
                 <span className={statusClass(conversation.status)}>
                   {STATUS_LABELS[conversation.status][language === "EN" ? "en" : "mn"]}
                 </span>
+                {conversation.topic && (
+                  <span className="chat-thread-topic">{CHAT_TOPIC_LABELS[conversation.topic]}</span>
+                )}
               </button>
             ))
           )}

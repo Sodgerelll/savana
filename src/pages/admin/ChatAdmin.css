@@ -182,3 +182,17 @@
   width: 5.2rem;
   text-align: center;
 }
+
+/* Sits beside the status pill on a thread row. Quieter than the status on
+   purpose: what a thread is about matters less at a glance than whether
+   somebody is waiting on it. */
+.chat-thread-topic {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  font-size: var(--fs-xs, 0.72rem);
+  line-height: 1.5;
+  border: 1px solid currentColor;
+  opacity: 0.55;
+}

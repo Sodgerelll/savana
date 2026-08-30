@@ -20,6 +20,7 @@ import {
   ensureConversation,
   readRecentMessages,
   setConversationStatus,
+  setConversationTopic,
   type ChatChannel,
 } from './_lib/conversation.js';
 import {
@@ -34,6 +35,7 @@ import {
   sendTypingOff,
   sendTypingOn,
 } from './_lib/facebook.js';
+import { classifyTopic, mergeTopic } from './_lib/topics.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 import {
   markModelHealthy,
@@ -686,6 +688,14 @@ async function replyToEvent(
 
     for (const entry of outcomes) {
       await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
+    }
+
+    // What the turn was about, for the admin list. Not awaited: it is a label,
+    // and no customer should wait a Firestore round trip for one.
+    const usedTool = outcomes.find((entry) => entry.toolName)?.toolName ?? null;
+    const turnTopic = mergeTopic(conversation.topic, classifyTopic({ toolName: usedTool, message: text }));
+    if (turnTopic !== conversation.topic) {
+      void setConversationTopic(db, conversation.id, turnTopic);
     }
   } finally {
     // Every path out of here stops it: an early return that left the bubble

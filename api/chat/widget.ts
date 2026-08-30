@@ -13,12 +13,14 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { getRecentPosts } from './_lib/facebook.js';
+import { classifyTopic, mergeTopic } from './_lib/topics.js';
 import {
   appendMessage,
   botShouldStaySilent,
   ensureConversation,
   readRecentMessages,
   setConversationStatus,
+  setConversationTopic,
 } from './_lib/conversation.js';
 import { matchFaq } from './_lib/faqMatch.js';
 import {
@@ -399,6 +401,13 @@ export default async function handler(req: any, res: any): Promise<void> {
         content: text || `[${products.length} бүтээгдэхүүн]`,
         toolName,
       });
+    }
+
+    // What the turn was about, for the admin list. Not awaited: it is a label,
+    // and no customer should wait a Firestore round trip for one.
+    const turnTopic = mergeTopic(conversation.topic, classifyTopic({ toolName, message }));
+    if (turnTopic !== conversation.topic) {
+      void setConversationTopic(db, conversation.id, turnTopic);
     }
 
     timing.mark('tools');

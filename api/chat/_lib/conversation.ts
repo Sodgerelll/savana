@@ -4,6 +4,7 @@
 // that is why the rules deny all client writes to chat_conversations.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import type { ChatTopic } from './topics.js';
 
 export const CONVERSATIONS_COLLECTION = 'chat_conversations';
 export const MESSAGES_SUBCOLLECTION = 'messages';
@@ -37,6 +38,8 @@ export type MessageRole = 'user' | 'assistant' | 'admin' | 'system';
 export interface ConversationRef {
   id: string;
   status: ConversationStatus;
+  /** What the thread has been about so far; null until a turn says something. */
+  topic: ChatTopic | null;
   messageCount: number;
   customerName: string | null;
   handoverAt: number | null;
@@ -97,6 +100,7 @@ export async function ensureConversation(
     return {
       id,
       status: (data.status ?? 'active') as ConversationStatus,
+      topic: (data.topic as ChatTopic) ?? null,
       messageCount: Number(data.messageCount ?? 0),
       customerName: data.customerName ?? params.customerName ?? null,
       handoverAt: typeof data.handoverAt === 'number' ? data.handoverAt : null,
@@ -120,6 +124,7 @@ export async function ensureConversation(
     handoverReason: null,
     handoverAt: null,
     adminActiveAt: null,
+    topic: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -133,6 +138,7 @@ export async function ensureConversation(
     return {
       id,
       status: (data.status ?? 'active') as ConversationStatus,
+      topic: (data.topic as ChatTopic) ?? null,
       messageCount: Number(data.messageCount ?? 0),
       customerName: data.customerName ?? null,
       handoverAt: typeof data.handoverAt === 'number' ? data.handoverAt : null,
@@ -143,6 +149,7 @@ export async function ensureConversation(
   return {
     id,
     status: 'active',
+    topic: null,
     messageCount: 0,
     customerName: params.customerName ?? null,
     handoverAt: null,
@@ -279,4 +286,27 @@ export function botShouldStaySilent(conversation: ConversationRef, now = Date.no
     return conversation.handoverAt !== null && now - conversation.handoverAt < HANDOVER_TIMEOUT_MS;
   }
   return false;
+}
+
+/**
+ * Records what the thread turned out to be about.
+ *
+ * Written on its own rather than folded into the message append, because the
+ * tool that names the topic is only known once the model has answered — and
+ * fire-and-forget at the call site, because this is a label on an admin screen
+ * and no customer should wait a Firestore round trip for it.
+ */
+export async function setConversationTopic(
+  db: any,
+  conversationId: string,
+  topic: ChatTopic,
+): Promise<void> {
+  try {
+    await db
+      .collection(CONVERSATIONS_COLLECTION)
+      .doc(conversationId)
+      .set({ topic, updatedAt: new Date() }, { merge: true });
+  } catch (err) {
+    console.warn('[chat/conversation] topic not saved:', (err as Error).message);
+  }
 }

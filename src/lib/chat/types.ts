@@ -4,6 +4,46 @@
 // needs rather than importing from here: it runs in Vercel's Node runtime under
 // its own tsconfig, the same reason api/_lib/* re-implements its helpers.
 
+/**
+ * What a conversation turned out to be about.
+ *
+ * Re-declared here rather than imported from api/chat/_lib/topics.ts, for the
+ * reason at the top of this file. A test holds the two lists to each other so
+ * they cannot drift apart in silence.
+ */
+export type ChatTopic =
+  | "order"
+  | "delivery"
+  | "payment"
+  | "price"
+  | "product"
+  | "complaint"
+  | "other";
+
+export const CHAT_TOPIC_VALUES = [
+  "order",
+  "delivery",
+  "payment",
+  "price",
+  "product",
+  "complaint",
+  "other",
+] as const;
+
+export const CHAT_TOPIC_LABELS: Record<ChatTopic, string> = {
+  order: "Захиалга",
+  delivery: "Хүргэлт",
+  payment: "Төлбөр",
+  price: "Үнэ",
+  product: "Бүтээгдэхүүн",
+  complaint: "Гомдол",
+  other: "Бусад",
+};
+
+export function isTopic(value: unknown): value is ChatTopic {
+  return typeof value === "string" && (CHAT_TOPIC_VALUES as readonly string[]).includes(value);
+}
+
 /** Where a conversation came from. `admin_test` never reaches a real customer. */
 export type ChatChannel = "facebook" | "instagram" | "widget" | "admin_test";
 export const CHAT_CHANNEL_VALUES = ["facebook", "instagram", "widget", "admin_test"] as const;
@@ -84,6 +124,8 @@ export interface ChatConversationRecord {
   lastMessageAt: string | null;
   /** Why the bot escalated, shown to the admin picking the thread up. */
   handoverReason: string | null;
+  /** What the thread is about, worked out from the turn rather than asked for. */
+  topic: ChatTopic | null;
   createdAt: string | null;
   updatedAt: string | null;
 }

@@ -3,7 +3,7 @@
 // Computed from the conversation and lead lists the admin shell already
 // subscribes to, so the dashboard costs no extra Firestore reads.
 
-import type { ChatChannel, ChatConversationRecord, ChatLeadRecord } from "./types";
+import type { ChatChannel, ChatConversationRecord, ChatLeadRecord, ChatTopic } from "./types";
 
 export interface ChatStats {
   totalConversations: number;
@@ -13,6 +13,8 @@ export interface ChatStats {
   /** Share of conversations the bot escalated, 0–100. */
   handoverRate: number;
   byChannel: Array<{ channel: ChatChannel; count: number }>;
+  /** What people are asking about, commonest first. Untagged threads are left out. */
+  byTopic: Array<{ topic: ChatTopic; count: number }>;
   totalLeads: number;
   recentLeads: number;
   pendingLeads: number;
@@ -46,12 +48,18 @@ export function computeChatStats(
   windowDays = STATS_WINDOW_DAYS,
 ): ChatStats {
   const channelCounts = new Map<ChatChannel, number>();
+  const topicCounts = new Map<ChatTopic, number>();
   let awaitingHuman = 0;
   let escalated = 0;
   let recentConversations = 0;
 
   for (const conversation of conversations) {
     channelCounts.set(conversation.channel, (channelCounts.get(conversation.channel) ?? 0) + 1);
+    // Untagged threads are left out rather than lumped into a bucket: a big
+    // "Бусад" column says nothing about what people are asking.
+    if (conversation.topic) {
+      topicCounts.set(conversation.topic, (topicCounts.get(conversation.topic) ?? 0) + 1);
+    }
 
     if (conversation.status === "handover") {
       awaitingHuman += 1;
@@ -82,6 +90,9 @@ export function computeChatStats(
     handoverRate: percentage(escalated, conversations.length),
     byChannel: [...channelCounts.entries()]
       .map(([channel, count]) => ({ channel, count }))
+      .sort((a, b) => b.count - a.count),
+    byTopic: [...topicCounts.entries()]
+      .map(([topic, count]) => ({ topic, count }))
       .sort((a, b) => b.count - a.count),
     totalLeads: leads.length,
     recentLeads,

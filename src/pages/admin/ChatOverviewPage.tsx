@@ -4,6 +4,7 @@ import ChatPanel from "../../components/chat/ChatPanel";
 import { fetchFacebookStatus, type FacebookStatus } from "../../lib/chat/chatApi";
 import { computeChatStats, STATS_WINDOW_DAYS } from "../../lib/chat/chatStats";
 import { CHANNEL_LABELS } from "../../lib/chat/conversationStore";
+import { CHAT_TOPIC_LABELS } from "../../lib/chat/types";
 import type {
   ChatConversationRecord,
   ChatLeadRecord,
@@ -229,6 +230,19 @@ export default function ChatOverviewPage({ ctx }: { ctx: AdminCtx }) {
             {stats.byChannel.map((entry) => (
               <div key={entry.channel} className="admin-summary-card admin-summary-card-compact">
                 <span>{CHANNEL_LABELS[entry.channel]}</span>
+                <strong>{entry.count}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* What people are actually asking about. Hidden until something has been
+            tagged, so a fresh shop is not shown an empty row of zeroes. */}
+        {stats.byTopic.length > 0 && (
+          <div className="admin-summary-grid" style={{ padding: "0 1.4rem 1.4rem" }}>
+            {stats.byTopic.map((entry) => (
+              <div key={entry.topic} className="admin-summary-card admin-summary-card-compact">
+                <span>{CHAT_TOPIC_LABELS[entry.topic]}</span>
                 <strong>{entry.count}</strong>
               </div>
             ))}

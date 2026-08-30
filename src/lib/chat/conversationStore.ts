@@ -17,6 +17,7 @@ import {
   type ChatConversationStatus,
   type ChatMessageRecord,
   type ChatMessageRole,
+  isTopic,
 } from "./types";
 
 /** The admin list stays bounded; older threads are reached by filtering. */
@@ -77,6 +78,7 @@ function deserializeConversation(
     lastMessagePreview: String(data.lastMessagePreview ?? ""),
     lastMessageAt: parseTimestamp(data.lastMessageAt),
     handoverReason: typeof data.handoverReason === "string" ? data.handoverReason : null,
+    topic: isTopic(data.topic) ? data.topic : null,
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
