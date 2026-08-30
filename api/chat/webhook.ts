@@ -384,8 +384,19 @@ async function processMessagingEvent(
   pageId: string,
   event: any,
 ): Promise<void> {
-  // Echoes are our own outgoing messages coming back; replying would loop.
+  // An echo is our own outgoing message coming back — replying would loop — but
+  // it is also how a person answering from the Page inbox reaches us, and those
+  // two were being dropped together. The consequences showed up in a real
+  // thread: staff answered a customer inside Facebook, this side never learned
+  // a human had stepped in, and the bot was half an hour from talking over
+  // them. The reply was missing from the admin transcript as well.
+  //
+  // Meta separates them: a message sent through the Send API carries the app
+  // that sent it, and one typed by a person in the inbox does not.
   if (event?.message?.is_echo) {
+    if (!event.message.app_id) {
+      await noteStaffReply(db, channel, pageId, event);
+    }
     return;
   }
 
@@ -1009,5 +1020,34 @@ async function lookupOrder(
   } catch (err) {
     console.error('[chat/webhook] order lookup failed:', (err as Error).message);
     return null;
+  }
+}
+
+/**
+ * Records a reply a person typed in the Page inbox rather than in the admin.
+ *
+ * Two things follow from it. The transcript gets the message, so the thread
+ * reads as one conversation instead of half of one; and the bot steps back for
+ * the same three hours a reply through the admin buys, timed from this message
+ * rather than from whenever it gave up.
+ */
+async function noteStaffReply(db: any, channel: ChatChannel, pageId: string, event: any): Promise<void> {
+  // On an echo the page is the sender, so the customer is the recipient.
+  const customerId = String(event?.recipient?.id ?? '');
+  const text = String(event?.message?.text ?? '').trim();
+  if (!customerId || !text) {
+    return;
+  }
+
+  try {
+    const conversation = await ensureConversation(db, {
+      channel,
+      pageId,
+      externalUserId: customerId,
+    });
+    await appendMessage(db, conversation.id, { role: 'assistant', content: text });
+    await setConversationStatus(db, conversation.id, 'admin_active');
+  } catch (err) {
+    console.warn('[chat/webhook] staff reply not recorded:', (err as Error).message);
   }
 }

@@ -631,6 +631,45 @@ describe("text messages", () => {
     expect(messages.map(([, data]) => data.role)).toEqual(["user", "assistant"]);
   });
 
+  it("takes a reply typed in the Page inbox as a person stepping in", async () => {
+    // It happened on a live thread: staff answered the customer inside Facebook,
+    // this side never learned a human was handling it, and the bot was half an
+    // hour from talking over them. Meta marks its own API sends with an app id;
+    // a message a person typed carries none.
+    const { res } = mockRes();
+
+    await handler(
+      {
+        method: "POST",
+        body: {
+          object: "page",
+          entry: [
+            {
+              id: PAGE_ID,
+              messaging: [
+                {
+                  sender: { id: PAGE_ID },
+                  recipient: { id: SENDER },
+                  message: { mid: "m_h", text: "Сайн байна уу", is_echo: true },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      res,
+    );
+
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).toMatchObject({
+      status: "admin_active",
+    });
+    const messages = [...fake.store.entries()].filter(([key]) =>
+      key.startsWith("chat_conversations/fb_PAGE-1_PSID-1/messages/"),
+    );
+    expect(messages.map(([, data]) => data.content)).toContain("Сайн байна уу");
+    expect(mocks.sendText).not.toHaveBeenCalled();
+  });
+
   it("ignores an echo of our own outgoing message", async () => {
     const { res } = mockRes();
 
@@ -643,7 +682,11 @@ describe("text messages", () => {
             {
               id: PAGE_ID,
               messaging: [
-                { sender: { id: PAGE_ID }, message: { mid: "m_1", text: "hi", is_echo: true } },
+                {
+                  sender: { id: PAGE_ID },
+                  recipient: { id: SENDER },
+                  message: { mid: "m_1", text: "hi", is_echo: true, app_id: 123456 },
+                },
               ],
             },
           ],
