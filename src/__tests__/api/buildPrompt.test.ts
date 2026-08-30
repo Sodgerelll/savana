@@ -392,6 +392,40 @@ describe("loadStorefrontContext", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps out a product with no price, which can only be given away", async () => {
+    // One was sitting in the catalogue active and in stock at 0₮. The bot would
+    // have put it in a basket and charged for everything around it.
+    const db = fakeDb({
+      products: [
+        snap("a", { id: 1, name: "Үнэтэй саван", price: 8800, status: "active" }),
+        snap("b", { id: 2, name: "Үнэгүй алчуур", price: 0, status: "active" }),
+      ],
+    });
+
+    const context = await loadStorefrontContext(db, NOW);
+
+    expect(context.products.map((product) => product.name)).toEqual(["Үнэтэй саван"]);
+  });
+
+  it("keeps a product priced only through its sizes", async () => {
+    // A base price of zero is normal when every size carries its own.
+    const db = fakeDb({
+      products: [
+        snap("a", {
+          id: 1,
+          name: "Хэмжээтэй саван",
+          price: 0,
+          status: "active",
+          variants: [{ name: "85 гр", price: 8800, stock: 4 }],
+        }),
+      ],
+    });
+
+    const context = await loadStorefrontContext(db, NOW);
+
+    expect(context.products.map((product) => product.name)).toEqual(["Хэмжээтэй саван"]);
+  });
+
   it("excludes inactive products so the bot never offers a discontinued item", async () => {
     const db = fakeDb({
       products: [

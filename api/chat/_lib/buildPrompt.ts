@@ -717,6 +717,18 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
     })
     .map((snap: any) => mapProduct(snap.id, snap.data()))
     .filter((product: PromptProduct) => product.name.length > 0)
+    .filter((product: PromptProduct) => {
+      // A product with no price anywhere cannot be sold, only given away. One
+      // was sitting in the catalogue active, in stock, and costing nothing —
+      // the bot would have put it in a basket and charged for the rest.
+      // Filtered here rather than fixed in the row, because the next one added
+      // without a price should not reach a customer either.
+      const priced = product.price > 0 || product.variants.some((variant) => variant.price > 0);
+      if (!priced) {
+        console.warn(`[chat/buildPrompt] "${product.name}" has no price; kept out of the catalogue`);
+      }
+      return priced;
+    })
     .sort((a: PromptProduct, b: PromptProduct) => a.sortOrder - b.sortOrder || a.id - b.id);
 
   if (activeProducts.length > MAX_PRODUCTS) {
