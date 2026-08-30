@@ -475,12 +475,19 @@ async function generateParts(
         }
 
         // No parts: either the prompt/response tripped a safety filter or the
-        // answer ran past the token budget. Both are terminal for this turn —
-        // another model would reach the same verdict, so surface it as-is.
+        // answer ran past the token budget.
         const blockReason = result.data?.promptFeedback?.blockReason;
         const finishReason = candidate?.finishReason;
         if (blockReason || finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') {
-          throw new GeminiError('BLOCKED');
+          // Not the end of it. This was treated as a verdict every model would
+          // reach, and it is not one: "Алчуур байна уу?" — do you have towels —
+          // was answered, and "Алчуур байгаа юу?", the same question a shade
+          // differently worded, was refused. A safety call is probabilistic and
+          // per-model, so the chain gets to disagree with it. Only when every
+          // model refuses does the refusal stand.
+          console.warn(`[chat/gemini] ${model} refused on safety; trying the next model`);
+          lastError = new GeminiError('BLOCKED');
+          break;
         }
         if (finishReason === 'MAX_TOKENS') {
           throw new GeminiError('MAX_TOKENS');
@@ -597,7 +604,10 @@ export async function callGeminiAgent(options: GeminiCallOptions): Promise<Gemin
 export function geminiErrorToUserMessage(err: unknown): string {
   if (err instanceof GeminiError) {
     if (err.message === 'BLOCKED') {
-      return 'Энэ хүсэлтэд хариулах боломжгүй байна.';
+      // Said to somebody who very likely asked about towels. The old wording —
+      // "this request cannot be answered" — reads as an accusation, and the
+      // customer is handed to a person either way, so it says that instead.
+      return 'Уучлаарай, энэ асуултад ажилтан хариулах нь зөв байх шиг байна ☎️';
     }
     if (err.message === 'MAX_TOKENS') {
       return 'Хариулт хэт урт боллоо. Асуултаа богиносгож дахин оролдоно уу.';
@@ -710,7 +720,11 @@ export async function probeEveryModel(): Promise<string> {
  */
 export function shouldEscalateAfterFailure(err: unknown): boolean {
   if (err instanceof GeminiError) {
-    return err.message !== 'BLOCKED' && err.message !== 'MAX_TOKENS';
+    // A block that survived the whole chain goes to a person. Either it is a
+    // false positive, and the customer deserves the answer a human can give,
+    // or it is not, and a human is who should be reading it. MAX_TOKENS stays
+    // out: the reply told the customer how to fix it themselves.
+    return err.message !== 'MAX_TOKENS';
   }
   return true;
 }

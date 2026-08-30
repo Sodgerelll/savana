@@ -737,20 +737,16 @@ describe("text messages", () => {
     });
   });
 
-  it("does not escalate a request the model refused on purpose", async () => {
-    // A blocked prompt is the model doing its job; waking a person for it would
-    // train the shop to ignore the queue.
+  it("hands over a request every model refused, rather than dismissing it", async () => {
+    // A refusal that survived the whole chain is either a false positive, and
+    // the customer deserves the answer a person can give, or it is not, and a
+    // person is who should be reading it.
     mocks.callGeminiAgent.mockRejectedValue(new GeminiError("BLOCKED"));
     const { res } = mockRes();
 
     await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
 
-    expect(mocks.sendText).toHaveBeenCalledWith(
-      PAGE_TOKEN,
-      SENDER,
-      "Энэ хүсэлтэд хариулах боломжгүй байна.",
-    );
-    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).not.toMatchObject({
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")).toMatchObject({
       status: "handover",
     });
   });

@@ -275,7 +275,9 @@ describe("POST /api/chat/assistant", () => {
     await handler(post({ message: "hi" }), res);
 
     expect(captured.status).toBe(502);
-    expect(captured.body.error).toBe("Энэ хүсэлтэд хариулах боломжгүй байна.");
+    expect(captured.body.error).toBe(
+      "Уучлаарай, энэ асуултад ажилтан хариулах нь зөв байх шиг байна ☎️",
+    );
   });
 
   it("never returns raw provider text to the caller", async () => {

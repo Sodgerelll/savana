@@ -382,14 +382,28 @@ describe("callGemini", () => {
     await expect(callGemini({ message: "hi" })).rejects.toBeInstanceOf(GeminiError);
   });
 
-  it("surfaces a safety block as a terminal BLOCKED error", async () => {
+  it("lets the next model disagree with a safety refusal", async () => {
+    // Measured: "Алчуур байна уу?" was answered and "Алчуур байгаа юу?" — the
+    // same question a shade differently worded — was refused. A safety call is
+    // probabilistic and per-model, so one refusal is not the chain's verdict.
     responders = [
       () => jsonResponse({ promptFeedback: { blockReason: "SAFETY" }, candidates: [{}] }),
+      () => jsonResponse(textPayload("Манайд алчуур байна")),
     ];
 
+    await expect(callGemini({ message: "Алчуур байгаа юу?" })).resolves.toBe(
+      "Манайд алчуур байна",
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  it("stands by a refusal every model agreed on", async () => {
+    responders = Array.from(
+      { length: 6 },
+      () => () => jsonResponse({ promptFeedback: { blockReason: "SAFETY" }, candidates: [{}] }),
+    );
+
     await expect(callGemini({ message: "hi" })).rejects.toMatchObject({ message: "BLOCKED" });
-    // Terminal — no point asking the remaining models.
-    expect(calls).toHaveLength(1);
   });
 
   it("surfaces a truncated answer as a terminal MAX_TOKENS error", async () => {
@@ -768,9 +782,11 @@ describe("callGeminiAgent", () => {
 });
 
 describe("geminiErrorToUserMessage", () => {
-  it("explains a safety block in Mongolian", () => {
+  it("does not accuse a customer the safety filter refused", () => {
+    // The old wording — "this request cannot be answered" — was said to people
+    // asking about towels. They are handed to a person either way.
     expect(geminiErrorToUserMessage(new GeminiError("BLOCKED"))).toBe(
-      "Энэ хүсэлтэд хариулах боломжгүй байна.",
+      "Уучлаарай, энэ асуултад ажилтан хариулах нь зөв байх шиг байна ☎️",
     );
   });
 
