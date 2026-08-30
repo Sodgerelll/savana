@@ -712,10 +712,11 @@ describe("start_order", () => {
     expect(result.leads?.[0]).toMatchObject({ quantity: 3 });
   });
 
-  it("says how much is missing rather than asking for an address it cannot use", async () => {
+  it("states the delivery rule rather than asking for an address it cannot use", async () => {
     // Asking for a name, a phone number and an address and only then refusing
     // the order over a minimum the shop never mentioned is the worst version
-    // of this conversation.
+    // of this conversation. Said as the shop's rule, not as a shortfall — the
+    // running total above already says where the customer stands.
     const ctx = context();
     ctx.storefront.shop.minOrderForDelivery = 100_000;
 
@@ -726,7 +727,8 @@ describe("start_order", () => {
     );
 
     expect(result.needsOrderDetails).toBe(false);
-    expect(result.text).toContain("дутуу байна");
+    expect(result.text).toContain("доош дүнтэй захиалгад хүргэлт хийгдэхгүй");
+    expect(result.text).not.toContain("дутуу");
     expect(result.text).toContain("Өөр юу нэмэх вэ?");
   });
 
@@ -741,7 +743,7 @@ describe("start_order", () => {
     );
 
     expect(result.needsOrderDetails).toBe(true);
-    expect(result.text).not.toContain("дутуу байна");
+    expect(result.text).not.toContain("хүргэлт хийгдэхгүй");
   });
 
   it("captures a lead with the product and quantity", async () => {

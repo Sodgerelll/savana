@@ -535,12 +535,19 @@ export async function runTool(
       // Said now, while the customer can still act on it. Asking for a name, a
       // phone number and an address and only then refusing the order over a
       // minimum the shop never mentioned is the worst version of this.
+      // Worded as the shop's rule rather than as a shortfall. "31,200₮ дутуу
+      // байна" reads as something missing from the customer; what is true is
+      // that the shop does not deliver below its minimum, and the running total
+      // directly above already says where they stand.
       if (context.storefront.shop.minOrderForDelivery > 0 && shortBy > 0) {
         return {
-          text: [...notices, running, '', 
-            `Хүргэлт ${formatTugrik(context.storefront.shop.minOrderForDelivery)}-өөс дээш захиалгад хийгддэг — ` +
-            `${formatTugrik(shortBy)} дутуу байна 📦`,
-            'Өөр юу нэмэх вэ?'].join('\n'),
+          text: [
+            ...notices,
+            running,
+            '',
+            `${formatTugrik(context.storefront.shop.minOrderForDelivery)}-аас доош дүнтэй захиалгад хүргэлт хийгдэхгүй 📦`,
+            'Өөр юу нэмэх вэ?',
+          ].join('\n'),
           needsOrderDetails: false,
           leads: basketLeads,
         };
@@ -608,7 +615,7 @@ export async function runTool(
           // and not something to wake a human for.
           return {
             text:
-              `Хүргэлт ${formatTugrik(Number(err.message))}-өөс дээш дүнтэй захиалгад хийгддэг 📦
+              `${formatTugrik(Number(err.message))}-аас доош дүнтэй захиалгад хүргэлт хийгдэхгүй 📦
 ` +
               'Өөр бүтээгдэхүүн нэмэх үү?',
           };

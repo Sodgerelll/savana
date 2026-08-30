@@ -405,7 +405,7 @@ function formatShopInfo(shop: PromptShopInfo): string {
         ? `${formatTugrik(shop.freeShippingThreshold)}-өөс дээш дүнтэй захиалгад хүргэлт үнэгүй. `
         : '') +
       (shop.minOrderForDelivery > 0
-        ? `Хүргэлт ${formatTugrik(shop.minOrderForDelivery)}-өөс дээш захиалгад хийгдэнэ. `
+        ? `${formatTugrik(shop.minOrderForDelivery)}-аас доош дүнтэй захиалгад хүргэлт хийгдэхгүй. `
         : '') +
       'Вэб сайтын төлбөр тооцоо ЯГ энэ дүнг нэмдэг — дээрх бичвэрт өөр дүн ' +
       'байвал ЭНЭ дүнг хэл.',
