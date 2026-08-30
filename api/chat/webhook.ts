@@ -36,6 +36,7 @@ import {
   sendTypingOn,
 } from './_lib/facebook.js';
 import { classifyTopic, mergeTopic } from './_lib/topics.js';
+import { catalogueVocabulary, repairCatalogueWords } from './_lib/factGuard.js';
 import { ordersForConversation, placeChatOrder } from './_lib/chatOrder.js';
 import {
   markModelHealthy,
@@ -686,6 +687,22 @@ async function replyToEvent(
 
     askForOrderDetailsOnce(outcomes);
 
+    // Last thing before the customer sees it: a catalogue word the model spelled
+    // its own way is put back. An ingredient list is read by people with
+    // allergies, and one letter is the difference between a herb and a disease.
+    const vocabulary = catalogueVocabulary(storefront.products);
+    for (const entry of outcomes) {
+      if (!entry.outcome.text) continue;
+      const guarded = repairCatalogueWords(entry.outcome.text, vocabulary);
+      if (guarded.repaired.length > 0) {
+        console.warn(
+          '[chat/webhook] catalogue wording repaired:',
+          guarded.repaired.map((fix) => `${fix.from}→${fix.to}`).join(', '),
+        );
+        entry.outcome.text = guarded.text;
+      }
+    }
+
     for (const entry of outcomes) {
       await deliverOutcome(db, token, senderId, { ...conversation, channel }, entry.outcome, entry.toolName);
     }
@@ -814,6 +831,17 @@ async function answerImage(
   if (looksLikeOurOwnInstructions(reply, [systemPrompt])) {
     console.error('[chat/webhook] model echoed its own instructions on a photo; reply withheld');
     reply = LEAKED_INSTRUCTION_REPLY;
+  }
+
+  // The photo path builds its own reply and would otherwise miss the check the
+  // text path gets.
+  const guarded = repairCatalogueWords(reply, catalogueVocabulary(params.storefront.products));
+  if (guarded.repaired.length > 0) {
+    console.warn(
+      '[chat/webhook] catalogue wording repaired on a photo reply:',
+      guarded.repaired.map((fix) => `${fix.from}→${fix.to}`).join(', '),
+    );
+    reply = guarded.text;
   }
 
   await sendText(token, senderId, reply);

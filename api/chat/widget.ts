@@ -14,6 +14,7 @@ import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { getRecentPosts } from './_lib/facebook.js';
 import { classifyTopic, mergeTopic } from './_lib/topics.js';
+import { catalogueVocabulary, repairCatalogueWords } from './_lib/factGuard.js';
 import {
   appendMessage,
   botShouldStaySilent,
@@ -392,6 +393,20 @@ export default async function handler(req: any, res: any): Promise<void> {
         });
       } else {
         text = geminiErrorToUserMessage(err);
+      }
+    }
+
+    // Last thing before the customer sees it: a catalogue word the model spelled
+    // its own way is put back. An ingredient list is read by people with
+    // allergies, and one letter is the difference between a herb and a disease.
+    if (text) {
+      const guarded = repairCatalogueWords(text, catalogueVocabulary(storefront.products));
+      if (guarded.repaired.length > 0) {
+        console.warn(
+          '[chat/widget] catalogue wording repaired:',
+          guarded.repaired.map((fix) => `${fix.from}→${fix.to}`).join(', '),
+        );
+        text = guarded.text;
       }
     }
 

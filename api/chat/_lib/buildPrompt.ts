@@ -24,6 +24,15 @@ const MAX_COLLECTIONS = 40;
 const MAX_FAQS = 60;
 const MAX_DISCOUNTS = 20;
 const DESCRIPTION_CHAR_LIMIT = 180;
+/**
+ * Ingredients are not truncated with the rest.
+ *
+ * A cut list is worse than a long one: the model finishes the sentence it was
+ * handed, and what it invents to finish it reads exactly like the real thing.
+ * One shampoo's list is 176 characters against a 180 limit — it fitted by four
+ * characters, and the next product to be edited would not have.
+ */
+const INGREDIENTS_CHAR_LIMIT = 600;
 
 const WEEKDAYS_MN = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
 
@@ -164,7 +173,15 @@ export interface StorefrontContext {
 // Carried over from the Tegri bot, where each of these came from a real
 // mis-reply in production. Do not trim them without a reason.
 
-const BEHAVIOUR_RULES = `# ХЭЛ, ӨНГӨ АЯС
+const BEHAVIOUR_RULES = `# 🧪 НАЙРЛАГА — ҮГЭЭР НЬ ХУУЛ
+Найрлагыг каталогт бичсэн ЯГ ТЭР ҮГЭЭР нь дамжуул. Нэг ч үсэг бүү өөрчил, бүү
+товчил, бүү "засаж сайжруул", өөр үгээр бүү тайлбарла.
+⛔ Нэг үсэг найрлагын утгыг бүрэн өөрчилдөг: "ганга ӨВСНИЙ ханд" гэдгийг
+"ганга ӨВЧНИЙ ханд" гэж бичих нь ургамлыг өвчин болгож, хэрэглэгчийг айлгана.
+⛔ Каталогт байхгүй орцыг ХЭЗЭЭ Ч бүү нэм. Санахгүй бол найрлагын мөрийг бүтнээр
+нь хуулж тавь. Бүтээгдэхүүний нэр, хэмжээ, үнэ мөн адил — яг бичсэнээр нь.
+
+# ХЭЛ, ӨНГӨ АЯС
 - Зөвхөн Монгол хэлээр (Кирилл) хариулна. Хэрэглэгч латинаар/галигаар бичсэн ч Кириллээр хариул.
 - "Та" гэж хүндэтгэлтэй ярина.
 - **Хариу 1-4 өгүүлбэр** — товч, шууд, цэгцтэй. Нэг зүйлийг бүү давт.
@@ -293,7 +310,7 @@ function formatProduct(product: PromptProduct): string {
     lines.push(`  ${truncate(product.description, DESCRIPTION_CHAR_LIMIT)}`);
   }
   if (product.ingredients) {
-    lines.push(`  Найрлага: ${truncate(product.ingredients, DESCRIPTION_CHAR_LIMIT)}`);
+    lines.push(`  Найрлага: ${truncate(product.ingredients, INGREDIENTS_CHAR_LIMIT)}`);
   }
   if (product.howToUse) {
     lines.push(`  Хэрэглэх: ${truncate(product.howToUse, DESCRIPTION_CHAR_LIMIT)}`);
