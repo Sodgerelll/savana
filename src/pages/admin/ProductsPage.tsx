@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ChevronDown, ChevronUp, ClipboardCheck, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Tag, Trash2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, ClipboardCheck, Pencil, Plus, Search, ShoppingBag, SlidersHorizontal, Store, Tag, Trash2, X } from "lucide-react";
 import React, { useState } from "react";
 import { AdminModal } from "./AdminModal";
 import { StatusBadge } from "./StatusBadge";
@@ -646,6 +646,16 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                           <tr className="admin-product-expand-row">
                             <td colSpan={7}>
                               <div className="admin-product-expand">
+                                {/* Phones scroll the expanded detail well past the row's own
+                                    chevron, so give the detail its own way back to the list. */}
+                                <button
+                                  type="button"
+                                  className="admin-expand-back"
+                                  onClick={() => setExpandedProductId(null)}
+                                >
+                                  <ArrowLeft size={16} />
+                                  {language === "MN" ? "Жагсаалт руу буцах" : "Back to list"}
+                                </button>
                                 <div className="admin-product-expand-top">
                                   <div className="admin-product-expand-stats">
                                     <div className="admin-expand-stat">

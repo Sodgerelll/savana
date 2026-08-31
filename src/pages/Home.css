@@ -492,6 +492,22 @@
   gap: 1.5rem;
 }
 
+/* More tiles than the row fits: lay them in a horizontal strip that shows four at a time
+   and drifts on its own (see the auto-scroll effect in Home.tsx). */
+.categories-row-scroll {
+  display: flex;
+  grid-template-columns: none;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.categories-row-scroll::-webkit-scrollbar {
+  display: none;
+}
+.categories-row-scroll .category-tile {
+  flex: 0 0 calc((100% - 3 * 1.5rem) / 4);
+}
+
 .category-tile {
   display: flex;
   flex-direction: column;
@@ -1593,6 +1609,10 @@
   .categories-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
+  }
+
+  .categories-row-scroll .category-tile {
+    flex-basis: calc((100% - 0.75rem) / 2);
   }
 
   .category-tile {

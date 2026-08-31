@@ -289,6 +289,7 @@ export default function Home() {
 
   const collectionsViewportRef = useRef<HTMLDivElement>(null);
   const [collectionSlide, setCollectionSlide] = useState(0);
+  const categoriesTrackRef = useRef<HTMLDivElement>(null);
 
   function goToCollectionSlide(index: number) {
     const clamped = Math.max(0, Math.min(index, activeCollections.length - 1));
@@ -311,8 +312,68 @@ export default function Home() {
   const activeTestimonials = getActiveTestimonials(testimonials);
   const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
   const featuredCollections = activeCollections.filter((collection) => collection.slug !== SYSTEM_COLLECTION_SLUG);
+  // Anyone who asked for reduced motion keeps the plain wrapping grid — every category still
+  // shows, it just doesn't drift.
+  const [reduceMotion] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const categoriesScroll = featuredCollections.length > 4 && !reduceMotion;
   const bestSellerProducts = activeProducts.filter((product) => product.bestSeller).slice(0, 4);
   const collectionBySlug = new Map(activeCollections.map((collection) => [collection.slug, collection]));
+
+  // Once there are more categories than the row shows, the strip drifts on its own so the
+  // ones past the first four still get seen. Pauses while the pointer is on it, and holds
+  // still for anyone who asked for reduced motion.
+  useEffect(() => {
+    const track = categoriesTrackRef.current;
+    if (!track || !categoriesScroll) return;
+
+    let raf = 0;
+    let paused = false;
+    let direction = 1;
+    // Kept as a float because browsers round `scrollLeft`, so a sub-pixel step would
+    // otherwise be swallowed every frame and the strip would sit still.
+    let pos = track.scrollLeft;
+    const SPEED = 0.6; // px per frame ≈ 36px/s
+
+    const step = () => {
+      const max = track.scrollWidth - track.clientWidth;
+      if (max > 1) {
+        if (paused) {
+          pos = track.scrollLeft; // stay in sync if the visitor drags it
+        } else {
+          pos += SPEED * direction;
+          if (pos >= max) {
+            pos = max;
+            direction = -1;
+          } else if (pos <= 0) {
+            pos = 0;
+            direction = 1;
+          }
+          track.scrollLeft = pos;
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+
+    const pause = () => { paused = true; };
+    const resume = () => { paused = false; };
+    track.addEventListener("pointerenter", pause);
+    track.addEventListener("pointerleave", resume);
+    track.addEventListener("pointerdown", pause);
+    track.addEventListener("touchstart", pause, { passive: true });
+    track.addEventListener("touchend", resume);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      track.removeEventListener("pointerenter", pause);
+      track.removeEventListener("pointerleave", resume);
+      track.removeEventListener("pointerdown", pause);
+      track.removeEventListener("touchstart", pause);
+      track.removeEventListener("touchend", resume);
+    };
+  }, [categoriesScroll]);
 
   const heroSlides = (() => {
     const slides = activeHeroBanners
@@ -559,7 +620,10 @@ export default function Home() {
           <div className="section-header">
             <h2>{t.categoriesHeading}</h2>
           </div>
-          <div className="categories-row">
+          <div
+            className={`categories-row${categoriesScroll ? " categories-row-scroll" : ""}`}
+            ref={categoriesTrackRef}
+          >
             {featuredCollections.map((collection) => {
               const collectionProducts = activeProducts.filter((p) => p.category === collection.slug);
               const featuredProduct =

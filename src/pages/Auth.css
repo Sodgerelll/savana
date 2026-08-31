@@ -2024,6 +2024,11 @@
   border-bottom: 1px solid #e8e4dc;
 }
 
+/* Only earns its place on phones — desktop keeps the row's chevron in view. */
+.admin-expand-back {
+  display: none;
+}
+
 .admin-product-expand-section {
   display: flex;
   flex-direction: column;
@@ -2085,6 +2090,25 @@
 
   .admin-expand-stat {
     min-width: 0;
+  }
+
+  .admin-expand-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+    padding: 0.5rem 0.85rem;
+    background: #fff;
+    border: 1px solid #e8e4dc;
+    border-radius: 8px;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: #3a3630;
+    cursor: pointer;
+  }
+
+  .admin-expand-back:active {
+    background: #f0ece2;
   }
 }
 
