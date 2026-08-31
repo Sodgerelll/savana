@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -275,58 +275,12 @@ function getIngredientVisual(ingredient: string): { icon: LucideIcon; tone: stri
   return { icon: Droplets, tone: "dew" };
 }
 
-export default function Home() {
-  const { language, t } = useLanguage();
-  const { collections, heroBanners, products, settings, testimonials, discounts, loading } = useStorefront();
-  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
-  const [heroHovered, setHeroHovered] = useState(false);
-  const [heroProductHovered, setHeroProductHovered] = useState(false);
-  const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
-
-  const visibleSettings = getRenderableSettings(settings);
-  const latestJournalEntries = getActiveJournalEntries(visibleSettings.journalEntries).slice(0, 3);
-  const activeCollections = getCollectionsWithProducts(collections, products);
-
-  const collectionsViewportRef = useRef<HTMLDivElement>(null);
-  const [collectionSlide, setCollectionSlide] = useState(0);
-  const categoriesTrackRef = useRef<HTMLDivElement>(null);
-
-  function goToCollectionSlide(index: number) {
-    const clamped = Math.max(0, Math.min(index, activeCollections.length - 1));
-    setCollectionSlide(clamped);
-    const card = collectionsViewportRef.current?.children[clamped] as HTMLElement | undefined;
-    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
-  }
-
-  const testimonialsViewportRef = useRef<HTMLDivElement>(null);
-  const [testimonialSlide, setTestimonialSlide] = useState(0);
-
-  function goToTestimonialSlide(index: number, total: number) {
-    const clamped = Math.max(0, Math.min(index, total - 1));
-    setTestimonialSlide(clamped);
-    const card = testimonialsViewportRef.current?.children[clamped] as HTMLElement | undefined;
-    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
-  }
-  const activeProducts = getActiveProducts(products, collections);
-  const activeHeroBanners = getActiveHeroBanners(heroBanners, collections);
-  const activeTestimonials = getActiveTestimonials(testimonials);
-  const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
-  const featuredCollections = activeCollections.filter((collection) => collection.slug !== SYSTEM_COLLECTION_SLUG);
-  // Anyone who asked for reduced motion keeps the plain wrapping grid — every category still
-  // shows, it just doesn't drift.
-  const [reduceMotion] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  const categoriesScroll = featuredCollections.length > 4 && !reduceMotion;
-  const bestSellerProducts = activeProducts.filter((product) => product.bestSeller).slice(0, 4);
-  const collectionBySlug = new Map(activeCollections.map((collection) => [collection.slug, collection]));
-
-  // Once there are more categories than the row shows, the strip drifts on its own so the
-  // ones past the first four still get seen. Pauses while the pointer is on it, and holds
-  // still for anyone who asked for reduced motion.
+/** Slowly drifts a horizontal scroll container back and forth so the items past the first
+ *  few still get seen. Pauses while the pointer is on it; the caller decides when it runs. */
+function useAutoDriftScroll(ref: RefObject<HTMLDivElement | null>, enabled: boolean) {
   useEffect(() => {
-    const track = categoriesTrackRef.current;
-    if (!track || !categoriesScroll) return;
+    const track = ref.current;
+    if (!track || !enabled) return;
 
     let raf = 0;
     let paused = false;
@@ -373,7 +327,59 @@ export default function Home() {
       track.removeEventListener("touchstart", pause);
       track.removeEventListener("touchend", resume);
     };
-  }, [categoriesScroll]);
+  }, [ref, enabled]);
+}
+
+export default function Home() {
+  const { language, t } = useLanguage();
+  const { collections, heroBanners, products, settings, testimonials, discounts, loading } = useStorefront();
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const [heroHovered, setHeroHovered] = useState(false);
+  const [heroProductHovered, setHeroProductHovered] = useState(false);
+  const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
+
+  const visibleSettings = getRenderableSettings(settings);
+  const latestJournalEntries = getActiveJournalEntries(visibleSettings.journalEntries).slice(0, 3);
+  const activeCollections = getCollectionsWithProducts(collections, products);
+
+  const collectionsViewportRef = useRef<HTMLDivElement>(null);
+  const [collectionSlide, setCollectionSlide] = useState(0);
+  const categoriesTrackRef = useRef<HTMLDivElement>(null);
+
+  function goToCollectionSlide(index: number) {
+    const clamped = Math.max(0, Math.min(index, activeCollections.length - 1));
+    setCollectionSlide(clamped);
+    const card = collectionsViewportRef.current?.children[clamped] as HTMLElement | undefined;
+    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  }
+
+  const testimonialsViewportRef = useRef<HTMLDivElement>(null);
+  const [testimonialSlide, setTestimonialSlide] = useState(0);
+
+  function goToTestimonialSlide(index: number, total: number) {
+    const clamped = Math.max(0, Math.min(index, total - 1));
+    setTestimonialSlide(clamped);
+    const card = testimonialsViewportRef.current?.children[clamped] as HTMLElement | undefined;
+    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  }
+  const activeProducts = getActiveProducts(products, collections);
+  const activeHeroBanners = getActiveHeroBanners(heroBanners, collections);
+  const activeTestimonials = getActiveTestimonials(testimonials);
+  const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
+  const featuredCollections = activeCollections.filter((collection) => collection.slug !== SYSTEM_COLLECTION_SLUG);
+  // Anyone who asked for reduced motion keeps the plain wrapping grid — every category still
+  // shows, it just doesn't drift.
+  const [reduceMotion] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const categoriesScroll = featuredCollections.length > 4 && !reduceMotion;
+  // The collections slider already scrolls by hand; past four it also drifts on its own.
+  const collectionsAutoScroll = activeCollections.length > 4 && !reduceMotion;
+  const bestSellerProducts = activeProducts.filter((product) => product.bestSeller).slice(0, 4);
+  const collectionBySlug = new Map(activeCollections.map((collection) => [collection.slug, collection]));
+
+  useAutoDriftScroll(categoriesTrackRef, categoriesScroll);
+  useAutoDriftScroll(collectionsViewportRef, collectionsAutoScroll);
 
   const heroSlides = (() => {
     const slides = activeHeroBanners
@@ -730,7 +736,10 @@ export default function Home() {
               </button>
             </div>
           </div>
-          <div className="collections-slider-viewport" ref={collectionsViewportRef}>
+          <div
+            className={`collections-slider-viewport${collectionsAutoScroll ? " collections-slider-viewport-auto" : ""}`}
+            ref={collectionsViewportRef}
+          >
             {activeCollections.map((collection) => {
               const previewProduct =
                 collection.slug === SYSTEM_COLLECTION_SLUG

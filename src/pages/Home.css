@@ -988,6 +988,12 @@
   display: none;
 }
 
+/* While the strip drifts on its own, mandatory snap would keep yanking it to a card edge
+   and stall the motion — relax it so the auto-scroll stays smooth. */
+.collections-slider-viewport-auto {
+  scroll-snap-type: none;
+}
+
 .collections-grid-card {
   display: flex;
   flex-direction: column;
