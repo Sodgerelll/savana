@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ArrowLeftRight, Banknote, ChevronDown, ChevronUp, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Banknote, ChevronDown, ChevronUp, Download, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import React from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { AdminCtx } from "./adminShellTypes";
 import { getProductLabel } from "./adminHelpers";
+import { downloadSellerProductReport } from "../../lib/customerProductReport";
 
 export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
   const {
@@ -832,6 +833,28 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                           {language === "MN" ? "Шилжүүлэг байхгүй" : "No transfers yet"}
                                         </p>
                                       ) : (
+                                        <>
+                                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem", padding: "0.35rem 0.8rem" }}
+                                            onClick={() =>
+                                              downloadSellerProductReport(
+                                                customer,
+                                                productAggList.map((p) => ({
+                                                  label: getProductLabel(p.productId, p.productName),
+                                                  variant: p.variant,
+                                                  transferred: p.transferred,
+                                                  sold: p.sold,
+                                                  totalAmount: p.totalAmount,
+                                                })),
+                                              )
+                                            }
+                                          >
+                                            <Download size={14} /> {language === "MN" ? "Excel татах" : "Export to Excel"}
+                                          </button>
+                                        </div>
                                         <div className="admin-expand-sales-table-wrap">
                                           <table className="admin-expand-sales-table" style={{ textAlign: "center" }}>
                                             <thead>
@@ -887,6 +910,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             </tfoot>
                                           </table>
                                         </div>
+                                        </>
                                       )}
                                     </div>
                                   )}
