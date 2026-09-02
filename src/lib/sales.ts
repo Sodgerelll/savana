@@ -136,6 +136,23 @@ export function saleChannelEarnsRevenue(channel: SaleChannel): boolean {
   return !NON_REVENUE_CHANNELS.includes(channel);
 }
 
+/**
+ * Payment "methods" where the buyer hands over nothing — the goods leave as a
+ * complimentary gift ("Бэлгэнд"). Booked as a write-off at cost, exactly like the gift
+ * channel, so a freebie can never inflate cash or revenue no matter which channel it was
+ * sold through.
+ */
+const NON_REVENUE_PAYMENT_METHODS: readonly SalePaymentMethod[] = ["gift"];
+
+export function salePaymentEarnsRevenue(paymentMethod: SalePaymentMethod): boolean {
+  return !NON_REVENUE_PAYMENT_METHODS.includes(paymentMethod);
+}
+
+/** A sale earns revenue only when both its channel and its payment method call for it. */
+export function saleEarnsRevenue(channel: SaleChannel, paymentMethod: SalePaymentMethod): boolean {
+  return saleChannelEarnsRevenue(channel) && salePaymentEarnsRevenue(paymentMethod);
+}
+
 export interface SaleCustomerPayload {
   type: SaleCustomerType;
   /** Contact person for an organization, the buyer's own name for an individual. */
@@ -280,7 +297,7 @@ function normalizeVatMode(value: unknown): SaleVatMode {
 }
 
 function normalizePaymentMethod(value: unknown): SalePaymentMethod {
-  if (value === "bank_transfer" || value === "bonum" || value === "pos") {
+  if (value === "bank_transfer" || value === "bonum" || value === "pos" || value === "gift") {
     return value;
   }
 
@@ -444,7 +461,7 @@ function buildEntryForSale(
   input: Pick<SaleDraftInput, "channel" | "paymentMethod" | "totals">,
   cogsAmount: number,
 ): BuiltEntry {
-  if (!saleChannelEarnsRevenue(input.channel)) {
+  if (!saleEarnsRevenue(input.channel, input.paymentMethod)) {
     return buildGoodsWriteOffEntry({ cogsAmount });
   }
 
@@ -516,7 +533,7 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
       sourceType: "sale",
       sourceId: saleRef.id,
       sourceNumber: saleNumber,
-      description: saleChannelEarnsRevenue(input.channel)
+      description: saleEarnsRevenue(input.channel, input.paymentMethod)
         ? `Борлуулалт: ${saleNumber}`
         : `Бэлэг/дотоод хэрэглээ: ${saleNumber}`,
       createdBy: input.createdByUid,
@@ -761,7 +778,7 @@ export async function createSaleReturn(
 
     const channel = normalizeChannel(data.channel);
     const paymentMethod = normalizePaymentMethod(data.paymentMethod);
-    const builtEntry = saleChannelEarnsRevenue(channel)
+    const builtEntry = saleEarnsRevenue(channel, paymentMethod)
       ? buildSaleReturnEntry({ returnAmount: returnNet, vatAmount, cogsAmount, paymentMethod })
       : buildReversalEntry(buildGoodsWriteOffEntry({ cogsAmount }).lines);
 

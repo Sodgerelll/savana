@@ -253,6 +253,23 @@ describe("createSale", () => {
     ]);
     expect(entry.totalAmount).toBe(24000);
   });
+
+  it("books a complimentary (gift) payment method as a write-off at cost, not revenue", async () => {
+    seedProduct(10, { costPrice: 3000 });
+
+    await createSale(makeSaleInput({ status: "delivered", paymentMethod: "gift" }));
+
+    const sale = writtenSale();
+    expect(sale.paymentMethod).toBe("gift");
+
+    // 2 units × 3000 cost move from inventory (1210) into the write-off expense (5900) —
+    // no cash and no revenue line, even though the channel is "store".
+    const [entry] = writtenJournalEntries();
+    expect(entry.lines).toEqual([
+      expect.objectContaining({ accountCode: "5900", debit: 6000, credit: 0 }),
+      expect.objectContaining({ accountCode: "1210", debit: 0, credit: 6000 }),
+    ]);
+  });
 });
 
 // ─── updateSale ───────────────────────────────────────────────────────────────

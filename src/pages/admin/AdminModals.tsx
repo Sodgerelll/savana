@@ -5695,7 +5695,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               <option value="bank_transfer">{language === "MN" ? "Банкны шилжүүлэг" : "Bank transfer"}</option>
               <option value="pos">{language === "MN" ? "Пос" : "POS"}</option>
               <option value="bonum">Bonum</option>
+              <option value="gift">{language === "MN" ? "Бэлгэнд" : "Complimentary"}</option>
             </select>
+            {draft.paymentMethod === "gift" && (
+              <small>
+                {language === "MN"
+                  ? "Төлбөргүй — бараа өртгөөрөө зардалд бичигдэж, орлого болон касст ороохгүй."
+                  : "No payment collected — booked as a write-off at cost, not as revenue."}
+              </small>
+            )}
           </label>
         </div>
 

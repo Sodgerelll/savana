@@ -433,6 +433,8 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                         >
                           {sale.status === "new"
                             ? mn ? "Хүлээгдэж буй" : "Pending"
+                            : sale.paymentMethod === "gift"
+                            ? mn ? "Бэлгэнд" : "Complimentary"
                             : mn ? "Төлөгдсөн" : "Paid"}
                         </strong>
                         <small>
@@ -442,6 +444,8 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                             ? mn ? "Банкны шилжүүлэг" : "Bank transfer"
                             : sale.paymentMethod === "pos"
                             ? mn ? "Пос" : "POS"
+                            : sale.paymentMethod === "gift"
+                            ? mn ? "Бэлгэнд" : "Complimentary"
                             : "Bonum"}
                         </small>
                       </div>
