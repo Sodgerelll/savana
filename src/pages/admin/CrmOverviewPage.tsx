@@ -80,24 +80,25 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
     : 0;
 
   /* ── transaction metrics ── */
-  const salesTx = (customerTransactions as any[]).filter((tx) => tx.type !== "return");
+  // "sale" records are wholesale allowances, not fresh revenue and not transfers — the
+  // money they carry is the discount, already reflected in the customer aggregates above.
+  const deliveryTx = (customerTransactions as any[]).filter((tx) => tx.type === "delivery");
+  const saleTx = (customerTransactions as any[]).filter((tx) => tx.type === "sale");
+  const sumTxItems = (txs: any[], pick: (it: any) => number) =>
+    txs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + pick(it), 0), 0);
 
-  const todaySales = salesTx
+  const todaySales = deliveryTx
     .filter((tx) => (tx.transactionDate ?? tx.createdAt ?? "").startsWith(todayStr))
     .reduce((s: number, tx: any) => s + (tx.totals?.grandTotal ?? 0), 0);
 
-  const monthSales = salesTx
+  const monthSales = deliveryTx
     .filter((tx) => (tx.transactionDate ?? tx.createdAt ?? "").startsWith(thisMonth))
     .reduce((s: number, tx: any) => s + (tx.totals?.grandTotal ?? 0), 0);
 
-  const remainingUnits = (customerTransactions as any[]).reduce(
-    (s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + ((it.quantity ?? 0) - (it.soldQuantity ?? 0)), 0),
-    0,
-  );
-  const transferredUnits = (customerTransactions as any[]).reduce(
-    (s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity ?? 0), 0),
-    0,
-  );
+  const transferredUnits = sumTxItems(deliveryTx, (it) => it.quantity ?? 0);
+  const soldUnits =
+    sumTxItems(deliveryTx, (it) => it.soldQuantity ?? 0) + sumTxItems(saleTx, (it) => it.quantity ?? 0);
+  const remainingUnits = transferredUnits - soldUnits;
 
   const recentTx = (customerTransactions as any[])
     .slice()
@@ -194,7 +195,7 @@ export default function CrmOverviewPage({ ctx }: { ctx: AdminCtx }) {
         {kpi(<ArrowLeftRight size={16} />, mn ? "Борлуулагч руу шилжүүлсэн дүн" : "Transferred to sellers",
           formatStorePrice(totalTransferredAmount),
           totalTransferredAmount > 0 ? "#8b5cf6" : undefined,
-          `${salesTx.length} ${mn ? "шилжүүлэг" : "transfers"} · ${transferredUnits} ш`)}
+          `${deliveryTx.length} ${mn ? "шилжүүлэг" : "transfers"} · ${transferredUnits} ш`)}
         {kpi(<Wallet size={16} />, mn ? "Нийт авсан мөнгө" : "Total received",
           formatStorePrice(totalReceivedAmount),
           totalReceivedAmount > 0 ? "#10b981" : undefined,

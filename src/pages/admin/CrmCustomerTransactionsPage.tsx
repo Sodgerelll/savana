@@ -19,6 +19,16 @@ export default function CrmCustomerTransactionsPage({ ctx }: { ctx: AdminCtx }) 
     deleteCustomerTransaction,
   } = ctx;
 
+  // Transferred/sold/remaining count deliveries; each sale (allowance) record adds its
+  // quantity to what has been sold.
+  const sumItems = (txs: any[], pick: (it: any) => number) =>
+    txs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + pick(it), 0), 0);
+  const deliveryTxs = customerTransactions.filter((tx: any) => tx.type === "delivery");
+  const saleTxs = customerTransactions.filter((tx: any) => tx.type === "sale");
+  const transferredUnits = sumItems(deliveryTxs, (it) => it.quantity);
+  const soldUnits = sumItems(deliveryTxs, (it) => it.soldQuantity) + sumItems(saleTxs, (it) => it.quantity);
+  const remainingUnits = transferredUnits - soldUnits;
+
   return (
     <>
       <div className="admin-topbar">
@@ -81,20 +91,16 @@ export default function CrmCustomerTransactionsPage({ ctx }: { ctx: AdminCtx }) 
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</span>
-          <strong>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0), 0)} ш
-          </strong>
+          <strong>{transferredUnits} ш</strong>
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Зарсан" : "Sold"}</span>
-          <strong>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.soldQuantity, 0), 0)} ш
-          </strong>
+          <strong>{soldUnits} ш</strong>
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Үлдэгдэл бараа" : "Remaining"}</span>
-          <strong style={{ color: customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0) > 0 ? "var(--color-danger, #b14141)" : undefined }}>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0)} ш
+          <strong style={{ color: remainingUnits > 0 ? "var(--color-danger, #b14141)" : undefined }}>
+            {remainingUnits} ш
           </strong>
         </div>
         <div className="admin-summary-card">

@@ -18,7 +18,9 @@ import { CUSTOMERS_COLLECTION } from "./customers";
 import {
   buildCustomerTransactionSaleEntry,
   buildCustomerTransactionReturnEntry,
+  buildCustomerTransactionSettlementEntry,
   buildReversalEntry,
+  isEmptyEntry,
 } from "./accounting/entryBuilders";
 import {
   generateJournalEntryNumber,
@@ -173,6 +175,142 @@ export function createEmptyTransactionDraft(): CustomerTransactionRecord {
     updatedAt: null,
     journalEntryId: null,
     cogsAmount: null,
+  };
+}
+
+// ─── Seller "record sales" entry ─────────────────────────────────────────────
+//
+// A product-centric shortcut on the Борлуулагч → Бүтээгдэхүүнээр tab: the operator types
+// how many of each transferred product the seller has sold and a discount on that value.
+// It is stored as a `type: "sale"` document — a wholesale sales allowance. The goods left
+// stock on the delivery that transferred them, so this moves no stock; its only book
+// effect is the discount, which comes off the seller's balance and off wholesale revenue.
+
+export interface SellerSaleLineInput {
+  productId: number;
+  productName: string;
+  category?: string;
+  image?: string | null;
+  variant?: string | null;
+  /** Quantity sold now. */
+  soldNow: number;
+  /** Price the seller sells at. */
+  unitPrice: number;
+  /** List price at transfer time — kept so the modal can show the struck-through original. */
+  originalUnitPrice?: number;
+}
+
+export interface SellerSaleDiscount {
+  type: CustomerTransactionDiscountType;
+  value: number;
+}
+
+export interface SellerSaleTotals {
+  subtotal: number;
+  discountType: CustomerTransactionDiscountType;
+  discountValue: number;
+  discount: number;
+  grandTotal: number;
+}
+
+/**
+ * Resolves the money side of a "record sales" entry: the gross value of the units sold, the
+ * discount in tugriks (a percentage is taken off the gross; a ₮ amount is capped at it),
+ * and the net the seller is left owing for them.
+ */
+export function resolveSellerSaleTotals(
+  lines: SellerSaleLineInput[],
+  discount: SellerSaleDiscount,
+): SellerSaleTotals {
+  const subtotal = lines.reduce(
+    (sum, line) => sum + roundAmount(line.unitPrice) * Math.max(0, Math.trunc(line.soldNow || 0)),
+    0,
+  );
+  const discountType: CustomerTransactionDiscountType =
+    discount.type === "percent" ? "percent" : "amount";
+  const rawValue = Math.max(0, Number(discount.value) || 0);
+  const discountValue = discountType === "percent" ? Math.min(100, rawValue) : roundAmount(rawValue);
+  const discountAmount = Math.min(
+    subtotal,
+    discountType === "percent" ? Math.round((subtotal * discountValue) / 100) : discountValue,
+  );
+  return {
+    subtotal,
+    discountType,
+    discountValue,
+    discount: discountAmount,
+    grandTotal: Math.max(0, subtotal - discountAmount),
+  };
+}
+
+/**
+ * Builds the `createCustomerTransaction` input for a seller "record sales" entry. Lines with
+ * a zero quantity are dropped; each surviving line is stored fully sold
+ * (`soldQuantity === quantity`) so the Бүтээгдэхүүнээр tab can count it as sell-through.
+ *
+ * `paidAmount` is the cash the reseller hands over for these goods — it defaults to the full
+ * net (list value less the discount) and is capped there. Together with the discount it
+ * clears that much of the receivable the delivery raised.
+ */
+export function buildSellerSaleInput(params: {
+  customerId: string;
+  customerSnapshot: CustomerTransactionCustomerSnapshot;
+  lines: SellerSaleLineInput[];
+  discount: SellerSaleDiscount;
+  paidAmount?: number | null;
+  paymentMethod?: CustomerTransactionPaymentMethod;
+  transactionDate?: string | null;
+  note?: string;
+  createdByUid: string;
+}): CreateCustomerTransactionInput {
+  const soldLines = params.lines.filter((line) => Math.trunc(line.soldNow || 0) > 0);
+  const totals = resolveSellerSaleTotals(soldLines, params.discount);
+  const items: CustomerTransactionItem[] = soldLines.map((line) => {
+    const quantity = Math.trunc(line.soldNow);
+    const unitPrice = roundAmount(line.unitPrice);
+    return {
+      productId: line.productId,
+      productName: line.productName,
+      category: line.category ?? "",
+      image: line.image ?? null,
+      variant: line.variant ?? null,
+      quantity,
+      soldQuantity: quantity,
+      unitPrice,
+      originalUnitPrice: roundAmount(line.originalUnitPrice ?? line.unitPrice) || unitPrice,
+      lineTotal: unitPrice * quantity,
+    };
+  });
+  const paidAmount = Math.max(
+    0,
+    Math.min(totals.grandTotal, roundAmount(params.paidAmount ?? totals.grandTotal)),
+  );
+  const status: CustomerTransactionPaymentStatus =
+    paidAmount <= 0 ? "unpaid" : paidAmount >= totals.grandTotal ? "paid" : "partial";
+  return {
+    type: "sale",
+    customerId: params.customerId,
+    customerSnapshot: params.customerSnapshot,
+    items,
+    totals: {
+      subtotal: totals.subtotal,
+      discount: totals.discount,
+      discountType: totals.discountType,
+      discountValue: totals.discountValue,
+      vatMode: "none",
+      vatAmount: 0,
+      grandTotal: totals.grandTotal,
+    },
+    payment: {
+      status,
+      paidAmount,
+      method: paidAmount > 0 ? params.paymentMethod ?? "cash" : null,
+      paidAt: paidAmount > 0 ? new Date().toISOString() : null,
+    },
+    relatedTransactionId: null,
+    transactionDate: params.transactionDate ?? new Date().toISOString().slice(0, 10),
+    note: params.note ?? "",
+    createdByUid: params.createdByUid,
   };
 }
 
@@ -387,6 +525,17 @@ function customerDeltaForTransaction(
       outstandingBalance: -(totals.grandTotal - payment.paidAmount) * sign,
     };
   }
+  if (type === "sale") {
+    // A reseller settling goods billed on an earlier delivery: `discount` is the price
+    // allowance the shop grants and `payment.paidAmount` the cash actually received. Together
+    // they clear that much of the receivable — no new sale value is billed, but the money
+    // received does count towards what the seller has paid.
+    return {
+      totalSales: -totals.discount * sign,
+      totalPaid: payment.paidAmount * sign,
+      outstandingBalance: -(totals.discount + payment.paidAmount) * sign,
+    };
+  }
   return {
     totalSales: totals.grandTotal * sign,
     totalPaid: payment.paidAmount * sign,
@@ -547,8 +696,9 @@ async function loadCustomerAggregates(t: Transaction, customerId: string) {
 }
 
 /**
- * Builds the ledger entry a transaction produces — a wholesale sale, or a return that
- * credits the receivable back. Both split off any НӨАТ the transaction carries.
+ * Builds the ledger entry a transaction produces — a wholesale sale, a return that credits
+ * the receivable back, or a sale (allowance) that credits only its discount back. Each
+ * splits off any НӨАТ the transaction carries.
  */
 function buildEntryForTransaction(
   input: Pick<CreateCustomerTransactionInput, "type" | "totals" | "payment">,
@@ -561,6 +711,18 @@ function buildEntryForTransaction(
       grandTotal: input.totals.grandTotal,
       cogsAmount,
       vatAmount,
+    });
+  }
+
+  if (input.type === "sale") {
+    // A reseller settling already-billed goods: the cash received lands in its money
+    // account, the discount is booked to sales returns & allowances, and the receivable is
+    // credited for both. No revenue or COGS — those posted on the earlier delivery. Comes
+    // out empty (and is skipped by the caller) when nothing was paid or allowed.
+    return buildCustomerTransactionSettlementEntry({
+      paymentMethod: input.payment.method,
+      paidAmount: input.payment.paidAmount,
+      allowanceAmount: input.totals.discount,
     });
   }
 
@@ -578,11 +740,16 @@ function buildEntryForTransaction(
  * balance, the transaction document and the journal entry are written in one Firestore
  * transaction, so the three views of the same event can never drift apart — and the stock
  * read that decides whether there is enough to send is part of that same window.
+ *
+ * A `type: "sale"` record is the exception: it is a wholesale sales allowance for goods that
+ * already left stock on their delivery, so it touches no stock and posts a journal entry
+ * only for the discount it carries (nothing at all when that is zero).
  */
 export async function createCustomerTransaction(
   rawInput: CreateCustomerTransactionInput,
 ): Promise<string> {
   const input = sanitizeTransactionInput(rawInput);
+  const movesStock = input.type !== "sale";
 
   // Both numbers run their own transactions, so they are reserved up front.
   const txNumber = await generateTxNumber();
@@ -591,21 +758,28 @@ export async function createCustomerTransaction(
   const txRef = doc(collection(db, CUSTOMER_TRANSACTIONS_COLLECTION));
 
   await runTransaction(db, async (t) => {
-    const states = await loadStockStates(t, [input.items]);
+    const states = movesStock
+      ? await loadStockStates(t, [input.items])
+      : new Map<number | string, ProductStockState>();
     const customer = await loadCustomerAggregates(t, input.customerId);
 
-    const cogsAmount = cogsForItems(states, input.items);
-    applyItemsToStates(states, input.items, input.type, 1);
+    const cogsAmount = movesStock ? cogsForItems(states, input.items) : 0;
+    if (movesStock) {
+      applyItemsToStates(states, input.items, input.type, 1);
+    }
 
     const delta = customerDeltaForTransaction(input.type, input.totals, input.payment);
 
-    const entryRef = postJournalEntry(t, entryNumber, buildEntryForTransaction(input, cogsAmount), {
-      sourceType: "customerTransaction",
-      sourceId: txRef.id,
-      sourceNumber: txNumber,
-      description: `Харилцагчийн гүйлгээ: ${txNumber} — ${input.customerSnapshot.name}`,
-      createdBy: input.createdByUid,
-    });
+    const entry = buildEntryForTransaction(input, cogsAmount);
+    const entryRef = isEmptyEntry(entry)
+      ? null
+      : postJournalEntry(t, entryNumber, entry, {
+          sourceType: "customerTransaction",
+          sourceId: txRef.id,
+          sourceNumber: txNumber,
+          description: `Харилцагчийн гүйлгээ: ${txNumber} — ${input.customerSnapshot.name}`,
+          createdBy: input.createdByUid,
+        });
 
     t.set(txRef, {
       schemaVersion: CUSTOMER_TRANSACTION_SCHEMA_VERSION,
@@ -622,11 +796,13 @@ export async function createCustomerTransaction(
       createdByUid: input.createdByUid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      journalEntryId: entryRef.id,
+      journalEntryId: entryRef?.id ?? null,
       cogsAmount,
     });
 
-    states.forEach((state) => writeProductStock(t, state));
+    if (movesStock) {
+      states.forEach((state) => writeProductStock(t, state));
+    }
 
     t.update(customer.ref, {
       totalSales: customer.totalSales + delta.totalSales,
@@ -649,12 +825,19 @@ export async function updateCustomerTransaction(
   const next = sanitizeTransactionInput(rawNext);
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, id);
 
+  // A "sale" record (wholesale allowance) holds no stock on either side of the edit.
+  const prevMovesStock = previous.type !== "sale";
+  const nextMovesStock = next.type !== "sale";
+
   const reversalEntryNumber = previous.journalEntryId ? await generateJournalEntryNumber() : null;
   const nextEntryNumber = await generateJournalEntryNumber();
 
   await runTransaction(db, async (t) => {
     // ── All reads first: a Firestore transaction cannot read after it has written. ──
-    const states = await loadStockStates(t, [previous.items, next.items]);
+    const states = await loadStockStates(t, [
+      prevMovesStock ? previous.items : [],
+      nextMovesStock ? next.items : [],
+    ]);
     const movedCustomer = previous.customerId !== next.customerId;
     const prevCustomer = movedCustomer ? await loadCustomerAggregates(t, previous.customerId) : null;
     const nextCustomer = await loadCustomerAggregates(t, next.customerId);
@@ -665,15 +848,24 @@ export async function updateCustomerTransaction(
     // Undo the old version's stock effect, then re-apply the new one. Only quantity added
     // beyond what this transaction already held is checked against the shelf, so recording a
     // payment (an unchanged item list) or trimming a line is never blocked by a shortfall
-    // that was already there — see reapplyEditedItems.
-    applyItemsToStates(states, previous.items, previous.type, -1);
-    reapplyEditedItems(states, previous, next);
+    // that was already there — see reapplyEditedItems. A "sale" side moves no stock.
+    if (prevMovesStock) {
+      applyItemsToStates(states, previous.items, previous.type, -1);
+    }
+    if (nextMovesStock) {
+      if (prevMovesStock) {
+        reapplyEditedItems(states, previous, next);
+      } else {
+        applyItemsToStates(states, next.items, next.type, 1);
+      }
+    }
 
     // The cost of goods already sold does not change because the transaction was edited.
     // It is only recomputed when the goods themselves changed — recording a payment, which
     // also runs through here, leaves the original figure exactly where it was.
-    const nextCogsAmount =
-      sameGoods(previous.items, next.items) && typeof previous.cogsAmount === "number"
+    const nextCogsAmount = !nextMovesStock
+      ? 0
+      : sameGoods(previous.items, next.items) && typeof previous.cogsAmount === "number"
         ? previous.cogsAmount
         : cogsForItems(states, next.items);
 
@@ -690,18 +882,16 @@ export async function updateCustomerTransaction(
       });
     }
 
-    const nextEntryRef = postJournalEntry(
-      t,
-      nextEntryNumber,
-      buildEntryForTransaction(next, nextCogsAmount),
-      {
-        sourceType: "customerTransaction",
-        sourceId: id,
-        sourceNumber: previous.txNumber,
-        description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
-        createdBy: next.createdByUid,
-      },
-    );
+    const nextEntry = buildEntryForTransaction(next, nextCogsAmount);
+    const nextEntryRef = isEmptyEntry(nextEntry)
+      ? null
+      : postJournalEntry(t, nextEntryNumber, nextEntry, {
+          sourceType: "customerTransaction",
+          sourceId: id,
+          sourceNumber: previous.txNumber,
+          description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
+          createdBy: next.createdByUid,
+        });
 
     t.update(txRef, {
       type: next.type,
@@ -714,7 +904,7 @@ export async function updateCustomerTransaction(
       transactionDate: next.transactionDate ?? null,
       note: next.note ?? "",
       updatedAt: serverTimestamp(),
-      journalEntryId: nextEntryRef.id,
+      journalEntryId: nextEntryRef?.id ?? null,
       cogsAmount: nextCogsAmount,
     });
 
@@ -815,8 +1005,8 @@ export async function recordCustomerTransactionPayment(
   previous: CustomerTransactionRecord,
   input: RecordTransactionPaymentInput,
 ): Promise<void> {
-  if (previous.type === "return") {
-    throw new Error("Буцаалтын гүйлгээнд төлбөр бүртгэх боломжгүй");
+  if (previous.type === "return" || previous.type === "sale") {
+    throw new Error("Энэ төрлийн гүйлгээнд төлбөр бүртгэх боломжгүй");
   }
   const amount = roundAmount(input.amount);
   const outstanding = roundAmount(previous.totals.grandTotal) - roundAmount(previous.payment.paidAmount);
@@ -934,9 +1124,13 @@ export async function deleteCustomerTransaction(
 ): Promise<void> {
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, previous.id);
   const entryNumber = previous.journalEntryId ? await generateJournalEntryNumber() : null;
+  // A "sale" record (wholesale allowance) never held stock, so there is nothing to give back.
+  const movesStock = previous.type !== "sale";
 
   await runTransaction(db, async (t) => {
-    const states = await loadStockStates(t, [previous.items]);
+    const states = movesStock
+      ? await loadStockStates(t, [previous.items])
+      : new Map<number | string, ProductStockState>();
     // The customer may have been deleted since — the transaction still has to go away, so
     // a missing customer just means there are no aggregates left to correct.
     const customer = await loadCustomerAggregates(t, previous.customerId).catch(() => null);
@@ -944,7 +1138,9 @@ export async function deleteCustomerTransaction(
       ? await readJournalEntryLines(t, previous.journalEntryId)
       : null;
 
-    applyItemsToStates(states, previous.items, previous.type, -1);
+    if (movesStock) {
+      applyItemsToStates(states, previous.items, previous.type, -1);
+    }
 
     if (lines && entryNumber) {
       postJournalEntry(t, entryNumber, buildReversalEntry(lines), {
@@ -958,7 +1154,9 @@ export async function deleteCustomerTransaction(
     }
 
     t.delete(txRef);
-    states.forEach((state) => writeProductStock(t, state));
+    if (movesStock) {
+      states.forEach((state) => writeProductStock(t, state));
+    }
 
     if (customer) {
       const reverse = customerDeltaForTransaction(

@@ -175,6 +175,7 @@ import {
   type CrmContactRecord,
 } from "../lib/crmContacts";
 import {
+  buildSellerSaleInput,
   checkProductHasTransactions,
   createCustomerTransaction,
   createEmptyTransactionDraft,
@@ -537,6 +538,34 @@ interface TransactionPaymentModalState {
   editIndex?: number;
 }
 
+interface SellerSaleModalLine {
+  productId: number;
+  productName: string;
+  category: string;
+  image: string | null;
+  variant: string | null;
+  /** Average transfer price for this product/variant. */
+  unitPrice: number;
+  originalUnitPrice: number;
+  /** Units transferred to the seller so far. */
+  transferred: number;
+  /** Units already marked sold (on transfers and earlier sale records). */
+  alreadySold: number;
+  /** Units the operator is recording as sold now. */
+  soldNow: number;
+}
+
+interface SellerSaleModalState {
+  customerId: string;
+  customerName: string;
+  customerSnapshot: { code: string; name: string; phoneNumber: string };
+  lines: SellerSaleModalLine[];
+  discount: { type: "amount" | "percent"; value: number };
+  /** Cash the seller hands over; null means "the full net", recomputed as the form changes. */
+  paidAmount: number | null;
+  method: "cash" | "bank" | "qpay" | "other";
+}
+
 interface AdminModuleHighlight {
   label: string;
   value: string;
@@ -748,6 +777,9 @@ export default function Account() {
   const [txPaymentModal, setTxPaymentModal] = useState<TransactionPaymentModalState | null>(null);
   const [txPaymentSaving, setTxPaymentSaving] = useState(false);
   const [txPaymentError, setTxPaymentError] = useState<string | null>(null);
+  const [sellerSaleModal, setSellerSaleModal] = useState<SellerSaleModalState | null>(null);
+  const [sellerSaleSaving, setSellerSaleSaving] = useState(false);
+  const [sellerSaleError, setSellerSaleError] = useState<string | null>(null);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"all" | CustomerTransactionType>("all");
   const [transactionCustomerFilter, setTransactionCustomerFilter] = useState<string>("all");
   const [customerViewMode, setCustomerViewMode] = useState<"customers" | "transfers">("customers");
@@ -2563,6 +2595,53 @@ export default function Account() {
     setConfirmModal(state);
   };
 
+  /**
+   * Opens the "Борлуулалт бүртгэх" modal for a seller, seeded from the by-product rollup
+   * shown on the Бүтээгдэхүүнээр tab. Each row carries the average transfer price so the
+   * modal can value the units the operator marks as sold.
+   */
+  const openSellerSaleModal = (
+    customer: { id: string; code?: string; name: string; phoneNumber?: string },
+    productAggList: Array<{
+      productId: number;
+      productName: string;
+      variant: string | null;
+      transferred: number;
+      sold: number;
+      totalAmount: number;
+    }>,
+  ) => {
+    setSellerSaleError(null);
+    setSellerSaleSaving(false);
+    setSellerSaleModal({
+      customerId: customer.id,
+      customerName: customer.name,
+      customerSnapshot: {
+        code: customer.code ?? "",
+        name: customer.name,
+        phoneNumber: customer.phoneNumber ?? "",
+      },
+      lines: productAggList.map((p) => {
+        const unitPrice = p.transferred > 0 ? Math.round(p.totalAmount / p.transferred) : 0;
+        return {
+          productId: p.productId,
+          productName: p.productName,
+          category: "",
+          image: null,
+          variant: p.variant,
+          unitPrice,
+          originalUnitPrice: unitPrice,
+          transferred: p.transferred,
+          alreadySold: p.sold,
+          soldNow: 0,
+        };
+      }),
+      discount: { type: "amount", value: 0 },
+      paidAmount: null,
+      method: "cash",
+    });
+  };
+
   const getCollectionDeleteBlockReason = (collection: Collection) => {
     if (isSystemCollection(collection)) {
       return copy.categoryDeleteLocked;
@@ -3747,6 +3826,8 @@ export default function Account() {
     updateCustomer,
     createCustomerTransaction,
     updateCustomerTransaction,
+    buildSellerSaleInput,
+    openSellerSaleModal,
     getManageableRoleOptions,
     getUserProviderSummary,
     // modal state
@@ -3861,6 +3942,12 @@ export default function Account() {
     recordCustomerTransactionPayment,
     updateCustomerTransactionPaymentEntry,
     deleteCustomerTransactionPaymentEntry,
+    sellerSaleModal,
+    setSellerSaleModal,
+    sellerSaleSaving,
+    setSellerSaleSaving,
+    sellerSaleError,
+    setSellerSaleError,
     orderModal,
     closeOrderModal,
     handleOrderCustomerChange,

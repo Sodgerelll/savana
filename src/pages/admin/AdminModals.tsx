@@ -362,6 +362,13 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
     setTxPaymentError,
     recordCustomerTransactionPayment,
     updateCustomerTransactionPaymentEntry,
+    sellerSaleModal,
+    setSellerSaleModal,
+    sellerSaleSaving,
+    setSellerSaleSaving,
+    sellerSaleError,
+    setSellerSaleError,
+    buildSellerSaleInput,
     orderModal,
     closeOrderModal,
     handleOrderCustomerChange,
@@ -5054,6 +5061,289 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               : isEdit
                 ? (language === "MN" ? "Хадгалах" : "Save")
                 : (language === "MN" ? "Төлбөр бүртгэх" : "Record payment")}
+          </button>
+        </div>
+      </form>
+    </AdminModal>
+  );
+})()}
+
+{sellerSaleModal && (() => {
+  const lines: any[] = sellerSaleModal.lines;
+  const remainingOf = (l: any) => Math.max(0, l.transferred - l.alreadySold);
+  const soldValue = lines.reduce(
+    (s: number, l: any) => s + Math.max(0, Math.trunc(l.soldNow || 0)) * (l.unitPrice || 0),
+    0,
+  );
+  const totalSoldNow = lines.reduce((s: number, l: any) => s + Math.max(0, Math.trunc(l.soldNow || 0)), 0);
+  const discountType = sellerSaleModal.discount.type === "percent" ? "percent" : "amount";
+  const discountValue = Math.max(0, Number(sellerSaleModal.discount.value) || 0);
+  const discountAmount = Math.min(
+    soldValue,
+    discountType === "percent"
+      ? Math.round((soldValue * Math.min(100, discountValue)) / 100)
+      : Math.round(discountValue),
+  );
+  const netAmount = Math.max(0, soldValue - discountAmount);
+  // null paidAmount means "the full net" — it tracks the net as the form changes.
+  const paidAmount = Math.max(
+    0,
+    Math.min(netAmount, Math.round(sellerSaleModal.paidAmount ?? netAmount)),
+  );
+  const stillOwed = Math.max(0, netAmount - paidAmount);
+  const method = sellerSaleModal.method ?? "cash";
+
+  const patchLine = (idx: number, soldNow: number) =>
+    setSellerSaleModal({
+      ...sellerSaleModal,
+      lines: lines.map((l: any, i: number) => (i === idx ? { ...l, soldNow } : l)),
+    });
+  const patchDiscount = (type: "amount" | "percent", value: number) =>
+    setSellerSaleModal({ ...sellerSaleModal, discount: { type, value } });
+
+  return (
+    <AdminModal
+      title={language === "MN" ? "Борлуулалт бүртгэх" : "Record a sale"}
+      description={sellerSaleModal.customerName}
+      onClose={() => setSellerSaleModal(null)}
+      disableClose={sellerSaleSaving}
+      xl
+    >
+      <form
+        className="admin-modal-form"
+        onSubmit={async (event: FormEvent) => {
+          event.preventDefault();
+          const soldLines = lines.filter((l: any) => Math.trunc(l.soldNow || 0) > 0);
+          if (soldLines.length === 0) {
+            setSellerSaleError(
+              language === "MN" ? "Зарсан тоо ширхэг оруулна уу" : "Enter at least one sold quantity",
+            );
+            return;
+          }
+          setSellerSaleSaving(true);
+          setSellerSaleError(null);
+          try {
+            await createCustomerTransaction(
+              buildSellerSaleInput({
+                customerId: sellerSaleModal.customerId,
+                customerSnapshot: sellerSaleModal.customerSnapshot,
+                lines: lines.map((l: any) => ({
+                  productId: l.productId,
+                  productName: l.productName,
+                  category: l.category,
+                  image: l.image,
+                  variant: l.variant,
+                  soldNow: l.soldNow,
+                  unitPrice: l.unitPrice,
+                  originalUnitPrice: l.originalUnitPrice,
+                })),
+                discount: { type: discountType, value: discountValue },
+                paidAmount,
+                paymentMethod: method,
+                createdByUid: user?.uid ?? "",
+              }),
+            );
+            setSellerSaleModal(null);
+          } catch (err) {
+            setSellerSaleError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setSellerSaleSaving(false);
+          }
+        }}
+      >
+        {sellerSaleError && <div className="admin-sync-error">{sellerSaleError}</div>}
+
+        <div className="admin-data-table-wrap admin-data-table-wrap-scrollbar-visible">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                <th>{copy.txProduct}</th>
+                <th>{copy.txVariant}</th>
+                <th style={{ textAlign: "center" }}>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</th>
+                <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарсан" : "Sold"}</th>
+                <th style={{ textAlign: "center" }}>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</th>
+                <th style={{ textAlign: "center" }}>{copy.txUnitPrice}</th>
+                <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарах тоо" : "Sell now"}</th>
+                <th style={{ textAlign: "center" }}>{copy.txLineTotal}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l: any, idx: number) => {
+                const remaining = remainingOf(l);
+                const soldNow = Math.max(0, Math.min(remaining, Math.trunc(l.soldNow || 0)));
+                return (
+                  <tr key={`${l.productId}-${l.variant ?? ""}`}>
+                    <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                    <td>{getProductLabel(l.productId, l.productName)}</td>
+                    <td>{l.variant || "—"}</td>
+                    <td style={{ textAlign: "center" }}>{l.transferred}</td>
+                    <td style={{ textAlign: "center" }}>{l.alreadySold}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <strong style={{ color: remaining > 0 ? "#b14141" : "#2f7a4a" }}>{remaining}</strong>
+                    </td>
+                    <td style={{ textAlign: "center" }}>{formatStorePrice(l.unitPrice)}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", justifyContent: "center" }}>
+                        <button
+                          type="button"
+                          className="admin-qty-btn"
+                          disabled={soldNow <= 0}
+                          onClick={() => patchLine(idx, Math.max(0, soldNow - 1))}
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          max={remaining}
+                          value={soldNow}
+                          onChange={(event: any) =>
+                            patchLine(
+                              idx,
+                              Math.max(0, Math.min(remaining, Math.trunc(Number(event.target.value) || 0))),
+                            )
+                          }
+                          style={{ width: "64px", textAlign: "center" }}
+                        />
+                        <button
+                          type="button"
+                          className="admin-qty-btn"
+                          disabled={soldNow >= remaining}
+                          onClick={() => patchLine(idx, Math.min(remaining, soldNow + 1))}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <strong>{formatStorePrice(soldNow * (l.unitPrice || 0))}</strong>
+                    </td>
+                  </tr>
+                );
+              })}
+              {lines.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="admin-table-empty">
+                    {language === "MN" ? "Шилжүүлсэн бараа алга" : "No transferred products"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="admin-form-grid" style={{ marginTop: "1rem" }}>
+          <label className="admin-field">
+            <span>{copy.txDiscount}</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <select
+                value={discountType}
+                style={{ width: "5rem", flexShrink: 0 }}
+                onChange={(event: any) => {
+                  const nextType = event.target.value === "percent" ? "percent" : "amount";
+                  patchDiscount(
+                    nextType,
+                    nextType === "percent" ? Math.min(100, discountValue) : discountValue,
+                  );
+                }}
+              >
+                <option value="amount">₮</option>
+                <option value="percent">%</option>
+              </select>
+              <input
+                type="number"
+                min={0}
+                max={discountType === "percent" ? 100 : undefined}
+                value={discountValue || ""}
+                style={{ flex: 1, minWidth: 0 }}
+                onChange={(event: any) => {
+                  const raw = Math.max(0, Number(event.target.value) || 0);
+                  patchDiscount(discountType, discountType === "percent" ? Math.min(100, raw) : raw);
+                }}
+              />
+            </div>
+            {discountType === "percent" && discountAmount > 0 && (
+              <small style={{ color: "#8a8477" }}>= {formatStorePrice(discountAmount)}</small>
+            )}
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Төлсөн дүн" : "Amount paid"}</span>
+            <input
+              type="number"
+              min={0}
+              max={netAmount}
+              value={paidAmount}
+              onChange={(event: any) =>
+                setSellerSaleModal({
+                  ...sellerSaleModal,
+                  paidAmount: Math.max(0, Math.min(netAmount, Math.round(Number(event.target.value) || 0))),
+                })
+              }
+            />
+            <small style={{ color: "#8a8477" }}>
+              {language === "MN" ? "Цэвэр дүн: " : "Net: "}
+              {formatStorePrice(netAmount)}
+            </small>
+          </label>
+          <label className="admin-field">
+            <span>{copy.txPaymentMethod}</span>
+            <select
+              value={method}
+              onChange={(event: any) => setSellerSaleModal({ ...sellerSaleModal, method: event.target.value })}
+            >
+              <option value="cash">{language === "MN" ? "Бэлэн" : "Cash"}</option>
+              <option value="bank">{language === "MN" ? "Банк" : "Bank"}</option>
+              <option value="qpay">QPay</option>
+              <option value="other">{language === "MN" ? "Бусад" : "Other"}</option>
+            </select>
+          </label>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.6rem", margin: "1rem 0" }}>
+          <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            <small style={{ color: "#8a8477" }}>{language === "MN" ? "Борлуулсан дүн" : "Sold value"}</small>
+            <strong>{formatStorePrice(soldValue)}</strong>
+          </div>
+          <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            <small style={{ color: "#8a8477" }}>{copy.txDiscount}</small>
+            <strong style={{ color: discountAmount > 0 ? "#dc2626" : undefined }}>
+              −{formatStorePrice(discountAmount)}
+            </strong>
+          </div>
+          <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            <small style={{ color: "#8a8477" }}>{language === "MN" ? "Авсан төлбөр" : "Received"}</small>
+            <strong style={{ color: "#2f7a4a" }}>{formatStorePrice(paidAmount)}</strong>
+          </div>
+          <div style={{ background: "#f5f3ee", borderRadius: "0.6rem", padding: "0.6rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            <small style={{ color: "#8a8477" }}>{language === "MN" ? "Үлдэх өр" : "Still owed"}</small>
+            <strong style={{ color: stillOwed > 0 ? "#b14141" : "#2f7a4a" }}>{formatStorePrice(stillOwed)}</strong>
+          </div>
+        </div>
+
+        <p style={{ fontSize: "0.82rem", color: "#6b7280", margin: 0 }}>
+          {language === "MN"
+            ? "Авсан төлбөр борлуулагчийн төлсөн дүнд, хөнгөлөлт нь авлагын хорогдолд бичигдэнэ."
+            : "The amount received counts towards what the seller has paid; the discount is booked as an allowance."}
+        </p>
+
+        <div className="admin-modal-footer">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setSellerSaleModal(null)}
+            disabled={sellerSaleSaving}
+          >
+            {copy.cancel}
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={sellerSaleSaving || totalSoldNow <= 0}
+          >
+            {sellerSaleSaving
+              ? (language === "MN" ? "Хадгалж байна..." : "Saving...")
+              : (language === "MN" ? "Борлуулалт бүртгэх" : "Record sale")}
           </button>
         </div>
       </form>

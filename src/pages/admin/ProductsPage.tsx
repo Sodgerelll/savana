@@ -565,14 +565,37 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                         const productOrders = orders
                           .filter((o: any) => o.items.some((it: any) => it.productId === product.id))
                           .sort((a: any, b: any) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+                        const byDateDesc = (a: any, b: any) => {
+                          const aDate = a.transactionDate ?? a.createdAt ?? "";
+                          const bDate = b.transactionDate ?? b.createdAt ?? "";
+                          return bDate.localeCompare(aDate);
+                        };
                         const productTransfers = customerTransactions
-                          .filter((tx: any) => tx.items.some((it: any) => it.productId === product.id))
+                          .filter(
+                            (tx: any) =>
+                              tx.type !== "sale" && tx.items.some((it: any) => it.productId === product.id),
+                          )
                           .slice()
-                          .sort((a: any, b: any) => {
-                            const aDate = a.transactionDate ?? a.createdAt ?? "";
-                            const bDate = b.transactionDate ?? b.createdAt ?? "";
-                            return bDate.localeCompare(aDate);
-                          });
+                          .sort(byDateDesc);
+                        // "sale" records (Борлуулагч → Бүтээгдэхүүнээр → Борлуулалт бүртгэх) report
+                        // what a reseller resold and settled; they move no stock of their own.
+                        const productSellerSales = customerTransactions
+                          .filter(
+                            (tx: any) =>
+                              tx.type === "sale" && tx.items.some((it: any) => it.productId === product.id),
+                          )
+                          .slice()
+                          .sort(byDateDesc);
+                        const sellerSaleProductShare = (tx: any) => {
+                          const items = tx.items.filter((it: any) => it.productId === product.id);
+                          const qty = items.reduce((a: number, it: any) => a + it.quantity, 0);
+                          const gross = items.reduce((a: number, it: any) => a + it.lineTotal, 0);
+                          const subtotal = tx.totals?.subtotal || 0;
+                          const share = subtotal > 0 ? gross / subtotal : 0;
+                          const discount = Math.round((tx.totals?.discount || 0) * share);
+                          const paid = Math.round((tx.payment?.paidAmount || 0) * share);
+                          return { qty, gross, discount, net: Math.max(0, gross - discount), paid };
+                        };
                         // Quick sales taken from this page and sales registered in the Sales
                         // module are the same thing to a product — both move its stock — so
                         // they share one list here.
@@ -641,7 +664,12 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                             .reduce((a: number, it: any) => a + (getLineDiscount(it, getListPrice(product, it.variant))?.amount ?? 0), 0),
                           0,
                         );
-                        const allDiscountTotal = orderDiscountTotal + directSaleDiscountTotal + transferDiscountTotal;
+                        const sellerSaleDiscountTotal = productSellerSales.reduce(
+                          (s: number, tx: any) => s + sellerSaleProductShare(tx).discount,
+                          0,
+                        );
+                        const allDiscountTotal =
+                          orderDiscountTotal + directSaleDiscountTotal + transferDiscountTotal + sellerSaleDiscountTotal;
                         return (
                           <tr className="admin-product-expand-row">
                             <td colSpan={7}>
@@ -715,8 +743,8 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                     onClick={() => setProductTab(product.id, "transfers")}
                                   >
                                     {language === "MN" ? "Борлуулагч руу шилжүүлсэн" : "Seller transfers"}
-                                    {productTransfers.length > 0 && (
-                                      <span className="admin-expand-tab-badge">{productTransfers.length}</span>
+                                    {productTransfers.length + productSellerSales.length > 0 && (
+                                      <span className="admin-expand-tab-badge">{productTransfers.length + productSellerSales.length}</span>
                                     )}
                                   </button>
                                   <button
@@ -909,7 +937,7 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
 
                                 {activeTab === "transfers" && (
                                   <div className="admin-product-expand-section">
-                                    {productTransfers.length === 0 ? (
+                                    {productTransfers.length === 0 && productSellerSales.length === 0 ? (
                                       <p className="admin-expand-empty">{language === "MN" ? "Шилжүүлэлт байхгүй" : "No transfers yet"}</p>
                                     ) : (() => {
                                       const totalQty = productTransfers.reduce(
@@ -920,6 +948,15 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                       );
                                       const totalAmount = productTransfers.reduce(
                                         (s: number, tx: any) => s + tx.items.filter((it: any) => it.productId === product.id).reduce((a: number, it: any) => a + it.lineTotal, 0), 0,
+                                      );
+                                      const sellerSaleQtyTotal = productSellerSales.reduce(
+                                        (s: number, tx: any) => s + sellerSaleProductShare(tx).qty, 0,
+                                      );
+                                      const sellerSaleNetTotal = productSellerSales.reduce(
+                                        (s: number, tx: any) => s + sellerSaleProductShare(tx).net, 0,
+                                      );
+                                      const sellerSalePaidTotal = productSellerSales.reduce(
+                                        (s: number, tx: any) => s + sellerSaleProductShare(tx).paid, 0,
                                       );
                                       return (
                                         <div className="admin-expand-sales-table-wrap">
@@ -976,26 +1013,90 @@ export default function ProductsPage({ ctx }: { ctx: AdminCtx }) {
                                                     }),
                                                 );
                                               })()}
+                                              {productSellerSales.map((tx: any) =>
+                                                tx.items
+                                                  .filter((it: any) => it.productId === product.id)
+                                                  .map((it: any, idx: number) => {
+                                                    const subtotal = tx.totals?.subtotal || 0;
+                                                    const itDiscount =
+                                                      subtotal > 0
+                                                        ? Math.round((tx.totals?.discount || 0) * (it.lineTotal / subtotal))
+                                                        : 0;
+                                                    return (
+                                                      <tr key={`sale-${tx.id}-${idx}`} style={{ background: "#faf6ef" }}>
+                                                        <td style={{ textAlign: "center", color: "#aaa", fontSize: "0.78rem" }}>·</td>
+                                                        <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>
+                                                          {formatAdminDateTime(tx.transactionDate ?? tx.createdAt, language)}
+                                                        </td>
+                                                        <td style={{ textAlign: "center" }}>
+                                                          <strong>{tx.customerSnapshot.name}</strong>
+                                                          <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#b45309", textTransform: "uppercase" }}>
+                                                            {language === "MN" ? "Борлуулалт" : "Sale"}
+                                                          </div>
+                                                        </td>
+                                                        <td style={{ textAlign: "center" }}>{it.variant || "—"}</td>
+                                                        <td style={{ textAlign: "center", color: "#c4beb2" }}>—</td>
+                                                        <td style={{ textAlign: "center" }}>
+                                                          <strong style={{ color: "#2f7a4a" }}>{it.quantity}</strong>
+                                                        </td>
+                                                        <td style={{ textAlign: "center", color: "#c4beb2" }}>—</td>
+                                                        <td style={{ textAlign: "center" }}>{formatStorePrice(it.unitPrice)}</td>
+                                                        <td style={{ textAlign: "center" }}>
+                                                          {itDiscount > 0 ? <span style={{ color: "#dc2626" }}>-{formatStorePrice(itDiscount)}</span> : "—"}
+                                                        </td>
+                                                        <td style={{ textAlign: "center" }}>
+                                                          <strong>{formatStorePrice(Math.max(0, it.lineTotal - itDiscount))}</strong>
+                                                        </td>
+                                                      </tr>
+                                                    );
+                                                  }),
+                                              )}
                                             </tbody>
                                             <tfoot>
-                                              <tr>
-                                                <td></td>
-                                                <td colSpan={3} style={{ textAlign: "center" }}>
-                                                  <strong>{language === "MN" ? "Нийт" : "Total"}</strong>
-                                                </td>
-                                                <td style={{ textAlign: "center" }}><strong>{totalQty}</strong></td>
-                                                <td style={{ textAlign: "center" }}><strong>{totalSoldQty}</strong></td>
-                                                <td style={{ textAlign: "center" }}>
-                                                  <strong style={{ color: totalQty - totalSoldQty > 0 ? "#b14141" : "#2f7a4a" }}>
-                                                    {totalQty - totalSoldQty}
-                                                  </strong>
-                                                </td>
-                                                <td></td>
-                                                <td style={{ textAlign: "center" }}>
-                                                  {transferDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(transferDiscountTotal)}</strong> : ""}
-                                                </td>
-                                                <td style={{ textAlign: "center" }}><strong>{formatStorePrice(totalAmount)}</strong></td>
-                                              </tr>
+                                              {productTransfers.length > 0 && (
+                                                <tr>
+                                                  <td></td>
+                                                  <td colSpan={3} style={{ textAlign: "center" }}>
+                                                    <strong>{language === "MN" ? "Шилжүүлсэн нийт" : "Transferred total"}</strong>
+                                                  </td>
+                                                  <td style={{ textAlign: "center" }}><strong>{totalQty}</strong></td>
+                                                  <td style={{ textAlign: "center" }}><strong>{totalSoldQty}</strong></td>
+                                                  <td style={{ textAlign: "center" }}>
+                                                    <strong style={{ color: totalQty - totalSoldQty > 0 ? "#b14141" : "#2f7a4a" }}>
+                                                      {totalQty - totalSoldQty}
+                                                    </strong>
+                                                  </td>
+                                                  <td></td>
+                                                  <td style={{ textAlign: "center" }}>
+                                                    {transferDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(transferDiscountTotal)}</strong> : ""}
+                                                  </td>
+                                                  <td style={{ textAlign: "center" }}><strong>{formatStorePrice(totalAmount)}</strong></td>
+                                                </tr>
+                                              )}
+                                              {productSellerSales.length > 0 && (
+                                                <tr>
+                                                  <td></td>
+                                                  <td colSpan={3} style={{ textAlign: "center" }}>
+                                                    <strong style={{ color: "#b45309" }}>
+                                                      {language === "MN" ? "Борлуулсан нийт" : "Sold total"}
+                                                    </strong>
+                                                    <div style={{ fontSize: "0.68rem", color: "#8a8477" }}>
+                                                      {language === "MN" ? "төлсөн " : "paid "}
+                                                      {formatStorePrice(sellerSalePaidTotal)}
+                                                    </div>
+                                                  </td>
+                                                  <td style={{ textAlign: "center", color: "#c4beb2" }}>—</td>
+                                                  <td style={{ textAlign: "center" }}>
+                                                    <strong style={{ color: "#2f7a4a" }}>{sellerSaleQtyTotal}</strong>
+                                                  </td>
+                                                  <td style={{ textAlign: "center", color: "#c4beb2" }}>—</td>
+                                                  <td></td>
+                                                  <td style={{ textAlign: "center" }}>
+                                                    {sellerSaleDiscountTotal > 0 ? <strong style={{ color: "#dc2626" }}>-{formatStorePrice(sellerSaleDiscountTotal)}</strong> : ""}
+                                                  </td>
+                                                  <td style={{ textAlign: "center" }}><strong>{formatStorePrice(sellerSaleNetTotal)}</strong></td>
+                                                </tr>
+                                              )}
                                             </tfoot>
                                           </table>
                                         </div>

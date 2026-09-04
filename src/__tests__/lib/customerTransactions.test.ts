@@ -12,11 +12,13 @@ vi.mock("../../lib/firebase", () => ({ db: {} }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
 import {
+  buildSellerSaleInput,
   createEmptyTransactionDraft,
   createCustomerTransaction,
   deleteCustomerTransaction,
   deleteCustomerTransactionPaymentEntry,
   recordCustomerTransactionPayment,
+  resolveSellerSaleTotals,
   updateCustomerTransaction,
   updateCustomerTransactionPaymentEntry,
   type CustomerTransactionRecord,
@@ -709,5 +711,175 @@ describe("updateCustomerTransactionPaymentEntry / deleteCustomerTransactionPayme
       deleteCustomerTransactionPaymentEntry(makeRecordWithEntry(), 3, "uid-admin"),
     ).rejects.toThrow();
     expect(firestoreMock.writes).toHaveLength(0);
+  });
+});
+
+// ─── seller "record sales" — type: "sale" (settlement of transferred goods) ───
+
+describe("resolveSellerSaleTotals / buildSellerSaleInput", () => {
+  const lines = [
+    { productId: 10, productName: "Soap", soldNow: 4, unitPrice: 2000 },
+    { productId: 11, productName: "Balm", soldNow: 1, unitPrice: 5000 },
+  ];
+
+  it("sums the sold value and takes a percentage off it", () => {
+    const t = resolveSellerSaleTotals(lines, { type: "percent", value: 10 });
+    expect(t.subtotal).toBe(13000);
+    expect(t.discount).toBe(1300);
+    expect(t.grandTotal).toBe(11700);
+  });
+
+  it("caps a ₮ discount at the sold value", () => {
+    const t = resolveSellerSaleTotals(lines, { type: "amount", value: 99999 });
+    expect(t.discount).toBe(13000);
+    expect(t.grandTotal).toBe(0);
+  });
+
+  it("clamps a percentage discount at 100", () => {
+    const t = resolveSellerSaleTotals(lines, { type: "percent", value: 250 });
+    expect(t.discountValue).toBe(100);
+    expect(t.discount).toBe(13000);
+  });
+
+  it("drops zero-quantity lines, marks the rest fully sold and defaults the payment to the full net", () => {
+    const input = buildSellerSaleInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "" },
+      lines: [...lines, { productId: 12, productName: "Zero", soldNow: 0, unitPrice: 1000 }],
+      discount: { type: "amount", value: 3000 },
+      createdByUid: "uid-admin",
+    });
+    expect(input.type).toBe("sale");
+    expect(input.items).toHaveLength(2);
+    expect(input.items.every((it) => it.quantity === it.soldQuantity)).toBe(true);
+    expect(input.items[0]).toMatchObject({ productId: 10, quantity: 4, lineTotal: 8000 });
+    // net = 13000 − 3000; paidAmount defaults to that and the record is fully paid.
+    expect(input.payment).toMatchObject({ status: "paid", paidAmount: 10000, method: "cash" });
+  });
+
+  it("caps an explicit paidAmount at the net and marks a short one partial", () => {
+    const partial = buildSellerSaleInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "" },
+      lines,
+      discount: { type: "amount", value: 3000 },
+      paidAmount: 4000,
+      paymentMethod: "bank",
+      createdByUid: "uid-admin",
+    });
+    expect(partial.payment).toMatchObject({ status: "partial", paidAmount: 4000, method: "bank" });
+
+    const none = buildSellerSaleInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "" },
+      lines,
+      discount: { type: "amount", value: 0 },
+      paidAmount: 0,
+      createdByUid: "uid-admin",
+    });
+    expect(none.payment).toMatchObject({ status: "unpaid", paidAmount: 0, method: null });
+  });
+});
+
+describe("createCustomerTransaction — type: 'sale' (settlement)", () => {
+  function saleInput(
+    discount: { type: "amount" | "percent"; value: number },
+    extra: { paidAmount?: number | null } = {},
+  ) {
+    return buildSellerSaleInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "99001234" },
+      lines: [{ productId: 10, productName: "Soap", soldNow: 4, unitPrice: 2000 }], // 8000 gross
+      discount,
+      createdByUid: "uid-admin",
+      ...extra,
+    });
+  }
+
+  beforeEach(() => {
+    seedCustomer("cust-1", { totalSales: 100000, totalPaid: 40000, outstandingBalance: 60000 });
+  });
+
+  it("moves no stock", async () => {
+    await createCustomerTransaction(saleInput({ type: "amount", value: 800 }));
+    expect(stockFor(10)).toBeUndefined();
+  });
+
+  it("posts a settlement entry: cash for the net, allowance for the discount, AR credited for both", async () => {
+    await createCustomerTransaction(saleInput({ type: "amount", value: 800 })); // net 7200, paid 7200
+
+    expect(journalEntries()).toHaveLength(1);
+    expect(journalEntries()[0].lines).toEqual([
+      expect.objectContaining({ accountCode: "1010", debit: 7200 }),
+      expect.objectContaining({ accountCode: "4910", debit: 800 }),
+      expect.objectContaining({ accountCode: "1110", credit: 8000 }),
+    ]);
+  });
+
+  it("adds the net to totalPaid and clears the sold goods off the receivable", async () => {
+    await createCustomerTransaction(saleInput({ type: "percent", value: 10 })); // discount 800, net/paid 7200
+
+    expect(customerFor()).toMatchObject({
+      totalSales: 99200, // −discount
+      totalPaid: 47200, // +net received
+      outstandingBalance: 52000, // −(discount + net) = −8000
+    });
+  });
+
+  it("only the discount moves when nothing is paid", async () => {
+    await createCustomerTransaction(saleInput({ type: "amount", value: 800 }, { paidAmount: 0 }));
+
+    expect(journalEntries()[0].lines).toEqual([
+      expect.objectContaining({ accountCode: "4910", debit: 800 }),
+      expect.objectContaining({ accountCode: "1110", credit: 800 }),
+    ]);
+    expect(customerFor()).toMatchObject({ totalSales: 99200, totalPaid: 40000, outstandingBalance: 59200 });
+  });
+
+  it("posts no journal entry and leaves the balance untouched when nothing is paid or allowed", async () => {
+    await createCustomerTransaction(saleInput({ type: "amount", value: 0 }, { paidAmount: 0 }));
+
+    expect(journalEntries()).toHaveLength(0);
+    expect(transactionDoc()).toMatchObject({ type: "sale", journalEntryId: null });
+    expect(customerFor()).toMatchObject({ totalSales: 100000, totalPaid: 40000, outstandingBalance: 60000 });
+  });
+});
+
+describe("deleteCustomerTransaction — type: 'sale'", () => {
+  it("reverses the settlement entry and restores the seller's balance, touching no stock", async () => {
+    seedCustomer("cust-1", { totalSales: 99200, totalPaid: 47200, outstandingBalance: 52000 });
+    firestoreMock.seed("journalEntries/entry-sale", {
+      lines: [
+        { accountCode: "1010", accountName: "x", debit: 7200, credit: 0 },
+        { accountCode: "4910", accountName: "x", debit: 800, credit: 0 },
+        { accountCode: "1110", accountName: "x", debit: 0, credit: 8000 },
+      ],
+    });
+
+    await deleteCustomerTransaction(
+      makeTxRecord({
+        type: "sale",
+        items: [{ ...ITEM, quantity: 4, soldQuantity: 4, lineTotal: 8000 }],
+        totals: {
+          subtotal: 8000,
+          discount: 800,
+          discountType: "amount",
+          discountValue: 800,
+          grandTotal: 7200,
+        },
+        payment: { status: "paid", paidAmount: 7200, method: "cash", paidAt: null },
+        journalEntryId: "entry-sale",
+      }),
+    );
+
+    const [reversal] = journalEntries();
+    expect(reversal.reversalOf).toBe("entry-sale");
+    expect(reversal.lines).toEqual([
+      expect.objectContaining({ accountCode: "1010", credit: 7200 }),
+      expect.objectContaining({ accountCode: "4910", credit: 800 }),
+      expect.objectContaining({ accountCode: "1110", debit: 8000 }),
+    ]);
+    expect(customerFor()).toMatchObject({ totalSales: 100000, totalPaid: 40000, outstandingBalance: 60000 });
+    expect(stockFor(10)).toBeUndefined();
   });
 });

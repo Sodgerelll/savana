@@ -41,7 +41,19 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
     getNextCustomerCode,
     createEmptyCustomerDraft,
     createEmptyTransactionDraft,
+    openSellerSaleModal,
   } = ctx;
+
+  // Units moved by the two kinds of record: a delivery hands goods to the seller; a sale
+  // (wholesale allowance) records some of them as sold. `soldQuantity` on a delivery is the
+  // legacy manual tracker; a sale record's `quantity` is fully-sold by construction.
+  const sumItems = (txs: any[], pick: (it: any) => number) =>
+    txs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + pick(it), 0), 0);
+  const deliveryTxs = customerTransactions.filter((tx: any) => tx.type === "delivery");
+  const saleTxs = customerTransactions.filter((tx: any) => tx.type === "sale");
+  const transferredUnitsAll = sumItems(deliveryTxs, (it) => it.quantity);
+  const soldUnitsAll = sumItems(deliveryTxs, (it) => it.soldQuantity) + sumItems(saleTxs, (it) => it.quantity);
+  const remainingUnitsAll = transferredUnitsAll - soldUnitsAll;
 
   return (
     <>
@@ -104,25 +116,21 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</span>
-          <strong>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0), 0)} ш
-          </strong>
+          <strong>{transferredUnitsAll} ш</strong>
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Зарсан" : "Sold"}</span>
-          <strong>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.soldQuantity, 0), 0)} ш
-          </strong>
+          <strong>{soldUnitsAll} ш</strong>
         </div>
         <div className="admin-summary-card">
           <span>{language === "MN" ? "Үлдэгдэл бараа" : "Remaining"}</span>
-          <strong style={{ color: customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0) > 0 ? "var(--color-danger, #b14141)" : undefined }}>
-            {customerTransactions.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0)} ш
+          <strong style={{ color: remainingUnitsAll > 0 ? "var(--color-danger, #b14141)" : undefined }}>
+            {remainingUnitsAll} ш
           </strong>
         </div>
         <div className="admin-summary-card">
           <span>{copy.totalTransfers}</span>
-          <strong>{customerTransactions.length}</strong>
+          <strong>{deliveryTxs.length}</strong>
         </div>
         <div className="admin-summary-card">
           <span>{copy.totalCustomers}</span>
@@ -240,6 +248,9 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                 {(() => {
                   const q = customerSearch.trim().toLowerCase();
                   const filtered = customerTransactions.filter((tx: any) => {
+                    // Sale (allowance) records are not transfers — they belong on the
+                    // Бүтээгдэхүүнээр tab, not in this by-transfer list.
+                    if (tx.type === "sale") return false;
                     if (!q) return true;
                     return (
                       tx.customerSnapshot.name.toLowerCase().includes(q) ||
@@ -514,6 +525,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             .filter((tx: any) => tx.customerId === customer.id)
                             .slice()
                             .sort((a: any, b: any) => toMs(b) - toMs(a));
+                          const customerDeliveryTxs = customerTxs.filter((tx: any) => tx.type === "delivery");
+                          const customerSaleTxs = customerTxs.filter((tx: any) => tx.type === "sale");
                           const productAgg = new Map<string, {
                             productId: number;
                             productName: string;
@@ -522,7 +535,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             sold: number;
                             totalAmount: number;
                           }>();
-                          customerTxs.forEach((tx: any) => {
+                          // Transferred quantity and value come from deliveries only.
+                          customerDeliveryTxs.forEach((tx: any) => {
                             tx.items.forEach((it: any) => {
                               const key = `${it.productId}::${it.variant ?? ""}`;
                               const existing = productAgg.get(key);
@@ -542,9 +556,32 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                               }
                             });
                           });
+                          // Each sale (allowance) record adds its quantity to what has been sold.
+                          customerSaleTxs.forEach((tx: any) => {
+                            tx.items.forEach((it: any) => {
+                              const key = `${it.productId}::${it.variant ?? ""}`;
+                              const existing = productAgg.get(key);
+                              if (existing) {
+                                existing.sold += it.quantity;
+                              } else {
+                                productAgg.set(key, {
+                                  productId: it.productId,
+                                  productName: it.productName,
+                                  variant: it.variant,
+                                  transferred: 0,
+                                  sold: it.quantity,
+                                  totalAmount: 0,
+                                });
+                              }
+                            });
+                          });
                           const productAggList = Array.from(productAgg.values()).sort(
                             (a, b) => b.totalAmount - a.totalAmount,
                           );
+                          const customerSoldUnits =
+                            sumItems(customerDeliveryTxs, (it) => it.soldQuantity) +
+                            sumItems(customerSaleTxs, (it) => it.quantity);
+                          const customerTransferredUnits = sumItems(customerDeliveryTxs, (it) => it.quantity);
                           return (
                             <tr className="admin-product-expand-row">
                               <td colSpan={7}>
@@ -602,16 +639,16 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       <small>
                                         {language === "MN" ? "Шилжүүлгийн тоо" : "Transactions"}
                                       </small>
-                                      <strong>{customerTxs.length}</strong>
+                                      <strong>{customerDeliveryTxs.length}</strong>
                                     </div>
                                     <div className="admin-expand-stat">
                                       <small>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</small>
-                                      <strong>{customerTxs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0), 0)} ш</strong>
+                                      <strong>{customerTransferredUnits} ш</strong>
                                     </div>
                                     <div className="admin-expand-stat">
                                       <small>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</small>
-                                      <strong style={{ color: customerTxs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0) > 0 ? "#b14141" : "#2f7a4a" }}>
-                                        {customerTxs.reduce((s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + (it.quantity - it.soldQuantity), 0), 0)} ш
+                                      <strong style={{ color: customerTransferredUnits - customerSoldUnits > 0 ? "#b14141" : "#2f7a4a" }}>
+                                        {customerTransferredUnits - customerSoldUnits} ш
                                       </strong>
                                     </div>
                                   </div>
@@ -647,15 +684,18 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                   </div>
 
                                   {/* Tab 2: Гүйлгээний түүх */}
-                                  {expandedCustomerTab === "history" && (
+                                  {expandedCustomerTab === "history" && (() => {
+                                    // Sale (allowance) records live on the Бүтээгдэхүүнээр tab, not here.
+                                    const historyTxs = customerTxs.filter((tx: any) => tx.type !== "sale");
+                                    return (
                                     <div className="admin-product-expand-section">
-                                      {customerTxs.length === 0 ? (
+                                      {historyTxs.length === 0 ? (
                                         <p className="admin-expand-empty">
                                           {language === "MN" ? "Гүйлгээ байхгүй" : "No transactions yet"}
                                         </p>
                                       ) : (
                                         <div className="admin-customer-tx-list">
-                                          {customerTxs.map((tx: any) => {
+                                          {historyTxs.map((tx: any) => {
                                             const outstanding = tx.totals.grandTotal - tx.payment.paidAmount;
                                             return (
                                               <div key={tx.id} className="admin-customer-tx-card">
@@ -823,7 +863,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                         </div>
                                       )}
                                     </div>
-                                  )}
+                                    );
+                                  })()}
 
                                   {/* Tab 1: Бүтээгдэхүүний нийт шилжүүлэг */}
                                   {expandedCustomerTab === "products" && (
@@ -834,7 +875,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                         </p>
                                       ) : (
                                         <>
-                                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+                                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem", gap: "0.5rem", flexWrap: "wrap" }}>
                                           <button
                                             type="button"
                                             className="btn btn-outline"
@@ -853,6 +894,14 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             }
                                           >
                                             <Download size={14} /> {language === "MN" ? "Excel татах" : "Export to Excel"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem", padding: "0.35rem 0.8rem" }}
+                                            onClick={() => openSellerSaleModal(customer, productAggList)}
+                                          >
+                                            <Banknote size={14} /> {language === "MN" ? "Борлуулалт бүртгэх" : "Record a sale"}
                                           </button>
                                         </div>
                                         <div className="admin-expand-sales-table-wrap">
@@ -910,6 +959,76 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             </tfoot>
                                           </table>
                                         </div>
+                                        {customerSaleTxs.length > 0 && (
+                                          <div style={{ marginTop: "1rem" }}>
+                                            <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "#8a8477", marginBottom: "0.5rem" }}>
+                                              {language === "MN" ? "Бүртгэсэн борлуулалт" : "Recorded sales"}
+                                            </div>
+                                            <div className="admin-expand-sales-table-wrap">
+                                              <table className="admin-expand-sales-table" style={{ textAlign: "center" }}>
+                                                <thead>
+                                                  <tr>
+                                                    <th style={{ width: "2rem", textAlign: "center" }}>#</th>
+                                                    <th style={{ textAlign: "center" }}>{language === "MN" ? "Огноо" : "Date"}</th>
+                                                    <th style={{ textAlign: "center" }}>{language === "MN" ? "Зарсан" : "Sold"}</th>
+                                                    <th style={{ textAlign: "center" }}>{copy.txDiscount}</th>
+                                                    <th style={{ textAlign: "center" }}>{language === "MN" ? "Цэвэр дүн" : "Net"}</th>
+                                                    <th style={{ textAlign: "center" }}>{language === "MN" ? "Төлсөн" : "Paid"}</th>
+                                                    <th style={{ textAlign: "center", width: "2.5rem" }}>{copy.actions}</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {customerSaleTxs.map((tx: any, idx: number) => (
+                                                    <tr key={tx.id}>
+                                                      <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
+                                                      <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{formatAdminDateTime(tx.transactionDate ?? tx.createdAt, language)}</td>
+                                                      <td style={{ textAlign: "center" }}>
+                                                        {tx.items.reduce((s: number, it: any) => s + it.quantity, 0)} ш
+                                                      </td>
+                                                      <td style={{ textAlign: "center" }}>
+                                                        {tx.totals.discount > 0 ? (
+                                                          <span style={{ color: "#dc2626" }}>
+                                                            −{formatStorePrice(tx.totals.discount)}
+                                                            {tx.totals.discountType === "percent" ? ` (${tx.totals.discountValue}%)` : ""}
+                                                          </span>
+                                                        ) : "—"}
+                                                      </td>
+                                                      <td style={{ textAlign: "center" }}><strong>{formatStorePrice(tx.totals.grandTotal)}</strong></td>
+                                                      <td style={{ textAlign: "center" }}>
+                                                        <strong style={{ color: tx.payment.paidAmount >= tx.totals.grandTotal ? "#2f7a4a" : "#b45309" }}>
+                                                          {formatStorePrice(tx.payment.paidAmount)}
+                                                        </strong>
+                                                      </td>
+                                                      <td style={{ textAlign: "center" }}>
+                                                        <button
+                                                          type="button"
+                                                          className="admin-icon-btn"
+                                                          title={language === "MN" ? "Устгах" : "Delete"}
+                                                          onClick={() =>
+                                                            openConfirmModal({
+                                                              title: copy.confirmDeleteTitle,
+                                                              description:
+                                                                language === "MN"
+                                                                  ? "Энэ борлуулалтын бүртгэлийг устгаснаар авсан төлбөр болон хөнгөлөлт нь борлуулагчийн үлдэгдэлд буцаж нэмэгдэнэ."
+                                                                  : "Deleting this sale record adds the amount received and the discount back to the seller's outstanding balance.",
+                                                              confirmLabel: copy.delete,
+                                                              destructive: true,
+                                                              onConfirm: async () => {
+                                                                await deleteCustomerTransaction(tx);
+                                                              },
+                                                            })
+                                                          }
+                                                        >
+                                                          <Trash2 size={13} />
+                                                        </button>
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          </div>
+                                        )}
                                         </>
                                       )}
                                     </div>
@@ -942,7 +1061,10 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                           entryIdx: -1,
                                           date: (tx.payment.paidAt ?? tx.transactionDate ?? tx.createdAt ?? "").slice(0, 10),
                                           amount: initialPaid,
-                                          note: language === "MN" ? "Гүйлгээ бүртгэхэд төлсөн" : "Paid at transaction time",
+                                          note:
+                                            tx.type === "sale"
+                                              ? (language === "MN" ? "Борлуулалт бүртгэхэд төлсөн" : "Paid when the sale was recorded")
+                                              : (language === "MN" ? "Гүйлгээ бүртгэхэд төлсөн" : "Paid at transaction time"),
                                         };
                                       })
                                       .filter(Boolean) as any[];
@@ -950,7 +1072,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       b.date > a.date ? 1 : b.date < a.date ? -1 : 0,
                                     );
                                     const outstandingTxs = customerTxs.filter(
-                                      (tx: any) => tx.type !== "return" && tx.totals.grandTotal - tx.payment.paidAmount > 0,
+                                      (tx: any) => tx.type === "delivery" && tx.totals.grandTotal - tx.payment.paidAmount > 0,
                                     );
                                     // customerTxs is sorted newest-first — pay off the oldest outstanding transfer first
                                     const defaultTx = outstandingTxs.length > 0 ? outstandingTxs[outstandingTxs.length - 1] : null;

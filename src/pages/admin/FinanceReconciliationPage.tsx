@@ -173,6 +173,25 @@ export default function FinanceReconciliationPage({ ctx }: { ctx: AdminCtx }) {
     // 4. Seller transactions → wholesale revenue 4200 credit (or returns 4910 debit) must equal grandTotal.
     for (const tx of (customerTransactions as CustomerTransactionRecord[]) ?? []) {
       const entries = entriesBySource.get(`customerTransaction:${tx.id}`) ?? [];
+      // A "sale" record settles goods billed on an earlier delivery: it credits AR for the
+      // cash received plus the discount allowed, and books no revenue of its own.
+      if (tx.type === "sale") {
+        const settled = Math.round((tx.totals.discount ?? 0) + (tx.payment?.paidAmount ?? 0));
+        if (settled === 0) continue; // nothing paid or allowed — no ledger entry to check
+        const arCredited = netOnAccount(entries, ACCOUNT_CODES.AR, "credit");
+        result.push({
+          id: `tx-${tx.id}`,
+          sourceType: "customerTransaction",
+          number: tx.txNumber,
+          name: `${tx.customerSnapshot.name}${mn ? " (борлуулалт)" : " (sale)"}`,
+          date: tx.transactionDate ?? tx.createdAt,
+          expected: settled,
+          actual: arCredited,
+          entryCount: entries.length,
+          status: statusFor(settled, arCredited, entries.length),
+        });
+        continue;
+      }
       const isReturn = tx.type === "return";
       const actual = isReturn
         ? netOnAccount(entries, ACCOUNT_CODES.SALES_RETURNS, "debit")

@@ -358,3 +358,26 @@ export function buildCustomerTransactionReturnEntry(params: {
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
+
+/**
+ * A reseller settling goods they were already billed for on an earlier delivery: `paidAmount`
+ * lands in the cash/bank account it was received into and `allowanceAmount` is the price
+ * concession the shop grants, booked to sales returns & allowances. Both clear that much of
+ * the receivable. No revenue or COGS — those were posted when the goods were transferred.
+ * Comes out empty when nothing was paid and nothing was allowed.
+ */
+export function buildCustomerTransactionSettlementEntry(params: {
+  paymentMethod: string | null;
+  paidAmount: number;
+  allowanceAmount: number;
+}): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+  const paidAmount = Math.max(0, round(params.paidAmount));
+  const allowanceAmount = Math.max(0, round(params.allowanceAmount));
+  const lines = [
+    line(moneyAccount, paidAmount, 0),
+    line(ACCOUNT_CODES.SALES_RETURNS, allowanceAmount, 0),
+    line(ACCOUNT_CODES.AR, 0, paidAmount + allowanceAmount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
