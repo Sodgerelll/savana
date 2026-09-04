@@ -447,11 +447,8 @@ function sameGoods(a: CustomerTransactionItem[], b: CustomerTransactionItem[]): 
  * effect and -1 to undo it; the type decides which way the goods travel (a return puts
  * them back). Validation is off for the undo direction, which only ever adds stock back.
  *
- * `requireVariant` defaults to true for a brand-new transaction. `updateCustomerTransaction`
- * passes false on its forward apply — an edit (including recording a payment, which reuses
- * this same path with an unchanged item list) re-takes units the transaction already holds,
- * so a transaction recorded before its product had variants must stay editable instead of
- * getting stuck on MissingVariantError.
+ * An edit re-applies its new item list through `reapplyEditedItems` instead, which knows
+ * how much the transaction already held.
  */
 function applyItemsToStates(
   states: Map<number | string, ProductStockState>,
@@ -471,6 +468,67 @@ function applyItemsToStates(
       { productName: item.productName, requireVariant },
     );
   });
+}
+
+const stockKey = (item: Pick<CustomerTransactionItem, "productId" | "variant">) =>
+  `${item.productId}|${item.variant ?? ""}`;
+
+/**
+ * Re-applies an edited transaction's item list, on states from which `previous` has already
+ * been undone.
+ *
+ * Units the transaction was already holding are re-taken WITHOUT a stock check: recording a
+ * payment routes through the edit path with an unchanged item list, and trimming or leaving
+ * a line alone must never be refused because the product has drifted oversold since (stock
+ * legitimately goes negative — see inventory.ts). Only quantity added beyond what the
+ * transaction already held is checked against what is actually on the shelf, and only when
+ * the goods still travel the same way — switching a sale to a return re-applies in full.
+ *
+ * `requireVariant` is off throughout: a transaction recorded before its product had variants
+ * must stay editable instead of getting stuck on MissingVariantError.
+ */
+function reapplyEditedItems(
+  states: Map<number | string, ProductStockState>,
+  previous: Pick<CustomerTransactionRecord, "items" | "type">,
+  next: Pick<CreateCustomerTransactionInput, "items" | "type">,
+) {
+  const sameDirection = stockSignForType(previous.type) === stockSignForType(next.type);
+  const heldByKey = new Map<string, number>();
+  if (sameDirection) {
+    for (const item of previous.items) {
+      heldByKey.set(stockKey(item), (heldByKey.get(stockKey(item)) ?? 0) + item.quantity);
+    }
+  }
+
+  const sign = stockSignForType(next.type);
+
+  for (const item of next.items) {
+    const state = states.get(item.productId);
+    if (!state) continue;
+
+    const held = heldByKey.get(stockKey(item)) ?? 0;
+    const retained = Math.min(item.quantity, held);
+    heldByKey.set(stockKey(item), held - retained);
+    const added = item.quantity - retained;
+
+    // Re-take what the transaction already owned, unchecked — this also brings the in-memory
+    // stock back down before the added units are measured against it.
+    if (retained > 0) {
+      applyStockMovement(
+        state,
+        { variant: item.variant, quantity: retained * sign },
+        { productName: item.productName, validate: false },
+      );
+    }
+    // Anything genuinely new still has to fit on the shelf.
+    if (added > 0) {
+      applyStockMovement(
+        state,
+        { variant: item.variant, quantity: added * sign },
+        { productName: item.productName, requireVariant: false },
+      );
+    }
+  }
 }
 
 async function loadCustomerAggregates(t: Transaction, customerId: string) {
@@ -604,11 +662,12 @@ export async function updateCustomerTransaction(
       ? await readJournalEntryLines(t, previous.journalEntryId)
       : null;
 
-    // Undo the old version's stock effect, then apply the new one, so an edit is checked
-    // against stock that excludes the quantity this very transaction is already holding.
-    // The forward apply skips the variant requirement — see applyItemsToStates.
+    // Undo the old version's stock effect, then re-apply the new one. Only quantity added
+    // beyond what this transaction already held is checked against the shelf, so recording a
+    // payment (an unchanged item list) or trimming a line is never blocked by a shortfall
+    // that was already there — see reapplyEditedItems.
     applyItemsToStates(states, previous.items, previous.type, -1);
-    applyItemsToStates(states, next.items, next.type, 1, false);
+    reapplyEditedItems(states, previous, next);
 
     // The cost of goods already sold does not change because the transaction was edited.
     // It is only recomputed when the goods themselves changed — recording a payment, which

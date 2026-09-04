@@ -435,6 +435,43 @@ describe("updateCustomerTransaction", () => {
 
     expect(stockFor(10)).toMatchObject({ soldCount: 5 });
   });
+
+  it("lets a line be trimmed even when the product has drifted oversold", async () => {
+    // Transaction holds 5; the product is 4 units oversold. Cutting the line to 2 releases
+    // stock, so it must go through despite the negative position.
+    seedProduct(10, { totalStock: 5, soldCount: 9 });
+
+    await updateCustomerTransaction(
+      "tx-1",
+      makeTxRecord(),
+      makeTxInput({
+        items: [{ ...ITEM, quantity: 2, lineTotal: 4000 }],
+        totals: { subtotal: 4000, discount: 0, grandTotal: 4000 },
+        payment: { status: "paid", paidAmount: 4000, method: "cash", paidAt: null },
+      }),
+    );
+
+    // 9 − 5 released + 2 re-taken.
+    expect(stockFor(10)).toMatchObject({ soldCount: 6 });
+  });
+
+  it("still refuses to add quantity a drifted-oversold product cannot cover", async () => {
+    // Transaction holds 5; the product is oversold. Pushing the line to 8 asks for 3 units
+    // that are not on the shelf — that part is still checked.
+    seedProduct(10, { totalStock: 5, soldCount: 9 });
+
+    await expect(
+      updateCustomerTransaction(
+        "tx-1",
+        makeTxRecord(),
+        makeTxInput({
+          items: [{ ...ITEM, quantity: 8, lineTotal: 16000 }],
+          totals: { subtotal: 16000, discount: 0, grandTotal: 16000 },
+          payment: { status: "paid", paidAmount: 16000, method: "cash", paidAt: null },
+        }),
+      ),
+    ).rejects.toThrow(/INSUFFICIENT_STOCK/);
+  });
 });
 
 // ─── recordCustomerTransactionPayment ─────────────────────────────────────────
@@ -529,6 +566,26 @@ describe("recordCustomerTransactionPayment", () => {
       }),
     ).rejects.toThrow();
     expect(firestoreMock.writes).toHaveLength(0);
+  });
+
+  it("records a payment even when the product has since drifted oversold", async () => {
+    // The transaction holds 5 units; the product now shows 4 sold beyond its total, so its
+    // available stock is −4. Recording a payment changes no goods and must not be refused
+    // with INSUFFICIENT_STOCK just because re-taking the 5 it already owns dips below zero.
+    seedProduct(10, { totalStock: 5, soldCount: 9 });
+
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 4000,
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    expect(transactionDoc()).toMatchObject({
+      payment: expect.objectContaining({ paidAmount: 7000 }),
+    });
+    // Stock is left exactly where it was — the units were released and re-taken.
+    expect(stockFor(10)).toMatchObject({ soldCount: 9 });
   });
 });
 
