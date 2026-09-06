@@ -5,6 +5,7 @@
 // answers in prose or calls exactly one of these. Keep the descriptions written
 // for the model, not for a developer — they are the only spec it sees.
 
+import { findCatalogueProduct } from './catalogueMatch.js';
 import {
   discountedPrice,
   formatTugrik,
@@ -279,6 +280,14 @@ export interface PlacedOrder {
   shippingFee: number;
   grandTotal: number;
   payUrl: string;
+  /**
+   * Lines the catalogue had nothing for, left out of the order.
+   *
+   * Said to the customer rather than swallowed: a line disappearing from an
+   * order without a word is how somebody pays for four things and waits for
+   * five.
+   */
+  unmatched?: string[];
 }
 
 /**
@@ -411,17 +420,17 @@ export async function runTool(
         const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? Math.floor(rawQuantity) : 1;
 
         let productName = String(entry?.productName ?? '').trim();
-        let product =
-          args.productId === undefined
-            ? undefined
-            : context.storefront.products.find((p) => p.id === Number(args.productId));
+        // Matched back to the catalogue here rather than at confirmation: a
+        // line that carries only a name makes an admin find the product by
+        // hand, and one the catalogue cannot place at all used to reach the
+        // order and kill it.
+        const product = findCatalogueProduct(
+          context.storefront.products,
+          productName,
+          args.productId,
+        );
         if (product) {
           productName = product.name;
-        } else if (productName) {
-          // Matched back to the catalogue: a line carrying only a name makes an
-          // admin find the product by hand all over again.
-          const wanted = productName.toLowerCase();
-          product = context.storefront.products.find((p) => p.name.toLowerCase() === wanted);
         }
 
         if (!productName) {
@@ -505,11 +514,7 @@ export async function runTool(
       // the delivery minimum than they are. confirm_order refuses it outright,
       // so it is dropped here rather than carried as free.
       const priced = basket.flatMap((item) => {
-        const product =
-          context.storefront.products.find((entry) => entry.id === Number(item.productId)) ??
-          context.storefront.products.find(
-            (entry) => entry.name.toLowerCase() === item.name.toLowerCase(),
-          );
+        const product = findCatalogueProduct(context.storefront.products, item.name, item.productId);
         const variant = item.variant
           ? product?.variants.find(
               (entry) => entry.name.toLowerCase() === String(item.variant).toLowerCase(),
@@ -597,7 +602,11 @@ export async function runTool(
             `Нийт төлөх: ${formatTugrik(order.grandTotal)}
 
 ` +
-            'Доорх товчоор төлбөрөө төлнө үү. Төлбөр орсон даруйд захиалга баталгаажна 📦',
+            'Доорх товчоор төлбөрөө төлнө үү. Төлбөр орсон даруйд захиалга баталгаажна 📦' +
+            (order.unmatched && order.unmatched.length > 0
+              ? `\n\n⚠️ "${order.unmatched.join('", "')}" -г каталогоос олж чадсангүй тул ` +
+                'энэ захиалгад ороогүй. Ажилтан тантай холбогдож тодруулна ☎️'
+              : ''),
           buttons: [{ title: 'Төлбөр төлөх', url: order.payUrl }],
           orderId: order.id,
         };

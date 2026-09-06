@@ -14,6 +14,7 @@
 import { bonumCallbackUrl, bonumPost } from '../../bonum/_client.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
+import { findCatalogueProduct } from './catalogueMatch.js';
 import { findOpenLead, updateChatLead } from './leads.js';
 import {
   BelowDeliveryMinimumError,
@@ -236,15 +237,22 @@ export async function placeChatOrder(
     throw new NothingToOrderError('Захиалахыг хүссэн бүтээгдэхүүн бүртгэгдээгүй байна.');
   }
 
-  const items = rawItems.map((item) => {
+  /** Lines the catalogue has nothing for. Reported, not thrown. */
+  const unmatched: string[] = [];
+
+  const items = rawItems.flatMap((item) => {
     const name = String(item?.name ?? '').trim();
     const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
-    const product =
-      storefront.products.find((entry) => entry.id === Number(item?.productId)) ??
-      storefront.products.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+    const product = findCatalogueProduct(storefront.products, name, item?.productId);
 
+    // One line the catalogue cannot place used to throw, and the throw took the
+    // whole order with it. A real customer lost a five-line order that way —
+    // three of the lines were fine, the phone and the address were in, and the
+    // last thing they asked was where to send the money. What we cannot place,
+    // we leave out and say so; the rest of the order goes through.
     if (!product) {
-      throw new Error(`Каталогоос олдсонгүй: ${name || '?'}`);
+      unmatched.push(name || '?');
+      return [];
     }
 
     // A size carries its own price, so the base price would be the wrong one
@@ -269,7 +277,7 @@ export async function placeChatOrder(
     const listPrice = variant ? variant.price : product.price;
     const unitPrice = discountedPrice(listPrice, storefront.discounts, product.id);
 
-    return {
+    return [{
       productId: product.id,
       name: product.name,
       category: product.category,
@@ -280,8 +288,16 @@ export async function placeChatOrder(
       quantity,
       unitPrice,
       lineTotal: unitPrice * quantity,
-    };
+    }];
   });
+
+  if (items.length === 0) {
+    throw new NothingToOrderError(
+      unmatched.length > 0
+        ? `Каталогоос олдсонгүй: ${unmatched.join(', ')}`
+        : 'Захиалахыг хүссэн бүтээгдэхүүн бүртгэгдээгүй байна.',
+    );
+  }
 
   // Written before the order is attempted: if Bonum is unreachable the customer
   // still ends up in the admin's queue with everything needed to ring them back,
@@ -317,7 +333,7 @@ export async function placeChatOrder(
     });
   }
 
-  return order;
+  return { ...order, unmatched };
 }
 
 /**
