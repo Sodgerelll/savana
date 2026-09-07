@@ -320,18 +320,26 @@ describe("botShouldStaySilent", () => {
     ).toBe(true);
   });
 
-  it("never takes back a thread a person has answered, however long the gap", () => {
-    // The shop's rule: once staff have replied, the conversation is theirs. The
-    // bot arriving days later, after the customer was told a human is on it,
-    // reads as the shop not knowing who is talking.
+  it("takes the thread back an hour after the last staff reply", () => {
+    // Timed from the last staff reply, so a conversation being handled is never
+    // interrupted; an hour later an ordinary question is answered rather than
+    // left waiting for somebody to notice.
     const now = Date.now();
-    const daysAgo = now - 5 * 24 * 60 * 60 * 1000;
+    const justUnder = now - (ADMIN_HANDOVER_TIMEOUT_MS - 1000);
+    const justOver = now - (ADMIN_HANDOVER_TIMEOUT_MS + 1000);
 
-    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: daysAgo }), now)).toBe(
+    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justUnder }), now)).toBe(
       true,
     );
+    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justOver }), now)).toBe(
+      false,
+    );
+  });
+
+  it("measures the hour from the newest staff reply, not the first", () => {
+    const now = Date.now();
     expect(
-      botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: now - ADMIN_HANDOVER_TIMEOUT_MS * 10 }), now),
+      botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: now - 5 * 60_000 }), now),
     ).toBe(true);
   });
 

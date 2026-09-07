@@ -21,19 +21,17 @@ export const HISTORY_TURNS = 20;
 export const HANDOVER_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
- * Once a person has answered, the thread is theirs.
+ * How long the bot stays out of a thread a person has answered.
  *
- * This was three hours, so a customer coming back the next morning would get
- * the bot rather than nobody. The shop asked for it back the other way: a
- * thread somebody is handling should not have the bot step into it later,
- * whatever the gap. A customer who wants it back has the "Ботруу буцах" reply,
- * and that sets the status directly.
+ * Timed from the last staff reply, not the first, so a conversation being
+ * handled is never interrupted mid-way. An hour is the shop's number: long
+ * enough that staff finish what they started, short enough that a customer
+ * coming back later with an ordinary question is answered rather than left
+ * waiting for somebody to notice.
  *
- * Kept exported, and still what a pre-stamp thread is measured against, so
- * nothing that imports it breaks and the number stays visible if the shop
- * changes its mind.
+ * A customer can end it sooner — "Ботруу буцах" sets the status directly.
  */
-export const ADMIN_HANDOVER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+export const ADMIN_HANDOVER_TIMEOUT_MS = 60 * 60 * 1000;
 
 export type ChatChannel = 'facebook' | 'instagram' | 'widget' | 'admin_test';
 export type ConversationStatus = 'active' | 'handover' | 'admin_active' | 'resolved' | 'abandoned';
@@ -278,12 +276,13 @@ export async function setConversationStatus(
  */
 export function botShouldStaySilent(conversation: ConversationRef, now = Date.now()): boolean {
   if (conversation.status === 'admin_active') {
-    // For good. A person answering is the shop taking the conversation over,
-    // and the bot arriving in the middle of it hours later — after the customer
-    // has been told a human is on this — reads as the shop not knowing who is
-    // talking. The way back is the customer's to take: "Ботруу буцах" sets the
-    // status to active, and nothing else does.
-    return true;
+    // A thread written before this stamp existed cannot prove the hour has
+    // passed, so it waits for a person rather than risk the bot talking over
+    // one mid-conversation.
+    return (
+      typeof conversation.adminActiveAt !== 'number' ||
+      now - conversation.adminActiveAt < ADMIN_HANDOVER_TIMEOUT_MS
+    );
   }
   if (conversation.status === 'handover') {
     return conversation.handoverAt !== null && now - conversation.handoverAt < HANDOVER_TIMEOUT_MS;
