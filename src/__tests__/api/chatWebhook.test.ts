@@ -856,17 +856,20 @@ describe("handover", () => {
     expect(mocks.callGeminiAgent).not.toHaveBeenCalled();
   });
 
-  it("takes the thread back three hours after the last staff reply", async () => {
+  it("stays out of a thread staff answered, even days later", async () => {
+    // Once a person has replied the conversation is theirs. The bot arriving in
+    // the middle of it later, after the customer was told a human is on this,
+    // reads as the shop not knowing who is talking.
     fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", {
       status: "admin_active",
       messageCount: 4,
-      adminActiveAt: Date.now() - 4 * 60 * 60 * 1000,
+      adminActiveAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
     });
     const { res } = mockRes();
 
     await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
 
-    expect(mocks.callGeminiAgent).toHaveBeenCalled();
+    expect(mocks.callGeminiAgent).not.toHaveBeenCalled();
   });
 
   it("offers the way back on the message that hands the thread over", async () => {

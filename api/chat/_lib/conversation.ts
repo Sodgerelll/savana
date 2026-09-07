@@ -21,13 +21,17 @@ export const HISTORY_TURNS = 20;
 export const HANDOVER_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
- * How long the bot stays out of a thread a human has answered.
+ * Once a person has answered, the thread is theirs.
  *
- * A staff reply used to silence the bot for good, which is right for the next
- * few messages and wrong by the next morning: the customer comes back with an
- * ordinary question and nobody answers it. Three hours is long enough not to
- * interrupt a conversation being handled, short enough that a thread does not
- * stay dead overnight.
+ * This was three hours, so a customer coming back the next morning would get
+ * the bot rather than nobody. The shop asked for it back the other way: a
+ * thread somebody is handling should not have the bot step into it later,
+ * whatever the gap. A customer who wants it back has the "Ботруу буцах" reply,
+ * and that sets the status directly.
+ *
+ * Kept exported, and still what a pre-stamp thread is measured against, so
+ * nothing that imports it breaks and the number stays visible if the shop
+ * changes its mind.
  */
 export const ADMIN_HANDOVER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 
@@ -274,13 +278,12 @@ export async function setConversationStatus(
  */
 export function botShouldStaySilent(conversation: ConversationRef, now = Date.now()): boolean {
   if (conversation.status === 'admin_active') {
-    // A thread written before this stamp existed has no way to prove three
-    // hours have passed, so it keeps the old behaviour and waits for a human —
-    // or for the customer to ask for the bot back.
-    return (
-      typeof conversation.adminActiveAt !== 'number' ||
-      now - conversation.adminActiveAt < ADMIN_HANDOVER_TIMEOUT_MS
-    );
+    // For good. A person answering is the shop taking the conversation over,
+    // and the bot arriving in the middle of it hours later — after the customer
+    // has been told a human is on this — reads as the shop not knowing who is
+    // talking. The way back is the customer's to take: "Ботруу буцах" sets the
+    // status to active, and nothing else does.
+    return true;
   }
   if (conversation.status === 'handover') {
     return conversation.handoverAt !== null && now - conversation.handoverAt < HANDOVER_TIMEOUT_MS;

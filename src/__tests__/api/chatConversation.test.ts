@@ -320,21 +320,28 @@ describe("botShouldStaySilent", () => {
     ).toBe(true);
   });
 
-  it("takes the thread back three hours after the last staff reply", () => {
-    // A staff reply used to silence the bot for good, so a customer coming back
-    // the next morning with an ordinary question got nobody at all.
+  it("never takes back a thread a person has answered, however long the gap", () => {
+    // The shop's rule: once staff have replied, the conversation is theirs. The
+    // bot arriving days later, after the customer was told a human is on it,
+    // reads as the shop not knowing who is talking.
     const now = Date.now();
-    const justUnder = now - (ADMIN_HANDOVER_TIMEOUT_MS - 1000);
-    const justOver = now - (ADMIN_HANDOVER_TIMEOUT_MS + 1000);
+    const daysAgo = now - 5 * 24 * 60 * 60 * 1000;
 
-    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justUnder }), now)).toBe(true);
-    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: justOver }), now)).toBe(false);
+    expect(botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: daysAgo }), now)).toBe(
+      true,
+    );
+    expect(
+      botShouldStaySilent(ref({ status: "admin_active", adminActiveAt: now - ADMIN_HANDOVER_TIMEOUT_MS * 10 }), now),
+    ).toBe(true);
   });
 
   it("waits for a human on a thread saved before the stamp existed", () => {
-    // Nothing proves three hours have passed, so the old behaviour stands
-    // rather than the bot talking over someone mid-conversation.
     expect(botShouldStaySilent(ref({ status: "admin_active" }))).toBe(true);
+  });
+
+  it("comes back only when the customer asks for it", () => {
+    // "Ботруу буцах" sets the status to active; that is the one way out.
+    expect(botShouldStaySilent(ref({ status: "active" }))).toBe(false);
   });
 
   it("stays quiet during a fresh handover", () => {
