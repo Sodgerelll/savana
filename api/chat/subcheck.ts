@@ -1,5 +1,5 @@
 // TEMPORARY diagnostic — delete after use.
-// Says which webhook fields this page is subscribed to. Read-only.
+// Reads, and on request extends, this page's webhook field subscriptions.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
@@ -8,7 +8,29 @@ import { loadChatSettings } from './_lib/settings.js';
 const GRAPH_URL = 'https://graph.facebook.com/v21.0';
 const GUARD = '0b99106894adc51d6c5be0740bab01871cb3';
 
+/**
+ * What the page must stay subscribed to.
+ *
+ * subscribed_fields replaces the list rather than adding to it, so the ones
+ * already there are repeated here. Dropping "messages" would stop every
+ * customer message reaching the bot.
+ */
+const WANTED = ['messages', 'messaging_postbacks', 'message_echoes'];
+
 export const config = { maxDuration: 30 };
+
+async function readFields(token: string): Promise<{ http: number; fields: string[]; error: string | null }> {
+  const res = await fetch(`${GRAPH_URL}/me/subscribed_apps?fields=subscribed_fields`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body: any = await res.json().catch(() => ({}));
+  const apps = Array.isArray(body?.data) ? body.data : [];
+  return {
+    http: res.status,
+    fields: apps.flatMap((app: any) => app?.subscribed_fields ?? []),
+    error: body?.error?.message ?? null,
+  };
+}
 
 export default async function handler(req: any, res: any): Promise<void> {
   if (String(req.query?.key ?? '') !== GUARD) {
@@ -27,20 +49,25 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const graph = await fetch(`${GRAPH_URL}/me/subscribed_apps?fields=subscribed_fields`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const before = await readFields(token);
+
+  if (req.query?.apply !== '1') {
+    res.status(200).json({ before, wanted: WANTED, applied: false });
+    return;
+  }
+
+  const post = await fetch(`${GRAPH_URL}/me/subscribed_apps`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscribed_fields: WANTED.join(',') }),
   });
-  const body: any = await graph.json().catch(() => ({}));
-  const apps = Array.isArray(body?.data) ? body.data : [];
-  const fields = apps.flatMap((app: any) => app?.subscribed_fields ?? []);
+  const postBody: any = await post.json().catch(() => ({}));
+  const after = await readFields(token);
 
   res.status(200).json({
-    http: graph.status,
-    error: body?.error?.message ?? null,
-    apps: apps.length,
-    subscribedFields: fields,
-    hasMessages: fields.includes('messages'),
-    hasEchoes: fields.includes('message_echoes'),
-    hasFeed: fields.includes('feed'),
+    before,
+    post: { http: post.status, ok: post.ok, error: postBody?.error?.message ?? null },
+    after,
+    applied: true,
   });
 }
