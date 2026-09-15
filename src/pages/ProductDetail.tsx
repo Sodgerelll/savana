@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Minus, Plus } from "lucide-react";
 import {
-  DrawLeafIcon, DrawHandmadeIcon, DrawFlowerIcon, DrawBoxIcon, DrawAlertIcon, DrawShelfLifeIcon,
+  DrawLeafIcon, DrawHandmadeIcon, DrawFlowerIcon, DrawBoxIcon, DrawAlertIcon, DrawShelfLifeIcon, DrawStorageIcon,
 } from "../components/NatureIcons";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -142,12 +142,12 @@ export default function ProductDetail() {
                 : (product.totalStock ?? 0);
               const sold = product.soldCount ?? 0;
               const remaining = stock - sold;
-              if (stock <= 0) return null;
+              // How many are left is the shop's business; a shopper is only told
+              // when there are none.
+              if (stock <= 0 || remaining > 0) return null;
               return (
-                <p className={`pd-stock ${remaining <= 0 ? "pd-stock-out" : remaining <= 5 ? "pd-stock-low" : ""}`}>
-                  {remaining > 0
-                    ? (language === "MN" ? `Үлдэгдэл: ${remaining} ширхэг` : `${remaining} in stock`)
-                    : (language === "MN" ? "Дууссан" : "Out of stock")}
+                <p className="pd-stock pd-stock-out">
+                  {language === "MN" ? "Дууссан" : "Out of stock"}
                 </p>
               );
             })()}
@@ -170,11 +170,9 @@ export default function ProductDetail() {
                         disabled={remaining <= 0}
                       >
                         <span>{variant.name} — {formatStorePrice(variant.price)}</span>
-                        {variant.quantity > 0 && (
-                          <span className={`variant-stock ${remaining <= 0 ? "variant-stock-out" : remaining <= 5 ? "variant-stock-low" : ""}`}>
-                            {remaining > 0
-                              ? (language === "MN" ? `${remaining} ширхэг` : `${remaining} left`)
-                              : (language === "MN" ? "Дууссан" : "Sold out")}
+                        {variant.quantity > 0 && remaining <= 0 && (
+                          <span className="variant-stock variant-stock-out">
+                            {language === "MN" ? "Дууссан" : "Sold out"}
                           </span>
                         )}
                       </button>
@@ -229,17 +227,19 @@ export default function ProductDetail() {
           
 
             <div className="pd-accordion">
+              {/* Ingredients and usage are what a shopper comes to this page to read,
+                  so they are always open rather than waiting behind a click. */}
               {product.ingredients && (
-                <details>
-                  <summary><DrawLeafIcon size={28} strokeWidth={1.3} /> {t.ingredients}</summary>
+                <section className="pd-accordion-open">
+                  <h2 className="pd-accordion-heading"><DrawLeafIcon size={28} strokeWidth={1.3} /> {t.ingredients}</h2>
                   <p>{product.ingredients}</p>
-                </details>
+                </section>
               )}
               {product.usage && (
-                <details>
-                  <summary><DrawFlowerIcon size={28} strokeWidth={1.3} /> {t.usage}</summary>
+                <section className="pd-accordion-open">
+                  <h2 className="pd-accordion-heading"><DrawFlowerIcon size={28} strokeWidth={1.3} /> {t.usage}</h2>
                   <p>{product.usage}</p>
-                </details>
+                </section>
               )}
               {product.howToUse && (
                 <details>
@@ -257,6 +257,12 @@ export default function ProductDetail() {
                 <details>
                   <summary><DrawShelfLifeIcon size={28} strokeWidth={1.3} /> {t.shelfLife}</summary>
                   <p>{product.shelfLife}</p>
+                </details>
+              )}
+              {product.storageConditions && (
+                <details>
+                  <summary><DrawStorageIcon size={28} strokeWidth={1.3} /> {t.storageConditions}</summary>
+                  <p>{product.storageConditions}</p>
                 </details>
               )}
               <details>

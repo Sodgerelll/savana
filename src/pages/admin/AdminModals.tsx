@@ -1782,6 +1782,19 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             }
           />
         </label>
+        <label className="admin-field admin-field-wide">
+          <span>{copy.storageConditionsLabel}</span>
+          <textarea
+            rows={3}
+            value={productModal.draft.storageConditions ?? ""}
+            onChange={(event: any)=>
+              setProductModal({
+                ...productModal,
+                draft: { ...productModal.draft, storageConditions: event.target.value || undefined },
+              })
+            }
+          />
+        </label>
         {!(productModal.draft.variants?.length) && (
           <label className="admin-field admin-field-wide">
             <span>{copy.sizeLabelField}</span>

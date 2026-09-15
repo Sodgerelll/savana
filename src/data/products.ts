@@ -21,6 +21,8 @@ export interface Product {
   howToUse?: string;
   caution?: string;
   shelfLife?: string;
+  /** How to keep it — "Хадгалах нөхцөл"; distinct from how long it keeps (`shelfLife`). */
+  storageConditions?: string;
   category: string;
   images: string[];
   sizeLabel?: string;

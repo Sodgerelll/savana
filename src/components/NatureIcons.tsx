@@ -118,6 +118,25 @@ export const DrawShelfLifeIcon = ({ size = 24, strokeWidth = 1.4 }: NatureIconPr
   </svg>
 );
 
+// Thermometer with a sprig — Storage conditions (Хадгалах нөхцөл)
+export const DrawStorageIcon = ({ size = 24, strokeWidth = 1.4 }: NatureIconProps) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor"
+    strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    {/* Tube and bulb as one outline */}
+    <path d="M14 20.4 L14 6.5 A3 3 0 0 1 20 6.5 L20 20.4 A4.5 4.5 0 1 1 14 20.4 Z" />
+    {/* Liquid column */}
+    <path d="M17 22 L17 11" />
+    <circle cx="17" cy="24" r="1.8" />
+    {/* Scale marks */}
+    <path d="M22.5 9 L24.5 9" />
+    <path d="M22.5 12.5 L24.5 12.5" />
+    <path d="M22.5 16 L24.5 16" />
+    {/* Sprig on the left */}
+    <path d="M11 15 C8.5 15 6 13 5.5 10.5 C8 10 10.5 12 11 15 Z" />
+    <path d="M11 15 C11.5 17 12.5 18.5 14 19.5" />
+  </svg>
+);
+
 // ── Accordion Icons ──────────────────────────────────────────────────
 
 // Branching herb plant — Ingredients (Найрлага)

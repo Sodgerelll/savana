@@ -78,6 +78,7 @@ export interface Translations {
   howToUse: string;
   caution: string;
   shelfLife: string;
+  storageConditions: string;
   shippingReturns: string;
   youMayAlsoLike: string;
   productNotFound: string;
@@ -211,7 +212,7 @@ const en: Translations = {
   footerPolicies: "Policies",
   footerFAQ: "FAQ",
   footerCopyright: "SAVANA. All rights reserved.",
-  footerShippingReturns: "Shipping & Returns",
+  footerShippingReturns: "Shipping",
   footerWholesale: "Wholesale",
   cartTitle: "Cart",
   cartSubtotal: "Subtotal",
@@ -225,7 +226,8 @@ const en: Translations = {
   howToUse: "How to Use",
   caution: "Caution",
   shelfLife: "Shelf Life",
-  shippingReturns: "Shipping & Returns",
+  storageConditions: "Storage Conditions",
+  shippingReturns: "Shipping",
   youMayAlsoLike: "You May Also Like",
   productNotFound: "Product not found",
   backToShop: "Back to Shop",
@@ -352,7 +354,7 @@ const mn: Translations = {
   footerPolicies: "Бодлого",
   footerFAQ: "Түгээмэл асуулт",
   footerCopyright: "SAVANA. Бүх эрх хуулиар хамгаалагдсан.",
-  footerShippingReturns: "Хүргэлт & Буцаалт",
+  footerShippingReturns: "Хүргэлт",
   footerWholesale: "Бөөний худалдаа",
   cartTitle: "Сагс",
   cartSubtotal: "Нийт үнэ",
@@ -366,7 +368,8 @@ const mn: Translations = {
   howToUse: "Хэрэглэх заавар",
   caution: "Анхаар зүйлс",
   shelfLife: "Хадгалах хугацаа",
-  shippingReturns: "Хүргэлт & Буцаалт",
+  storageConditions: "Хадгалах нөхцөл",
+  shippingReturns: "Хүргэлт",
   youMayAlsoLike: "Таньд таалагдаж болох",
   productNotFound: "Бүтээгдэхүүн олдсонгүй",
   backToShop: "Дэлгүүр рүү буцах",
