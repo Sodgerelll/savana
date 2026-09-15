@@ -527,6 +527,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             .sort((a: any, b: any) => toMs(b) - toMs(a));
                           const customerDeliveryTxs = customerTxs.filter((tx: any) => tx.type === "delivery");
                           const customerSaleTxs = customerTxs.filter((tx: any) => tx.type === "sale");
+                          const customerReturnTxs = customerTxs.filter((tx: any) => tx.type === "return");
                           const productAgg = new Map<string, {
                             productId: number;
                             productName: string;
@@ -575,13 +576,38 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                               }
                             });
                           });
+                          // A return sends unsold units back off the seller's shelf, so it
+                          // comes off what they were transferred (and its value) — otherwise
+                          // the "Үлдэгдэл" column, and the Excel report built from it, keeps
+                          // counting returned goods as still outstanding.
+                          customerReturnTxs.forEach((tx: any) => {
+                            tx.items.forEach((it: any) => {
+                              const key = `${it.productId}::${it.variant ?? ""}`;
+                              const existing = productAgg.get(key);
+                              if (existing) {
+                                existing.transferred -= it.quantity;
+                                existing.totalAmount -= it.lineTotal;
+                              } else {
+                                productAgg.set(key, {
+                                  productId: it.productId,
+                                  productName: it.productName,
+                                  variant: it.variant,
+                                  transferred: -it.quantity,
+                                  sold: 0,
+                                  totalAmount: -it.lineTotal,
+                                });
+                              }
+                            });
+                          });
                           const productAggList = Array.from(productAgg.values()).sort(
                             (a, b) => b.totalAmount - a.totalAmount,
                           );
                           const customerSoldUnits =
                             sumItems(customerDeliveryTxs, (it) => it.soldQuantity) +
                             sumItems(customerSaleTxs, (it) => it.quantity);
-                          const customerTransferredUnits = sumItems(customerDeliveryTxs, (it) => it.quantity);
+                          const customerTransferredUnits =
+                            sumItems(customerDeliveryTxs, (it) => it.quantity) -
+                            sumItems(customerReturnTxs, (it) => it.quantity);
                           return (
                             <tr className="admin-product-expand-row">
                               <td colSpan={7}>
