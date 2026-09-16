@@ -40,6 +40,16 @@ function withTimeNow(dateStr: string): string {
   return dateStr;
 }
 
+/**
+ * Unit price after the transfer's "нэгж үнийн хөнгөлөлт". The percentage is always taken off
+ * the list price the row carries in `originalUnitPrice`, never off an already-reduced figure,
+ * so typing 10 and then 20 lands on 20% off rather than compounding to 28%.
+ */
+function discountedUnitPrice(listPrice: number, percent: number): number {
+  const pct = Math.min(100, Math.max(0, Number(percent) || 0));
+  return Math.max(0, Math.round((Number(listPrice) || 0) * (1 - pct / 100)));
+}
+
 function CatLeaf({ node, selected, onSelect, indent, bold }: { node: any; selected: boolean; onSelect: () => void; indent: number; bold?: boolean }) {
   return (
     <button
@@ -4318,6 +4328,69 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           <div>
             <h3>{copy.txItems}</h3>
           </div>
+          {transactionModal.mode !== "edit-limited" && (() => {
+            const unitDiscountPercent = Math.min(
+              100,
+              Math.max(0, Number(transactionModal.unitDiscountPercent) || 0),
+            );
+            // Re-prices every row off its list price, so lowering the percentage puts the
+            // prices back up instead of ratcheting them down. A row saved before
+            // `originalUnitPrice` existed takes the price it already shows as its list
+            // price, which is the only base it has.
+            const applyUnitDiscount = (raw: number) => {
+              const percent = Math.min(100, Math.max(0, Number(raw) || 0));
+              setTransactionModal({
+                ...transactionModal,
+                unitDiscountPercent: percent,
+                draft: {
+                  ...transactionModal.draft,
+                  items: transactionModal.draft.items.map((item: any) => {
+                    const listPrice = Math.round(
+                      Number(item.originalUnitPrice) || Number(item.unitPrice) || 0,
+                    );
+                    const unitPrice = discountedUnitPrice(listPrice, percent);
+                    return {
+                      ...item,
+                      originalUnitPrice: listPrice,
+                      unitPrice,
+                      lineTotal: unitPrice * item.quantity,
+                    };
+                  }),
+                },
+              });
+            };
+            const savedPerUnit = transactionModal.draft.items.reduce(
+              (sum: number, item: any) =>
+                sum +
+                Math.max(0, (Number(item.originalUnitPrice) || 0) - (Number(item.unitPrice) || 0)) *
+                  (Number(item.quantity) || 0),
+              0,
+            );
+            return (
+              <label
+                className="admin-field"
+                style={{ width: "13rem", flex: "0 0 auto", marginLeft: "auto", marginRight: "0.75rem" }}
+              >
+                <span>{language === "MN" ? "Нэгж үнийн хөнгөлөлт (%)" : "Unit price discount (%)"}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={unitDiscountPercent || ""}
+                  placeholder="0"
+                  onChange={(event: any) => applyUnitDiscount(Number(event.target.value) || 0)}
+                />
+                <small style={{ color: "#8a8477" }}>
+                  {savedPerUnit > 0
+                    ? `${language === "MN" ? "Хасагдсан" : "Deducted"}: −${formatStorePrice(savedPerUnit)}`
+                    : language === "MN"
+                      ? "Жагсаалтын үнээс хасагдана"
+                      : "Taken off the list price"}
+                </small>
+              </label>
+            );
+          })()}
           {transactionModal.mode !== "edit-limited" && <button
             type="button"
             className="btn btn-outline"
@@ -4386,7 +4459,15 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                             const firstVariant = product?.variants?.[0] ?? null;
                             const listPrice = Math.round(firstVariant?.price ?? product?.price ?? 0);
                             const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
-                            const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                            // A percentage typed into "Нэгж үнийн хөнгөлөлт" governs the whole
+                            // transfer, so a product added afterwards comes in already reduced
+                            // rather than at full price; without one the storefront's own
+                            // running discount still applies.
+                            const unitPrice = transactionModal.unitDiscountPercent
+                              ? discountedUnitPrice(listPrice, transactionModal.unitDiscountPercent)
+                              : activeDiscount
+                                ? applyDiscount(listPrice, activeDiscount)
+                                : listPrice;
                             const primaryImage = product ? getProductPrimaryImage(product) : "";
                             const nextItems = [...transactionModal.draft.items];
                             nextItems[idx] = {
@@ -4437,7 +4518,11 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                               );
                               const listPrice = Math.round(variant?.price ?? selectedProduct.price);
                               const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
-                              const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
+                              const unitPrice = transactionModal.unitDiscountPercent
+                                ? discountedUnitPrice(listPrice, transactionModal.unitDiscountPercent)
+                                : activeDiscount
+                                  ? applyDiscount(listPrice, activeDiscount)
+                                  : listPrice;
                               const nextItems = [...transactionModal.draft.items];
                               nextItems[idx] = {
                                 ...item,

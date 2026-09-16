@@ -540,6 +540,12 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             transferred: number;
                             sold: number;
                             returned: number;
+                            /** Unit price exactly as it was typed on the transfer that moved these
+                             * goods — the latest one when the product came over on several. Shown
+                             * as "Нэгж үнэ" and used to price a new sale/return, so both read back
+                             * the number the operator entered instead of a value-weighted average
+                             * that no single transfer ever carried. */
+                            transferUnitPrice: number;
                             /** Gross value of what was transferred — the transfer price, unaffected by
                              * any payment. Used to price a new sale/return, never shown as a total. */
                             totalAmount: number;
@@ -561,6 +567,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           // Transferred quantity and value come from deliveries only. A delivery's
                           // own payment is prorated across its lines by value, so a partially paid
                           // delivery doesn't leave every one of its products looking fully unpaid.
+                          // `customerDeliveryTxs` runs newest first, so the first delivery to
+                          // mention a product is the one whose entered unit price the row keeps.
                           customerDeliveryTxs.forEach((tx: any) => {
                             const outstandingRatio =
                               tx.totals.subtotal > 0
@@ -584,6 +592,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                   transferred: it.quantity,
                                   sold: it.soldQuantity,
                                   returned: 0,
+                                  transferUnitPrice: Math.round(Number(it.unitPrice) || 0),
                                   totalAmount: it.lineTotal,
                                   outstandingAmount,
                                   deliveryOutstanding: outstandingAmount,
@@ -617,6 +626,10 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                   transferred: 0,
                                   sold: it.quantity,
                                   returned: 0,
+                                  // No delivery carries this product any more (the transfer was
+                                  // edited away or predates this rollup) — the price it was
+                                  // settled at is the closest thing left to a transfer price.
+                                  transferUnitPrice: Math.round(Number(it.unitPrice) || 0),
                                   totalAmount: 0,
                                   outstandingAmount: -settledAmount,
                                   deliveryOutstanding: 0,
@@ -646,6 +659,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                   transferred: 0,
                                   sold: 0,
                                   returned: it.quantity,
+                                  transferUnitPrice: Math.round(Number(it.unitPrice) || 0),
                                   totalAmount: 0,
                                   outstandingAmount: -it.lineTotal,
                                   deliveryOutstanding: 0,
@@ -1268,7 +1282,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                     </strong>
                                                   </td>
                                                   <td style={{ textAlign: "center" }}>
-                                                    {formatStorePrice(p.transferred > 0 ? Math.round(p.totalAmount / p.transferred) : 0)}
+                                                    {formatStorePrice(p.transferUnitPrice)}
                                                   </td>
                                                   <td style={{ textAlign: "center" }}><strong>{formatStorePrice(p.totalAmount)}</strong></td>
                                                 </tr>

@@ -528,6 +528,12 @@ interface CustomerTransactionModalState {
   mode: ModalMode;
   draft: CustomerTransactionRecord;
   previous?: CustomerTransactionRecord;
+  /**
+   * Percentage the operator wants taken off every line's list price on this transfer. Lives
+   * on the modal rather than the draft: it is a way of typing the prices, and what gets
+   * saved is the reduced `unitPrice` each item ends up with.
+   */
+  unitDiscountPercent?: number;
 }
 
 interface TransactionPaymentModalState {
@@ -2642,9 +2648,10 @@ export default function Account() {
 
   /**
    * Opens the combined "Борлуулалт / Буцаалт бүртгэх" modal for a seller, seeded from the
-   * by-product rollup shown on the Бүтээгдэхүүнээр tab. Each row carries the average transfer
-   * price so the modal can value both the units the operator marks as sold and the units
-   * marked as returned.
+   * by-product rollup shown on the Бүтээгдэхүүнээр tab. Each row is priced at the unit price
+   * entered on the transfer that moved those goods — the same number the tab prints under
+   * "Нэгж үнэ" — so the units marked sold and the units marked returned are valued at what
+   * the seller was actually charged.
    */
   const openSellerSaleModal = (
     customer: { id: string; code?: string; name: string; phoneNumber?: string; outstandingBalance?: number },
@@ -2655,6 +2662,8 @@ export default function Account() {
       transferred: number;
       sold: number;
       returned: number;
+      /** Unit price as typed on the transfer — see the Бүтээгдэхүүнээр rollup that builds it. */
+      transferUnitPrice: number;
       totalAmount: number;
     }>,
     /**
@@ -2676,7 +2685,7 @@ export default function Account() {
         phoneNumber: customer.phoneNumber ?? "",
       },
       lines: productAggList.map((p) => {
-        const unitPrice = p.transferred > 0 ? Math.round(p.totalAmount / p.transferred) : 0;
+        const unitPrice = Math.round(Number(p.transferUnitPrice) || 0);
         return {
           productId: p.productId,
           productName: p.productName,
