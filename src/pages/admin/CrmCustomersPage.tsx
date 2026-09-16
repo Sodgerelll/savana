@@ -25,6 +25,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
     setExpandedCustomerTab,
     expandedTxGrids,
     setExpandedTxGrids,
+    expandedDeliveryTxs,
+    setExpandedDeliveryTxs,
     user,
     formatAdminDateTime,
     formatStorePrice,
@@ -55,6 +57,16 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
   // — the same order the Бүтээгдэхүүнээр table and the seller sale/return popup use.
   const sortItemsByCode = (items: any[]) =>
     items.slice().sort((a, b) => getProductCode(a.productId).localeCompare(getProductCode(b.productId)));
+  const toggleDeliveryTx = (txId: string) =>
+    setExpandedDeliveryTxs((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(txId)) {
+        next.delete(txId);
+      } else {
+        next.add(txId);
+      }
+      return next;
+    });
   const deliveryTxs = customerTransactions.filter((tx: any) => tx.type === "delivery");
   const saleTxs = customerTransactions.filter((tx: any) => tx.type === "sale");
   const transferredUnitsAll = sumItems(deliveryTxs, (it) => it.quantity);
@@ -933,10 +945,33 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             const money = deliveryMoney.get(tx.id) ?? { paid: tx.payment.paidAmount, returned: 0, outstanding };
                                             const effectiveStatus =
                                               money.outstanding <= 0 ? "paid" : money.paid > 0 ? "partial" : "unpaid";
+                                            // Collapsed by default: a seller can carry dozens of transfers and the
+                                            // list is for finding one, not for reading all of them at once. The head
+                                            // is the row that opens it — the buttons sitting in it already stop their
+                                            // clicks from reaching the row.
+                                            const txOpen = expandedDeliveryTxs.has(tx.id);
+                                            const txQuantity = tx.items.reduce((s: number, it: any) => s + it.quantity, 0);
                                             return (
                                               <div key={tx.id} className="admin-customer-tx-card">
-                                                <div className="admin-customer-tx-head">
+                                                <div
+                                                  className="admin-customer-tx-head"
+                                                  role="button"
+                                                  tabIndex={0}
+                                                  style={{ cursor: "pointer" }}
+                                                  onClick={() => toggleDeliveryTx(tx.id)}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter" || e.key === " ") {
+                                                      e.preventDefault();
+                                                      toggleDeliveryTx(tx.id);
+                                                    }
+                                                  }}
+                                                >
                                                   <div className="admin-customer-tx-head-left">
+                                                    {txOpen ? (
+                                                      <ChevronUp size={14} color="#8a8477" />
+                                                    ) : (
+                                                      <ChevronDown size={14} color="#8a8477" />
+                                                    )}
                                                     <span className="admin-customer-tx-date">
                                                       {formatAdminDateTime(tx.transactionDate ?? tx.createdAt, language)}
                                                     </span>
@@ -946,6 +981,26 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                     <span className="admin-customer-tx-type admin-customer-tx-type-delivery">
                                                       {copy.txTypeDelivery}
                                                     </span>
+                                                    {/* Closed, the row still has to say what the transfer was worth
+                                                        and whether it is settled — otherwise finding one means
+                                                        opening every one. */}
+                                                    {!txOpen && (
+                                                      <span style={{ fontSize: "0.75rem", color: "#8a8477", whiteSpace: "nowrap" }}>
+                                                        {txQuantity} ш · {formatStorePrice(tx.totals.grandTotal)}
+                                                        {money.outstanding > 0 ? (
+                                                          <span style={{ color: "#b14141" }}>
+                                                            {" · "}
+                                                            {language === "MN" ? "Үлдэгдэл" : "Outstanding"}{" "}
+                                                            {formatStorePrice(money.outstanding)}
+                                                          </span>
+                                                        ) : (
+                                                          <span style={{ color: "#2f7a4a" }}>
+                                                            {" · "}
+                                                            {copy.txPaymentPaid}
+                                                          </span>
+                                                        )}
+                                                      </span>
+                                                    )}
                                                   </div>
                                                   <div className="admin-customer-tx-head-right">
                                                     {tx.updatedAt && (
@@ -1027,10 +1082,12 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                   </div>
                                                 </div>
 
+                                                {txOpen && (
+                                                <>
                                                 <div className="admin-customer-tx-foot">
                                                   <div className="admin-customer-tx-foot-item">
                                                     <small>{language === "MN" ? "Шилжүүлсэн" : "Transferred"}</small>
-                                                    <strong>{tx.items.reduce((s: number, it: any) => s + it.quantity, 0)} ш</strong>
+                                                    <strong>{txQuantity} ш</strong>
                                                   </div>
                                                   <div className="admin-customer-tx-foot-item">
                                                     <small>{language === "MN" ? "Үлдэгдэл" : "Remaining"}</small>
@@ -1201,15 +1258,15 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                       return next;
                                                     })}
                                                     style={{
-                                                      display: "flex", alignItems: "center", gap: "0.3rem",
+                                                      display: "flex", alignItems: "center", gap: "0.4rem",
                                                       background: "none", border: "none", cursor: "pointer",
-                                                      fontSize: "0.75rem", color: "#8a8477", padding: "3px 0",
+                                                      fontSize: "1rem", fontWeight: 700, color: "#ea580c", padding: "4px 0",
                                                       marginBottom: expandedTxGrids.has(tx.id) ? "0.5rem" : 0,
                                                     }}
                                                   >
                                                     {expandedTxGrids.has(tx.id)
-                                                      ? <><ChevronUp size={13} /> {language === "MN" ? "Бараа нуух" : "Hide items"}</>
-                                                      : <><ChevronDown size={13} /> {language === "MN" ? `Бараа харах (${tx.items.length})` : `Show items (${tx.items.length})`}</>
+                                                      ? <><ChevronUp size={18} /> {language === "MN" ? "Бараа нуух" : "Hide items"}</>
+                                                      : <><ChevronDown size={18} /> {language === "MN" ? `Бараа харах (${tx.items.length})` : `Show items (${tx.items.length})`}</>
                                                     }
                                                   </button>
                                                   {expandedTxGrids.has(tx.id) && (
@@ -1249,6 +1306,8 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                     </div>
                                                   )}
                                                 </div>
+                                                </>
+                                                )}
                                               </div>
                                             );
                                           })}

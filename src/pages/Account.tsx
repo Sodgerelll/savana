@@ -717,6 +717,8 @@ export default function Account() {
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "sales" | "returns">("products");
   const [expandedTxGrids, setExpandedTxGrids] = useState<Set<string>>(new Set());
+  /** Transfer cards opened on a seller's Шилжүүлгээр tab; empty means the list reads collapsed. */
+  const [expandedDeliveryTxs, setExpandedDeliveryTxs] = useState<Set<string>>(new Set());
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
   const [journalEntryModal, setJournalEntryModal] = useState<JournalEntryModalState | null>(null);
@@ -3860,6 +3862,8 @@ export default function Account() {
     setExpandedCustomerTab,
     expandedTxGrids,
     setExpandedTxGrids,
+    expandedDeliveryTxs,
+    setExpandedDeliveryTxs,
     // inventory / production
     packagingItems,
     rawMaterials,
