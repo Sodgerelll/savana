@@ -314,6 +314,97 @@ export function buildSellerSaleInput(params: {
   };
 }
 
+// ─── Seller "record return" entry ────────────────────────────────────────────
+//
+// The counterpart to a "record sales" entry on the same Бүтээгдэхүүнээр tab: the operator
+// records how many of each transferred (still unsold) product the seller is handing back.
+// Stored as a `type: "return"` document — goods go back to stock and the return's value
+// credits the seller's outstanding balance. There is no discount or payment: the seller
+// never owed for units that are simply going back unsold.
+
+export interface SellerReturnLineInput {
+  productId: number;
+  productName: string;
+  category?: string;
+  image?: string | null;
+  variant?: string | null;
+  /** Quantity returned now. */
+  returnNow: number;
+  /** Price the goods were transferred at — what the return is valued at. */
+  unitPrice: number;
+}
+
+export interface SellerReturnTotals {
+  subtotal: number;
+  grandTotal: number;
+}
+
+/** Resolves the money side of a "record return" entry: just the value of the returned units. */
+export function resolveSellerReturnTotals(lines: SellerReturnLineInput[]): SellerReturnTotals {
+  const subtotal = lines.reduce(
+    (sum, line) => sum + roundAmount(line.unitPrice) * Math.max(0, Math.trunc(line.returnNow || 0)),
+    0,
+  );
+  return { subtotal, grandTotal: subtotal };
+}
+
+/**
+ * Builds the `createCustomerTransaction` input for a seller "record return" entry. Lines with
+ * a zero quantity are dropped.
+ */
+export function buildSellerReturnInput(params: {
+  customerId: string;
+  customerSnapshot: CustomerTransactionCustomerSnapshot;
+  lines: SellerReturnLineInput[];
+  transactionDate?: string | null;
+  note?: string;
+  createdByUid: string;
+}): CreateCustomerTransactionInput {
+  const returnedLines = params.lines.filter((line) => Math.trunc(line.returnNow || 0) > 0);
+  const totals = resolveSellerReturnTotals(returnedLines);
+  const items: CustomerTransactionItem[] = returnedLines.map((line) => {
+    const quantity = Math.trunc(line.returnNow);
+    const unitPrice = roundAmount(line.unitPrice);
+    return {
+      productId: line.productId,
+      productName: line.productName,
+      category: line.category ?? "",
+      image: line.image ?? null,
+      variant: line.variant ?? null,
+      quantity,
+      soldQuantity: 0,
+      unitPrice,
+      originalUnitPrice: unitPrice,
+      lineTotal: unitPrice * quantity,
+    };
+  });
+  return {
+    type: "return",
+    customerId: params.customerId,
+    customerSnapshot: params.customerSnapshot,
+    items,
+    totals: {
+      subtotal: totals.subtotal,
+      discount: 0,
+      discountType: "amount",
+      discountValue: 0,
+      vatMode: "none",
+      vatAmount: 0,
+      grandTotal: totals.grandTotal,
+    },
+    payment: {
+      status: "unpaid",
+      paidAmount: 0,
+      method: null,
+      paidAt: null,
+    },
+    relatedTransactionId: null,
+    transactionDate: params.transactionDate ?? new Date().toISOString().slice(0, 10),
+    note: params.note ?? "",
+    createdByUid: params.createdByUid,
+  };
+}
+
 function normalizeType(value: unknown): CustomerTransactionType {
   if (value === "delivery" || value === "return") {
     return value;

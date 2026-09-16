@@ -12,12 +12,14 @@ vi.mock("../../lib/firebase", () => ({ db: {} }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
 import {
+  buildSellerReturnInput,
   buildSellerSaleInput,
   createEmptyTransactionDraft,
   createCustomerTransaction,
   deleteCustomerTransaction,
   deleteCustomerTransactionPaymentEntry,
   recordCustomerTransactionPayment,
+  resolveSellerReturnTotals,
   resolveSellerSaleTotals,
   updateCustomerTransaction,
   updateCustomerTransactionPaymentEntry,
@@ -778,6 +780,75 @@ describe("resolveSellerSaleTotals / buildSellerSaleInput", () => {
       createdByUid: "uid-admin",
     });
     expect(none.payment).toMatchObject({ status: "unpaid", paidAmount: 0, method: null });
+  });
+});
+
+// ─── seller "record return" — type: "return" (unsold goods sent back) ────────
+
+describe("resolveSellerReturnTotals / buildSellerReturnInput", () => {
+  const lines = [
+    { productId: 10, productName: "Soap", returnNow: 4, unitPrice: 2000 },
+    { productId: 11, productName: "Balm", returnNow: 1, unitPrice: 5000 },
+  ];
+
+  it("sums the returned value with no discount or payment involved", () => {
+    const t = resolveSellerReturnTotals(lines);
+    expect(t.subtotal).toBe(13000);
+    expect(t.grandTotal).toBe(13000);
+  });
+
+  it("drops zero-quantity lines and builds an unpaid return", () => {
+    const input = buildSellerReturnInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "" },
+      lines: [...lines, { productId: 12, productName: "Zero", returnNow: 0, unitPrice: 1000 }],
+      createdByUid: "uid-admin",
+    });
+    expect(input.type).toBe("return");
+    expect(input.items).toHaveLength(2);
+    expect(input.items[0]).toMatchObject({ productId: 10, quantity: 4, lineTotal: 8000 });
+    expect(input.totals).toMatchObject({ discount: 0, grandTotal: 13000 });
+    expect(input.payment).toMatchObject({ status: "unpaid", paidAmount: 0, method: null });
+  });
+});
+
+describe("createCustomerTransaction — type: 'return' (seller record-return)", () => {
+  function returnInput(returnNow: number) {
+    return buildSellerReturnInput({
+      customerId: "cust-1",
+      customerSnapshot: { code: "CUS-0001", name: "Alice", phoneNumber: "99001234" },
+      lines: [{ productId: 10, productName: "Soap", returnNow, unitPrice: 2000 }], // 8000 at 4
+      createdByUid: "uid-admin",
+    });
+  }
+
+  beforeEach(() => {
+    seedProduct(10, { soldCount: 10 });
+    seedCustomer("cust-1", { totalSales: 100000, totalPaid: 40000, outstandingBalance: 60000 });
+  });
+
+  it("brings the returned units back into stock", async () => {
+    await createCustomerTransaction(returnInput(4));
+    expect(stockFor(10)).toMatchObject({ soldCount: 6 });
+  });
+
+  it("credits the returned value straight off the receivable — a return carries no payment", async () => {
+    await createCustomerTransaction(returnInput(4)); // 4 * 2000 = 8000
+
+    expect(customerFor()).toMatchObject({
+      totalSales: 92000, // -8000
+      totalPaid: 40000, // untouched
+      outstandingBalance: 52000, // -8000
+    });
+  });
+
+  it("posts a sales-return entry crediting AR for the full value", async () => {
+    await createCustomerTransaction(returnInput(4));
+
+    expect(journalEntries()[0].lines).toEqual([
+      expect.objectContaining({ accountCode: "4910", debit: 8000 }),
+      expect.objectContaining({ accountCode: "1110", credit: 8000 }),
+    ]);
   });
 });
 

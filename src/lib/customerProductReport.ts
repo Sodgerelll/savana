@@ -18,6 +18,7 @@ export interface SellerProductRow {
   variant: string | null;
   transferred: number;
   sold: number;
+  returned: number;
   totalAmount: number;
 }
 
@@ -52,7 +53,8 @@ export function buildSellerProductReportCsv(
 ): string {
   const totalTransferred = rows.reduce((sum, p) => sum + p.transferred, 0);
   const totalSold = rows.reduce((sum, p) => sum + p.sold, 0);
-  const totalRemaining = totalTransferred - totalSold;
+  const totalReturned = rows.reduce((sum, p) => sum + p.returned, 0);
+  const totalRemaining = totalTransferred - totalSold - totalReturned;
   const totalAmount = rows.reduce((sum, p) => sum + p.totalAmount, 0);
 
   const lines: string[] = [
@@ -67,18 +69,19 @@ export function buildSellerProductReportCsv(
     row(["Хаяг", addressText(customer)]),
     row(["Тайлан гаргасан огноо", reportStamp(now)]),
     row([]),
-    row(["Бүтээгдэхүүн", "Хувилбар", "Шилжүүлсэн (ш)", "Зарсан (ш)", "Үлдэгдэл (ш)", "Нийт дүн (₮)"]),
+    row(["Бүтээгдэхүүн", "Хувилбар", "Шилжүүлсэн (ш)", "Зарсан (ш)", "Буцаасан (ш)", "Үлдэгдэл (ш)", "Нийт дүн (₮)"]),
     ...rows.map((p) =>
       row([
         p.label,
         p.variant ?? "",
         p.transferred,
         p.sold,
-        p.transferred - p.sold,
+        p.returned,
+        p.transferred - p.sold - p.returned,
         Math.round(p.totalAmount),
       ]),
     ),
-    row(["Нийт", "", totalTransferred, totalSold, totalRemaining, Math.round(totalAmount)]),
+    row(["Нийт", "", totalTransferred, totalSold, totalReturned, totalRemaining, Math.round(totalAmount)]),
     row([]),
     row(["Шилжүүлсэн бараа материалын нийт дүн (₮)", Math.round(totalAmount)]),
     row(["Төлбөрийн үлдэгдэл нийт дүн (₮)", Math.round(customer.outstandingBalance)]),

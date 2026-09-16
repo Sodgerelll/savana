@@ -176,6 +176,7 @@ import {
 } from "../lib/crmContacts";
 import {
   buildSellerSaleInput,
+  buildSellerReturnInput,
   checkProductHasTransactions,
   createCustomerTransaction,
   createEmptyTransactionDraft,
@@ -551,8 +552,12 @@ interface SellerSaleModalLine {
   transferred: number;
   /** Units already marked sold (on transfers and earlier sale records). */
   alreadySold: number;
+  /** Units already sent back on earlier return records. */
+  alreadyReturned: number;
   /** Units the operator is recording as sold now. */
   soldNow: number;
+  /** Units the operator is recording as returned now. */
+  returnNow: number;
 }
 
 interface SellerSaleModalState {
@@ -562,6 +567,43 @@ interface SellerSaleModalState {
   lines: SellerSaleModalLine[];
   discount: { type: "amount" | "percent"; value: number };
   /** Cash the seller hands over; null means "the full net", recomputed as the form changes. */
+  paidAmount: number | null;
+  method: "cash" | "bank" | "qpay" | "other";
+  /** YYYY-MM-DD the sale/return is booked on — defaults to today, editable for back-dating. */
+  transactionDate: string;
+  /** Shown as read-only context in the header — the customer's totals as of opening the modal. */
+  customerTransferredAmount: number;
+  customerOutstandingBalance: number;
+}
+
+interface SellerTxEditModalLine {
+  productId: number;
+  productName: string;
+  category: string;
+  image: string | null;
+  variant: string | null;
+  unitPrice: number;
+  /** Quantity being edited in this record. */
+  quantity: number;
+  /**
+   * Ceiling for `quantity`: what is left over the customer's other sale/return records for
+   * this product, plus what this record itself already claims — so shrinking another line
+   * elsewhere never gets undercut, and this record can always be set back to what it already
+   * held.
+   */
+  maxQuantity: number;
+}
+
+/** Editing (or deleting) one already-recorded seller sale or return. */
+interface SellerTxEditModalState {
+  txId: string;
+  type: "sale" | "return";
+  customerName: string;
+  previous: CustomerTransactionRecord;
+  transactionDate: string;
+  lines: SellerTxEditModalLine[];
+  /** Sale-only — a return carries no discount or payment. */
+  discount: { type: "amount" | "percent"; value: number };
   paidAmount: number | null;
   method: "cash" | "bank" | "qpay" | "other";
 }
@@ -666,7 +708,7 @@ export default function Account() {
   const [productModal, setProductModal] = useState<ProductModalState | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
-  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "payments" | "returns">("history");
+  const [expandedCustomerTab, setExpandedCustomerTab] = useState<"products" | "history" | "sales" | "returns">("products");
   const [expandedTxGrids, setExpandedTxGrids] = useState<Set<string>>(new Set());
   const [navigationModal, setNavigationModal] = useState<NavigationModalState | null>(null);
   const [journalSettingsModal, setJournalSettingsModal] = useState<JournalSettingsModalState | null>(null);
@@ -780,6 +822,9 @@ export default function Account() {
   const [sellerSaleModal, setSellerSaleModal] = useState<SellerSaleModalState | null>(null);
   const [sellerSaleSaving, setSellerSaleSaving] = useState(false);
   const [sellerSaleError, setSellerSaleError] = useState<string | null>(null);
+  const [sellerTxEditModal, setSellerTxEditModal] = useState<SellerTxEditModalState | null>(null);
+  const [sellerTxEditSaving, setSellerTxEditSaving] = useState(false);
+  const [sellerTxEditError, setSellerTxEditError] = useState<string | null>(null);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<"all" | CustomerTransactionType>("all");
   const [transactionCustomerFilter, setTransactionCustomerFilter] = useState<string>("all");
   const [customerViewMode, setCustomerViewMode] = useState<"customers" | "transfers">("customers");
@@ -2596,20 +2641,29 @@ export default function Account() {
   };
 
   /**
-   * Opens the "Борлуулалт бүртгэх" modal for a seller, seeded from the by-product rollup
-   * shown on the Бүтээгдэхүүнээр tab. Each row carries the average transfer price so the
-   * modal can value the units the operator marks as sold.
+   * Opens the combined "Борлуулалт / Буцаалт бүртгэх" modal for a seller, seeded from the
+   * by-product rollup shown on the Бүтээгдэхүүнээр tab. Each row carries the average transfer
+   * price so the modal can value both the units the operator marks as sold and the units
+   * marked as returned.
    */
   const openSellerSaleModal = (
-    customer: { id: string; code?: string; name: string; phoneNumber?: string },
+    customer: { id: string; code?: string; name: string; phoneNumber?: string; outstandingBalance?: number },
     productAggList: Array<{
       productId: number;
       productName: string;
       variant: string | null;
       transferred: number;
       sold: number;
+      returned: number;
       totalAmount: number;
     }>,
+    /**
+     * Sum of every delivery's `totals.grandTotal` for this customer — passed in rather than
+     * derived from `productAggList` so it matches the "Нийт шилжүүлсэн дүн" dashboard card
+     * exactly. `productAggList`'s own totals are built from raw item `lineTotal`s, which
+     * disagree with `grandTotal` the moment a delivery carries a discount or VAT.
+     */
+    customerTransferredAmount: number,
   ) => {
     setSellerSaleError(null);
     setSellerSaleSaving(false);
@@ -2633,12 +2687,70 @@ export default function Account() {
           originalUnitPrice: unitPrice,
           transferred: p.transferred,
           alreadySold: p.sold,
+          alreadyReturned: p.returned,
           soldNow: 0,
+          returnNow: 0,
         };
       }),
       discount: { type: "amount", value: 0 },
       paidAmount: null,
       method: "cash",
+      transactionDate: new Date().toISOString().slice(0, 10),
+      customerTransferredAmount: Number(customerTransferredAmount) || 0,
+      customerOutstandingBalance: Number(customer.outstandingBalance) || 0,
+    });
+  };
+
+  /**
+   * Opens the edit modal for one already-recorded seller sale or return, seeded from the same
+   * by-product rollup so each line's editable ceiling reflects what is free once this record's
+   * own claim on it is set aside — see `SellerTxEditModalLine.maxQuantity`.
+   */
+  const openSellerTxEditModal = (
+    customer: { id: string; name: string },
+    tx: CustomerTransactionRecord,
+    productAggList: Array<{
+      productId: number;
+      variant: string | null;
+      transferred: number;
+      sold: number;
+      returned: number;
+    }>,
+  ) => {
+    const type = tx.type === "return" ? "return" : "sale";
+    setSellerTxEditError(null);
+    setSellerTxEditSaving(false);
+    setSellerTxEditModal({
+      txId: tx.id,
+      type,
+      customerName: customer.name,
+      previous: tx,
+      transactionDate: (tx.transactionDate ?? tx.createdAt ?? new Date().toISOString()).slice(0, 10),
+      lines: tx.items.map((item) => {
+        const agg = productAggList.find(
+          (p) => p.productId === item.productId && (p.variant ?? null) === (item.variant ?? null),
+        );
+        const otherSold = (agg?.sold ?? 0) - (type === "sale" ? item.quantity : 0);
+        const otherReturned = (agg?.returned ?? 0) - (type === "return" ? item.quantity : 0);
+        const transferred = agg?.transferred ?? item.quantity;
+        const maxQuantity = Math.max(item.quantity, transferred - otherSold - otherReturned);
+        return {
+          productId: item.productId,
+          productName: item.productName,
+          category: item.category,
+          image: item.image,
+          variant: item.variant,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          maxQuantity,
+        };
+      }),
+      discount:
+        type === "sale"
+          ? { type: tx.totals.discountType === "percent" ? "percent" : "amount", value: tx.totals.discountValue ?? tx.totals.discount }
+          : { type: "amount", value: 0 },
+      paidAmount: type === "sale" ? tx.payment.paidAmount : null,
+      method: tx.payment.method ?? "cash",
     });
   };
 
@@ -3827,7 +3939,9 @@ export default function Account() {
     createCustomerTransaction,
     updateCustomerTransaction,
     buildSellerSaleInput,
+    buildSellerReturnInput,
     openSellerSaleModal,
+    openSellerTxEditModal,
     getManageableRoleOptions,
     getUserProviderSummary,
     // modal state
@@ -3948,6 +4062,12 @@ export default function Account() {
     setSellerSaleSaving,
     sellerSaleError,
     setSellerSaleError,
+    sellerTxEditModal,
+    setSellerTxEditModal,
+    sellerTxEditSaving,
+    setSellerTxEditSaving,
+    sellerTxEditError,
+    setSellerTxEditError,
     orderModal,
     closeOrderModal,
     handleOrderCustomerChange,

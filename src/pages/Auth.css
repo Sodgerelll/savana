@@ -1404,6 +1404,24 @@
   -moz-appearance: textfield;
 }
 
+/* Denser rows for tables that pack many columns into a modal — e.g. the seller
+   sale/return grid — without touching every other admin table's row height. */
+.admin-data-table.admin-data-table-compact thead th {
+  padding: 0.45rem 0.6rem;
+}
+
+.admin-data-table.admin-data-table-compact tbody td {
+  padding: 0.3rem 0.6rem;
+}
+
+.admin-data-table.admin-data-table-compact tfoot td {
+  padding: 0.5rem 0.6rem;
+}
+
+.admin-data-table.admin-data-table-compact td input[type="number"] {
+  padding: 0.18rem 0.4rem;
+}
+
 .admin-table-primary {
   display: grid;
   gap: 0.2rem;
