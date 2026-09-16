@@ -178,6 +178,7 @@ import {
   buildSellerSaleInput,
   buildSellerReturnInput,
   checkProductHasTransactions,
+  clearCustomerTransactionSoldQuantities,
   createCustomerTransaction,
   createEmptyTransactionDraft,
   deleteCustomerTransaction,
@@ -2711,6 +2712,28 @@ export default function Account() {
   };
 
   /**
+   * Resets the "Зарсан" column on one transfer: every line's `soldQuantity` goes back to zero,
+   * and nothing else about the transfer moves. That counter is a tally the screens read — the
+   * goods stay transferred, the money stays owed, the ledger is not touched — so this undoes a
+   * miscounted tally without disturbing anything the transfer actually did.
+   */
+  const clearTransactionSoldQuantities = (tx: CustomerTransactionRecord) => {
+    const soldUnits = tx.items.reduce((sum, item) => sum + (item.soldQuantity ?? 0), 0);
+    openConfirmModal({
+      title: language === "MN" ? "Зарсан тоог тэглэх" : "Reset the sold count",
+      description:
+        language === "MN"
+          ? `${tx.txNumber} — энэ шилжүүлгийн "Зарсан" баганад бичигдсэн ${soldUnits} ширхэг тэглэгдэнэ. Шилжүүлсэн тоо, үнэ, төлбөр, бүртгэсэн борлуулалт, буцаалт бүгд хэвээр үлдэнэ.`
+          : `${tx.txNumber} — the ${soldUnits} pcs standing in this transfer's "Sold" column go back to zero. Its quantities, prices, payments and any recorded sales or returns are left as they are.`,
+      confirmLabel: copy.delete,
+      destructive: true,
+      onConfirm: async () => {
+        await clearCustomerTransactionSoldQuantities(tx);
+      },
+    });
+  };
+
+  /**
    * Opens the edit modal for one already-recorded seller sale or return, seeded from the same
    * by-product rollup so each line's editable ceiling reflects what is free once this record's
    * own claim on it is set aside — see `SellerTxEditModalLine.maxQuantity`.
@@ -3963,6 +3986,7 @@ export default function Account() {
     buildSellerReturnInput,
     openSellerSaleModal,
     openSellerTxEditModal,
+    clearTransactionSoldQuantities,
     getManageableRoleOptions,
     getUserProviderSummary,
     // modal state

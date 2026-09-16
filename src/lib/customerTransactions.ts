@@ -1210,6 +1210,30 @@ export async function deleteCustomerTransactionPaymentEntry(
   );
 }
 
+/**
+ * Zeroes the per-line `soldQuantity` tracker on a transfer, leaving everything else alone.
+ *
+ * `soldQuantity` says how many of the transferred units the seller has since sold. It is a
+ * counter the screens read and nothing more: stock moves on `quantity`, the money comes from
+ * `totals`, and no journal entry is built from it — so clearing it is a plain field write,
+ * with no ledger reversal, no stock movement and no change to the seller's balance. A
+ * transfer whose tracker is already clear is left untouched.
+ */
+export async function clearCustomerTransactionSoldQuantities(
+  previous: CustomerTransactionRecord,
+): Promise<void> {
+  if (!previous.items.some((item) => (item.soldQuantity ?? 0) !== 0)) {
+    return;
+  }
+  const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, previous.id);
+  await runTransaction(db, async (t) => {
+    t.update(txRef, {
+      items: previous.items.map((item) => ({ ...item, soldQuantity: 0 })),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
 export async function deleteCustomerTransaction(
   previous: CustomerTransactionRecord,
 ): Promise<void> {

@@ -43,6 +43,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
     createEmptyTransactionDraft,
     openSellerSaleModal,
     openSellerTxEditModal,
+    clearTransactionSoldQuantities,
   } = ctx;
 
   // Units moved by the two kinds of record: a delivery hands goods to the seller; a sale
@@ -972,6 +973,21 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                         }}
                                                       >
                                                         <Banknote size={13} />
+                                                      </button>
+                                                    )}
+                                                    {/* Only worth offering while the tally actually holds
+                                                        something — see clearTransactionSoldQuantities. */}
+                                                    {tx.items.some((it: any) => (it.soldQuantity ?? 0) > 0) && (
+                                                      <button
+                                                        type="button"
+                                                        className="admin-icon-btn admin-icon-btn-neutral"
+                                                        title={language === "MN" ? "Зарсан тоог тэглэх" : "Reset the sold count"}
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          clearTransactionSoldQuantities(tx);
+                                                        }}
+                                                      >
+                                                        <RotateCcw size={13} />
                                                       </button>
                                                     )}
                                                     <button

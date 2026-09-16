@@ -14,6 +14,7 @@ vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMoc
 import {
   buildSellerReturnInput,
   buildSellerSaleInput,
+  clearCustomerTransactionSoldQuantities,
   createEmptyTransactionDraft,
   createCustomerTransaction,
   deleteCustomerTransaction,
@@ -381,6 +382,47 @@ describe("deleteCustomerTransaction", () => {
 
     await expect(deleteCustomerTransaction(makeTxRecord())).resolves.toBeUndefined();
     expect(firestoreMock.writes.some((w) => w.op === "delete")).toBe(true);
+  });
+});
+
+// ─── clearCustomerTransactionSoldQuantities ──────────────────────────────────
+
+describe("clearCustomerTransactionSoldQuantities", () => {
+  it("zeroes every line's sold tracker and touches nothing else", async () => {
+    const tx = makeTxRecord({
+      items: [
+        { ...ITEM, soldQuantity: 3 },
+        { ...ITEM, productId: 11, soldQuantity: 5 },
+      ],
+    });
+
+    await clearCustomerTransactionSoldQuantities(tx);
+
+    const written = firestoreMock.lastWriteData("customerTransactions/tx-1") as {
+      items: Array<{ soldQuantity: number; quantity: number }>;
+    };
+    expect(written.items.map((item) => item.soldQuantity)).toEqual([0, 0]);
+    expect(written.items.map((item) => item.quantity)).toEqual([5, 5]);
+    expect(Object.keys(written)).toEqual(["items", "updatedAt"]);
+  });
+
+  it("leaves stock, the seller's balance and the ledger alone", async () => {
+    seedProduct(10, { soldCount: 8 });
+    seedCustomer("cust-1", { totalSales: 10000, totalPaid: 10000, outstandingBalance: 0 });
+
+    await clearCustomerTransactionSoldQuantities(
+      makeTxRecord({ journalEntryId: "entry-1", items: [{ ...ITEM, soldQuantity: 3 }] }),
+    );
+
+    expect(stockFor(10)).toBeUndefined();
+    expect(customerFor()).toBeUndefined();
+    expect(journalEntries()).toHaveLength(0);
+  });
+
+  it("writes nothing when the tracker is already clear", async () => {
+    await clearCustomerTransactionSoldQuantities(makeTxRecord());
+
+    expect(firestoreMock.writes).toHaveLength(0);
   });
 });
 
