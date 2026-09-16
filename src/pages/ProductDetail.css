@@ -157,10 +157,6 @@
   margin-bottom: 1.5rem;
 }
 
-.pd-stock-low {
-  color: #b8860b;
-}
-
 .pd-stock-out {
   color: #8f3321;
 }
@@ -243,10 +239,6 @@
 .variant-stock {
   font-size: var(--fs-xs);
   color: #27ae60;
-}
-
-.variant-stock-low {
-  color: #e67e22;
 }
 
 .variant-stock-out {
@@ -354,25 +346,39 @@
   font-weight: 500;
 }
 
-.pd-accordion details {
+.pd-accordion details,
+.pd-accordion-open {
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.pd-accordion summary {
+.pd-accordion summary,
+.pd-accordion-heading {
   padding: 1rem 0;
   font-family: var(--font-heading);
   font-size: var(--fs-base);
   color: var(--color-heading);
-  cursor: pointer;
-  list-style: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  user-select: none;
   gap: 0.75rem;
 }
 
-.pd-accordion summary svg {
+.pd-accordion summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+/* A section that is always open has nothing to click; its heading only takes
+   the look of the rows that do. */
+.pd-accordion-heading {
+  margin: 0;
+  font-weight: 400;
+  line-height: inherit;
+}
+
+.pd-accordion summary svg,
+.pd-accordion-heading svg {
   flex-shrink: 0;
   color: var(--color-accent);
 }
@@ -381,7 +387,8 @@
   display: none;
 }
 
-.pd-accordion summary::after {
+.pd-accordion summary::after,
+.pd-accordion-heading::after {
   content: '+';
   font-size: var(--fs-md);
   font-weight: 300;
@@ -392,7 +399,13 @@
   content: '\2212';
 }
 
-.pd-accordion details p {
+/* Kept as an invisible spacer so the title sits where every other row's does. */
+.pd-accordion-heading::after {
+  visibility: hidden;
+}
+
+.pd-accordion details p,
+.pd-accordion-open p {
   padding: 0 0 1rem;
   font-size: var(--fs-base);
   line-height: 1.75;
