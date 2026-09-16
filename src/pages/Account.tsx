@@ -2724,6 +2724,7 @@ export default function Account() {
       transferred: number;
       sold: number;
       returned: number;
+      transferUnitPrice: number;
     }>,
   ) => {
     const type = tx.type === "return" ? "return" : "sale";
@@ -2736,12 +2737,23 @@ export default function Account() {
       previous: tx,
       transactionDate: (tx.transactionDate ?? tx.createdAt ?? new Date().toISOString()).slice(0, 10),
       lines: tx.items.map((item) => {
-        const agg = productAggList.find(
+        // The rollup holds one row per product, variant AND transfer price, so the ceiling
+        // comes from the row this record was priced at. A record whose price matches no row
+        // — priced before the rows were split, or against a transfer edited since — falls
+        // back to every price row of that product and variant combined, which is the looser
+        // ceiling it has always had.
+        const variantRows = productAggList.filter(
           (p) => p.productId === item.productId && (p.variant ?? null) === (item.variant ?? null),
         );
-        const otherSold = (agg?.sold ?? 0) - (type === "sale" ? item.quantity : 0);
-        const otherReturned = (agg?.returned ?? 0) - (type === "return" ? item.quantity : 0);
-        const transferred = agg?.transferred ?? item.quantity;
+        const pricedRows = variantRows.filter(
+          (p) => p.transferUnitPrice === Math.round(Number(item.unitPrice) || 0),
+        );
+        const rows = pricedRows.length > 0 ? pricedRows : variantRows;
+        const sum = (pick: (p: (typeof rows)[number]) => number) =>
+          rows.reduce((total, row) => total + pick(row), 0);
+        const otherSold = sum((p) => p.sold) - (type === "sale" ? item.quantity : 0);
+        const otherReturned = sum((p) => p.returned) - (type === "return" ? item.quantity : 0);
+        const transferred = rows.length > 0 ? sum((p) => p.transferred) : item.quantity;
         const maxQuantity = Math.max(item.quantity, transferred - otherSold - otherReturned);
         return {
           productId: item.productId,

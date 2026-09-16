@@ -44,6 +44,7 @@ function makeRow(overrides: Partial<SellerProductRow> = {}): SellerProductRow {
     transferred: 120,
     sold: 90,
     returned: 0,
+    unitPrice: 19_167,
     totalAmount: 2_300_000,
     ...overrides,
   };
@@ -87,6 +88,7 @@ describe("buildSellerProductReportCsv", () => {
           transferred: 120,
           sold: 90,
           returned: 10,
+          unitPrice: 19_167.4,
           totalAmount: 2_300_000.6,
         }),
       ],
@@ -94,21 +96,21 @@ describe("buildSellerProductReportCsv", () => {
     );
     const rows = csv.slice(1).split("\r\n");
 
-    expect(rows).toContain("P-1 - Их,500мл,120,90,10,20,2300001");
+    expect(rows).toContain("P-1 - Их,500мл,120,90,10,20,19167,2300001");
   });
 
   it("totals the columns and states the outstanding balance", () => {
     const csv = buildSellerProductReportCsv(
       makeCustomer({ outstandingBalance: 1_250_000 }),
       [
-        makeRow({ transferred: 120, sold: 90, returned: 10, totalAmount: 2_300_000 }),
-        makeRow({ transferred: 40, sold: 40, returned: 0, totalAmount: 900_000 }),
+        makeRow({ transferred: 120, sold: 90, returned: 10, unitPrice: 19_167, totalAmount: 2_300_000 }),
+        makeRow({ transferred: 40, sold: 40, returned: 0, unitPrice: 22_500, totalAmount: 900_000 }),
       ],
       AT,
     );
     const rows = csv.slice(1).split("\r\n");
 
-    expect(rows).toContain("Нийт,,160,130,10,20,3200000");
+    expect(rows).toContain("Нийт,,160,130,10,20,,3200000");
     expect(rows).toContain("Шилжүүлсэн бараа материалын нийт дүн (₮),3200000");
     expect(rows).toContain("Төлбөрийн үлдэгдэл нийт дүн (₮),1250000");
   });

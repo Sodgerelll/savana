@@ -541,10 +541,9 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             sold: number;
                             returned: number;
                             /** Unit price exactly as it was typed on the transfer that moved these
-                             * goods — the latest one when the product came over on several. Shown
-                             * as "Нэгж үнэ" and used to price a new sale/return, so both read back
-                             * the number the operator entered instead of a value-weighted average
-                             * that no single transfer ever carried. */
+                             * goods. It is part of the row's identity (see `aggKey`), so every unit
+                             * on the row was charged this one price — shown as "Нэгж үнэ" and used
+                             * to price a new sale/return. */
                             transferUnitPrice: number;
                             /** Gross value of what was transferred — the transfer price, unaffected by
                              * any payment. Used to price a new sale/return, never shown as a total. */
@@ -564,18 +563,44 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                              * own "Буцаасан дүн" instead of a blend of both. */
                             returnCredit: number;
                           }>();
+                          // A row is one product, one variant, one price. The same product
+                          // transferred twice at different prices is two separate stocks to sell
+                          // down, and merging them would price the row at an average the seller was
+                          // never charged — so the price belongs to the row's identity.
+                          const aggKey = (it: any) =>
+                            `${it.productId}::${it.variant ?? ""}::${Math.round(Number(it.unitPrice) || 0)}`;
+                          // A sale or return normally carries one of those prices exactly, because
+                          // the popup that records it is seeded from these very rows. When it does
+                          // not — a record made before the rows were split by price, or a transfer
+                          // whose price was edited since — it settles against whichever row of the
+                          // same product and variant has the most left, rather than opening a row
+                          // that shows goods sold with no transfer behind them.
+                          const settleKey = (it: any) => {
+                            const exact = aggKey(it);
+                            if (productAgg.has(exact)) return exact;
+                            const prefix = `${it.productId}::${it.variant ?? ""}::`;
+                            let bestKey: string | null = null;
+                            let bestRemaining = -Infinity;
+                            productAgg.forEach((agg, key) => {
+                              if (!key.startsWith(prefix)) return;
+                              const remaining = agg.transferred - agg.sold - agg.returned;
+                              if (remaining > bestRemaining) {
+                                bestRemaining = remaining;
+                                bestKey = key;
+                              }
+                            });
+                            return bestKey ?? exact;
+                          };
                           // Transferred quantity and value come from deliveries only. A delivery's
                           // own payment is prorated across its lines by value, so a partially paid
                           // delivery doesn't leave every one of its products looking fully unpaid.
-                          // `customerDeliveryTxs` runs newest first, so the first delivery to
-                          // mention a product is the one whose entered unit price the row keeps.
                           customerDeliveryTxs.forEach((tx: any) => {
                             const outstandingRatio =
                               tx.totals.subtotal > 0
                                 ? Math.max(0, (tx.totals.grandTotal - tx.payment.paidAmount) / tx.totals.subtotal)
                                 : 0;
                             tx.items.forEach((it: any) => {
-                              const key = `${it.productId}::${it.variant ?? ""}`;
+                              const key = aggKey(it);
                               const outstandingAmount = it.lineTotal * outstandingRatio;
                               const existing = productAgg.get(key);
                               if (existing) {
@@ -612,7 +637,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                 ? (tx.totals.discount + tx.payment.paidAmount) / tx.totals.subtotal
                                 : 0;
                             tx.items.forEach((it: any) => {
-                              const key = `${it.productId}::${it.variant ?? ""}`;
+                              const key = settleKey(it);
                               const settledAmount = it.lineTotal * settleRatio;
                               const existing = productAgg.get(key);
                               if (existing) {
@@ -645,7 +670,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           // off the receivable for the products it covers.
                           customerReturnTxs.forEach((tx: any) => {
                             tx.items.forEach((it: any) => {
-                              const key = `${it.productId}::${it.variant ?? ""}`;
+                              const key = settleKey(it);
                               const existing = productAgg.get(key);
                               if (existing) {
                                 existing.returned += it.quantity;
@@ -685,8 +710,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             let creditTotal = 0;
                             let returnedTotal = 0;
                             tx.items.forEach((it: any) => {
-                              const key = `${it.productId}::${it.variant ?? ""}`;
-                              const agg = productAgg.get(key);
+                              const agg = productAgg.get(aggKey(it));
                               const baselineOutstanding = it.lineTotal * outstandingRatio;
                               baselineTotal += baselineOutstanding;
                               if (!agg || agg.totalAmount <= 0) return;
@@ -705,10 +729,15 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                           // Sorted by product code (#001, #002, ...) — shared by the
                           // Бүтээгдэхүүнээр table, the Шилжүүлгээр item grids and the
                           // Борлуулалт / Буцаалт бүртгэх popup, so the same product lands on
-                          // the same row everywhere.
-                          const productAggList = Array.from(productAgg.values()).sort((a, b) =>
-                            getProductCode(a.productId).localeCompare(getProductCode(b.productId)),
-                          );
+                          // the same row everywhere. One product's own rows then run by variant
+                          // and by price, cheapest first, so its prices read as a list.
+                          const productAggList = Array.from(productAgg.values()).sort((a, b) => {
+                            const byCode = getProductCode(a.productId).localeCompare(getProductCode(b.productId));
+                            if (byCode !== 0) return byCode;
+                            const byVariant = (a.variant ?? "").localeCompare(b.variant ?? "");
+                            if (byVariant !== 0) return byVariant;
+                            return a.transferUnitPrice - b.transferUnitPrice;
+                          });
                           const customerSoldUnits =
                             sumItems(customerDeliveryTxs, (it) => it.soldQuantity) +
                             sumItems(customerSaleTxs, (it) => it.quantity);
@@ -1236,6 +1265,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                                   transferred: p.transferred,
                                                   sold: p.sold,
                                                   returned: p.returned,
+                                                  unitPrice: p.transferUnitPrice,
                                                   totalAmount: p.totalAmount,
                                                 })),
                                               )
@@ -1269,7 +1299,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                             </thead>
                                             <tbody>
                                               {productAggList.map((p, idx) => (
-                                                <tr key={`${p.productId}-${p.variant ?? ""}`}>
+                                                <tr key={`${p.productId}-${p.variant ?? ""}-${p.transferUnitPrice}`}>
                                                   <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
                                                   <td style={{ textAlign: "left" }}>{getProductLabel(p.productId, p.productName)}</td>
                                                   <td style={{ textAlign: "center" }}>{p.variant || "—"}</td>

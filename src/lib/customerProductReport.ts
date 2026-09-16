@@ -19,6 +19,11 @@ export interface SellerProductRow {
   transferred: number;
   sold: number;
   returned: number;
+  /**
+   * The price these units were transferred at. A product moved at two different prices is
+   * two rows on the tab and two rows here, and this is what tells them apart.
+   */
+  unitPrice: number;
   totalAmount: number;
 }
 
@@ -69,7 +74,7 @@ export function buildSellerProductReportCsv(
     row(["Хаяг", addressText(customer)]),
     row(["Тайлан гаргасан огноо", reportStamp(now)]),
     row([]),
-    row(["Бүтээгдэхүүн", "Хувилбар", "Шилжүүлсэн (ш)", "Зарсан (ш)", "Буцаасан (ш)", "Үлдэгдэл (ш)", "Нийт дүн (₮)"]),
+    row(["Бүтээгдэхүүн", "Хувилбар", "Шилжүүлсэн (ш)", "Зарсан (ш)", "Буцаасан (ш)", "Үлдэгдэл (ш)", "Нэгж үнэ (₮)", "Нийт дүн (₮)"]),
     ...rows.map((p) =>
       row([
         p.label,
@@ -78,10 +83,13 @@ export function buildSellerProductReportCsv(
         p.sold,
         p.returned,
         p.transferred - p.sold - p.returned,
+        Math.round(p.unitPrice),
         Math.round(p.totalAmount),
       ]),
     ),
-    row(["Нийт", "", totalTransferred, totalSold, totalReturned, totalRemaining, Math.round(totalAmount)]),
+    // No total for the unit price column: summing prices would read as money that was
+    // never charged, so the cell is left empty.
+    row(["Нийт", "", totalTransferred, totalSold, totalReturned, totalRemaining, "", Math.round(totalAmount)]),
     row([]),
     row(["Шилжүүлсэн бараа материалын нийт дүн (₮)", Math.round(totalAmount)]),
     row(["Төлбөрийн үлдэгдэл нийт дүн (₮)", Math.round(customer.outstandingBalance)]),

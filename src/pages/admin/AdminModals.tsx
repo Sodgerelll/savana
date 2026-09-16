@@ -4359,13 +4359,6 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 },
               });
             };
-            const savedPerUnit = transactionModal.draft.items.reduce(
-              (sum: number, item: any) =>
-                sum +
-                Math.max(0, (Number(item.originalUnitPrice) || 0) - (Number(item.unitPrice) || 0)) *
-                  (Number(item.quantity) || 0),
-              0,
-            );
             return (
               <label
                 className="admin-field"
@@ -4382,11 +4375,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                   onChange={(event: any) => applyUnitDiscount(Number(event.target.value) || 0)}
                 />
                 <small style={{ color: "#8a8477" }}>
-                  {savedPerUnit > 0
-                    ? `${language === "MN" ? "Хасагдсан" : "Deducted"}: −${formatStorePrice(savedPerUnit)}`
-                    : language === "MN"
-                      ? "Жагсаалтын үнээс хасагдана"
-                      : "Taken off the list price"}
+                  {language === "MN" ? "Жагсаалтын үнээс хасагдана" : "Taken off the list price"}
                 </small>
               </label>
             );
@@ -4752,6 +4741,16 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               type === "percent" ? Math.round((txSubtotal * Math.min(100, value)) / 100) : value,
             );
           const txDiscountAmount = toAmount(txDiscountType, txDiscountValue);
+          // What the per-unit percentage took off these goods, in tugriks: every line's gap
+          // between its list price and the price actually being charged. Shown beside the
+          // totals rather than inside them — the reduced prices are already in `txSubtotal`.
+          const txUnitDiscountAmount = transactionModal.draft.items.reduce(
+            (sum: number, item: any) =>
+              sum +
+              Math.max(0, (Number(item.originalUnitPrice) || 0) - (Number(item.unitPrice) || 0)) *
+                (Number(item.quantity) || 0),
+            0,
+          );
           const txVatMode = normalizeVatMode(transactionModal.draft.totals.vatMode);
           const txNetTotal = Math.max(0, txSubtotal - txDiscountAmount);
           const txVatAmount = calculateVat(txNetTotal, txVatMode);
@@ -4839,6 +4838,17 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                   </small>
                 )}
               </label>
+              {txUnitDiscountAmount > 0 && (
+                <label className="admin-field">
+                  <span>{language === "MN" ? "Хасагдсан" : "Deducted"}</span>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`−${formatStorePrice(txUnitDiscountAmount)}`}
+                    style={{ background: "#f3f2ee", color: "#b14141", fontWeight: 700 }}
+                  />
+                </label>
+              )}
               <label className="admin-field">
                 <span>{copy.txGrandTotal}</span>
                 <input type="text" value={formatStorePrice(txGrandTotal)} disabled />
@@ -5335,7 +5345,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 const liveRemaining = remaining - soldNow - returnNow;
                 const activeQtyStyle = { width: "64px", textAlign: "center" as const, background: "#fde047" };
                 return (
-                  <tr key={`${l.productId}-${l.variant ?? ""}`}>
+                  <tr key={`${l.productId}-${l.variant ?? ""}-${l.unitPrice}`}>
                     <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
                     <td>{getProductLabel(l.productId, l.productName)}</td>
                     <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{l.variant || "—"}</td>
@@ -5709,7 +5719,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               {lines.map((l: any, idx: number) => {
                 const quantity = Math.max(0, Math.min(l.maxQuantity, Math.trunc(l.quantity || 0)));
                 return (
-                  <tr key={`${l.productId}-${l.variant ?? ""}`}>
+                  <tr key={`${l.productId}-${l.variant ?? ""}-${l.unitPrice}`}>
                     <td style={{ textAlign: "center", color: "#8a8477", fontSize: "0.75rem" }}>{idx + 1}</td>
                     <td>{getProductLabel(l.productId, l.productName)}</td>
                     <td>{l.variant || "—"}</td>
