@@ -4635,7 +4635,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                         <input
                           type="number"
                           min={0}
-                          value={item.unitPrice}
+                          value={item.unitPrice === 0 ? "" : item.unitPrice}
                           disabled={transactionModal.mode === "edit-limited"}
                           onChange={(event: any)=> {
                             const unitPrice = Math.max(0, Number(event.target.value) || 0);
@@ -4791,7 +4791,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     type="number"
                     min={0}
                     max={txDiscountType === "percent" ? 100 : undefined}
-                    value={txDiscountValue}
+                    value={txDiscountValue === 0 ? "" : txDiscountValue}
                     style={{ flex: 1, minWidth: 0 }}
                     onChange={(event: any)=> {
                       const raw = Math.max(0, Number(event.target.value) || 0);
@@ -5365,7 +5365,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           type="number"
                           min={0}
                           max={soldMax}
-                          value={soldNow}
+                          value={soldNow === 0 ? "" : soldNow}
                           onChange={(event: any) => patchSoldNow(idx, Math.trunc(Number(event.target.value) || 0))}
                           style={soldNow > 0 ? activeQtyStyle : { width: "64px", textAlign: "center" }}
                         />
@@ -5394,7 +5394,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           type="number"
                           min={0}
                           max={returnMax}
-                          value={returnNow}
+                          value={returnNow === 0 ? "" : returnNow}
                           onChange={(event: any) => patchReturnNow(idx, Math.trunc(Number(event.target.value) || 0))}
                           style={returnNow > 0 ? activeQtyStyle : { width: "64px", textAlign: "center" }}
                         />
