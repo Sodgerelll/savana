@@ -1582,7 +1582,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           <input
             type="number"
             step="0.01"
-            value={productModal.draft.price}
+            value={productModal.draft.price === 0 ? "" : productModal.draft.price}
             onChange={(event: any)=>
               setProductModal({
                 ...productModal,
@@ -1600,7 +1600,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             type="number"
             step="1"
             min={0}
-            value={productModal.draft.costPrice ?? 0}
+            value={productModal.draft.costPrice || ""}
             onChange={(event: any)=>
               setProductModal({
                 ...productModal,
@@ -1619,7 +1619,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             type="number"
             step="1"
             min={0}
-            value={productModal.draft.wholesalePrice ?? 0}
+            value={productModal.draft.wholesalePrice || ""}
             onChange={(event: any)=>
               setProductModal({
                 ...productModal,
@@ -1638,7 +1638,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             type="number"
             step="1"
             min={0}
-            value={productModal.draft.minStockLevel ?? 0}
+            value={productModal.draft.minStockLevel || ""}
             onChange={(event: any)=>
               setProductModal({
                 ...productModal,
@@ -1880,7 +1880,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 <input
                   type="number"
                   placeholder={copy.stockRemaining}
-                  value={Math.max(0, (variant.quantity || 0) - (variant.soldCount ?? 0))}
+                  value={Math.max(0, (variant.quantity || 0) - (variant.soldCount ?? 0)) || ""}
                   onChange={(event: any)=> {
                     const next = [...(productModal.draft.variants ?? [])];
                     const nextRemaining = Number(event.target.value) || 0;
@@ -1950,7 +1950,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                     <small>{copy.stockRemaining}</small>
                     <input
                       type="number"
-                      value={remaining}
+                      value={remaining || ""}
                       onChange={(event: any)=> {
                         const nextRemaining = Number(event.target.value) || 0;
                         setProductModal({
