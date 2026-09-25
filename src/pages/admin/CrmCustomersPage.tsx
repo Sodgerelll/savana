@@ -760,10 +760,17 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                             (s: number, tx: any) => s + tx.totals.grandTotal,
                             0,
                           );
-                          const customerSoldAmount = customerSaleTxs.reduce(
-                            (s: number, tx: any) => s + tx.totals.grandTotal,
-                            0,
+                          // Units marked sold straight on a delivery line (the legacy "Зарсан"
+                          // tracker) are already in the sold count and the Excel export, but no
+                          // sale record carries their money — valued here at the transfer price
+                          // so a seller whose sales went in that way doesn't read as 0₮ sold.
+                          const customerLegacySoldAmount = sumItems(
+                            customerDeliveryTxs,
+                            (it) => (it.soldQuantity || 0) * (Number(it.unitPrice) || 0),
                           );
+                          const customerSoldAmount =
+                            customerSaleTxs.reduce((s: number, tx: any) => s + tx.totals.grandTotal, 0) +
+                            customerLegacySoldAmount;
                           const customerReturnedAmount = customerReturnTxs.reduce(
                             (s: number, tx: any) => s + tx.totals.grandTotal,
                             0,
@@ -820,7 +827,7 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
                                       formatStorePrice(customerReturnedAmount),
                                     )}
                                     {dashboardCard(
-                                      language === "MN" ? "Төлсөн дүн" : "Paid amount",
+                                      language === "MN" ? "Борлуулсан дүн" : "Sold amount",
                                       formatStorePrice(customerSoldAmount),
                                     )}
                                     {dashboardCard(
@@ -1425,11 +1432,11 @@ export default function CrmCustomersPage({ ctx }: { ctx: AdminCtx }) {
 
                                   {/* Tab: Борлуулалт */}
                                   {expandedCustomerTab === "sales" && (() => {
-                                    const totalSoldQty = customerSaleTxs.reduce(
-                                      (s: number, tx: any) => s + tx.items.reduce((si: number, it: any) => si + it.quantity, 0),
-                                      0,
-                                    );
-                                    const totalSoldAmount = customerSaleTxs.reduce((s: number, tx: any) => s + tx.totals.grandTotal, 0);
+                                    // Same figures as the dashboard: sale records plus the units
+                                    // marked sold on delivery lines, so this tab agrees with the
+                                    // "Зарсан" column and the Excel export.
+                                    const totalSoldQty = customerSoldUnits;
+                                    const totalSoldAmount = customerSoldAmount;
                                     const totalSoldPaid = customerSaleTxs.reduce((s: number, tx: any) => s + tx.payment.paidAmount, 0);
                                     return (
                                       <div className="admin-product-expand-section">
