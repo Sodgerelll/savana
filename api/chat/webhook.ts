@@ -18,6 +18,7 @@ import {
   appendMessage,
   botShouldStaySilent,
   ensureConversation,
+  fillConversationContact,
   readRecentMessages,
   setConversationStatus,
   setConversationTopic,
@@ -27,6 +28,7 @@ import {
   fetchImageAsBase64,
   firstImageAttachmentUrl,
   getRecentPosts,
+  getParticipantName,
   getUserName,
   sendButtons,
   sendCarousel,
@@ -484,13 +486,21 @@ async function replyToEvent(
   const postsPromise = getRecentPosts(token);
   void postsPromise.catch(() => {});
 
-  const customerName = await getUserName(token, senderId);
   const conversation = await ensureConversation(db, {
     channel,
     pageId,
     externalUserId: senderId,
-    customerName,
   });
+
+  // Looked up only while the thread has no name — once it has one, Graph is
+  // not asked again on every message.
+  if (!conversation.customerName) {
+    const customerName = await resolveCustomerName(token, channel, pageId, senderId);
+    if (customerName) {
+      await fillConversationContact(db, conversation.id, { customerName });
+      conversation.customerName = customerName;
+    }
+  }
 
   // Record what the customer sent before anything can fail, so the admin sees
   // the message even if the reply never gets generated. Alongside it, because
@@ -539,8 +549,19 @@ async function replyToEvent(
       imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
       productUrlFor: (product) => storefrontUrl(`/product/${product.id}`) || undefined,
       lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
-      placeOrder: (details) =>
-        placeChatOrder(db, storefront, { ...conversation, channel, externalUserId: senderId }, details),
+      placeOrder: async (details) => {
+        const order = await placeChatOrder(
+          db,
+          storefront,
+          { ...conversation, channel, externalUserId: senderId },
+          details,
+        );
+        await fillConversationContact(db, conversation.id, {
+          customerName: details.customerName,
+          customerPhone: details.phone,
+        });
+        return order;
+      },
       // Read fresh each turn rather than carried in the conversation: the
       // customer may have added something from a carousel button since.
       basket: async () => {
@@ -734,6 +755,23 @@ async function replyToEvent(
 }
 
 /**
+ * The customer's name: their profile first, then the page's inbox, where
+ * Messenger lists the name even when the profile endpoint is refused.
+ */
+async function resolveCustomerName(
+  token: string,
+  channel: ChatChannel,
+  pageId: string,
+  senderId: string,
+): Promise<string | null> {
+  const fromProfile = await getUserName(token, senderId, channel);
+  if (fromProfile || channel !== 'facebook') {
+    return fromProfile;
+  }
+  return getParticipantName(token, pageId, senderId);
+}
+
+/**
  * Appends the "name, phone, address" question to the last outcome that wants
  * it. Two products named in one message add two lines to the order and need
  * the details asked once, which is how a person would answer.
@@ -758,6 +796,14 @@ async function captureContactDetails(db: any, conversationId: string, text: stri
   if (!open) {
     return;
   }
+
+  // The thread gets them too, so the inbox shows who wrote in. Only while an
+  // order is open, where a name beside a phone number is an answer to
+  // «нэр, утсаа үлдээнэ үү» rather than a greeting that happens to precede one.
+  await fillConversationContact(db, conversationId, {
+    customerName: extractName(text),
+    customerPhone: extractPhone(text),
+  });
 
   const patch: Record<string, unknown> = {};
   const currentPhone = String(open.data.customerPhone ?? '');

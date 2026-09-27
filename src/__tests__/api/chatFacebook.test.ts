@@ -6,6 +6,7 @@ import {
   forgetRecentPosts,
   getPostContext,
   getRecentPosts,
+  getParticipantName,
   getUserName,
   sendCarousel,
   sendQuickReplies,
@@ -619,6 +620,20 @@ describe("getUserName", () => {
     await expect(getUserName(TOKEN, "PSID-1")).resolves.toBeNull();
   });
 
+  it("asks Instagram only for the fields it has", async () => {
+    responder = () => jsonResponse({ name: "Сарнай", username: "sarnai" });
+
+    await expect(getUserName(TOKEN, "IGSID-1", "instagram")).resolves.toBe("Сарнай");
+    expect(calls[0].url).toContain("fields=name,username");
+    expect(calls[0].url).not.toContain("first_name");
+  });
+
+  it("falls back to the Instagram handle when the name is blank", async () => {
+    responder = () => jsonResponse({ name: "", username: "sarnai.mn" });
+
+    await expect(getUserName(TOKEN, "IGSID-1", "instagram")).resolves.toBe("@sarnai.mn");
+  });
+
   it("keeps the token out of the URL", async () => {
     responder = () => jsonResponse({ name: "Бат" });
 
@@ -663,5 +678,41 @@ describe("applyMessengerProfile", () => {
     responder = () => jsonResponse({ error: { message: "Requires pages_messaging" } }, 403);
 
     await expect(applyMessengerProfile(TOKEN, {})).rejects.toThrow(/pages_messaging/);
+  });
+});
+
+describe("getParticipantName", () => {
+  it("reads the customer's name from the page's conversation with them", async () => {
+    responder = () =>
+      jsonResponse({
+        data: [
+          {
+            participants: {
+              data: [
+                { id: "PAGE-1", name: "Savana" },
+                { id: "PSID-1", name: "Сарангэрэл Бат" },
+              ],
+            },
+          },
+        ],
+      });
+
+    await expect(getParticipantName(TOKEN, "PAGE-1", "PSID-1")).resolves.toBe("Сарангэрэл Бат");
+    expect(calls[0].url).toContain("/PAGE-1/conversations");
+    expect(calls[0].url).toContain("user_id=PSID-1");
+    expect(calls[0].url).not.toContain(TOKEN);
+  });
+
+  it("never returns the page's own name", async () => {
+    responder = () =>
+      jsonResponse({ data: [{ participants: { data: [{ id: "PAGE-1", name: "Savana" }] } }] });
+
+    await expect(getParticipantName(TOKEN, "PAGE-1", "PSID-1")).resolves.toBeNull();
+  });
+
+  it("returns null when Graph refuses", async () => {
+    responder = () => jsonResponse({ error: { code: 10, message: "permission" } }, 403);
+
+    await expect(getParticipantName(TOKEN, "PAGE-1", "PSID-1")).resolves.toBeNull();
   });
 });

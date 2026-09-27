@@ -9,6 +9,7 @@ import {
   botShouldStaySilent,
   conversationIdFor,
   ensureConversation,
+  fillConversationContact,
   ADMIN_HANDOVER_TIMEOUT_MS,
   HANDOVER_TIMEOUT_MS,
   readRecentMessages,
@@ -370,5 +371,33 @@ describe("botShouldStaySilent", () => {
 
   it("answers on a resolved conversation the customer reopens", () => {
     expect(botShouldStaySilent(ref({ status: "resolved" }))).toBe(false);
+  });
+});
+
+describe("fillConversationContact", () => {
+  const key = "chat_conversations/w_site_S1";
+
+  it("puts a name and phone on a thread that has neither", async () => {
+    const { db, store } = fakeDb({ [key]: { customerName: null, customerPhone: null } });
+
+    await fillConversationContact(db, "w_site_S1", { customerName: " Ганбат ", customerPhone: "99119911" });
+
+    expect(store.get(key)).toMatchObject({ customerName: "Ганбат", customerPhone: "99119911" });
+  });
+
+  it("never overwrites what the thread already has", async () => {
+    const { db, store } = fakeDb({ [key]: { customerName: "Батбаяр", customerPhone: "88001122" } });
+
+    await fillConversationContact(db, "w_site_S1", { customerName: "Өөр", customerPhone: "99119911" });
+
+    expect(store.get(key)).toMatchObject({ customerName: "Батбаяр", customerPhone: "88001122" });
+  });
+
+  it("does nothing for a thread that does not exist", async () => {
+    const { db, store } = fakeDb();
+
+    await fillConversationContact(db, "missing", { customerName: "Бат" });
+
+    expect(store.has("chat_conversations/missing")).toBe(false);
   });
 });

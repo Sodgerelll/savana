@@ -268,6 +268,41 @@ export async function setConversationStatus(
 }
 
 /**
+ * Puts the name and phone a customer typed onto the thread itself.
+ *
+ * The profile lookup is the only other source of a name, and the web widget has
+ * no profile at all — so without this a widget thread stayed «Нэргүй харилцагч»
+ * even after the customer had written their name into an order. Only fills a
+ * blank: a profile name, or a detail given earlier, is never overwritten.
+ */
+export async function fillConversationContact(
+  db: any,
+  conversationId: string,
+  contact: { customerName?: string | null; customerPhone?: string | null },
+): Promise<void> {
+  const name = String(contact.customerName ?? '').trim();
+  const phone = String(contact.customerPhone ?? '').trim();
+  if (!name && !phone) {
+    return;
+  }
+
+  const ref = db.collection(CONVERSATIONS_COLLECTION).doc(conversationId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) {
+    return;
+  }
+
+  const data = snapshot.data() ?? {};
+  const patch: Record<string, unknown> = {};
+  if (name && !String(data.customerName ?? '').trim()) patch.customerName = name;
+  if (phone && !String(data.customerPhone ?? '').trim()) patch.customerPhone = phone;
+
+  if (Object.keys(patch).length > 0) {
+    await ref.update({ ...patch, updatedAt: new Date() });
+  }
+}
+
+/**
  * Whether the bot should stay quiet on this thread.
  *
  * It steps aside while a human is handling the conversation, and comes back

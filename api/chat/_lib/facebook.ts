@@ -502,26 +502,110 @@ export async function getPageName(token: string): Promise<string | null> {
   }
 }
 
+/** Profile-lookup failures already logged by this instance, so one cause is one log line. */
+const loggedProfileFailures = new Set<string>();
+
 /**
  * Looks up the sender's display name so an admin sees a person, not a PSID.
- * Instagram and privacy-restricted profiles can refuse this, hence the null.
+ *
+ * The two channels expose different profile fields. Messenger has first/last
+ * name; Instagram has `name` and `username` and rejects the whole request when
+ * asked for `first_name` — which is how every Instagram thread used to end up
+ * nameless. Many Instagram accounts leave `name` blank, so the handle stands in.
+ *
+ * Privacy-restricted profiles and missing app permissions can still refuse
+ * this, hence the null; the refusal is logged so the cause shows in the logs
+ * instead of only as an unnamed thread.
  */
-export async function getUserName(token: string, userId: string): Promise<string | null> {
+export async function getUserName(
+  token: string,
+  userId: string,
+  channel: string = 'facebook',
+): Promise<string | null> {
   if (!token || !userId) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const fields = channel === 'instagram' ? 'name,username' : 'name,first_name,last_name';
+
+  try {
+    const res = await fetch(`${GRAPH_URL}/${userId}?fields=${fields}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as any;
+      const reason = `${channel} ${res.status} ${body?.error?.code ?? ''} ${body?.error?.message ?? ''}`.trim();
+      if (!loggedProfileFailures.has(reason)) {
+        loggedProfileFailures.add(reason);
+        console.warn(`[chat/facebook] profile name lookup refused: ${reason}`);
+      }
+      return null;
+    }
+
+    const data = (await res.json()) as any;
+    const name =
+      data?.name ||
+      [data?.first_name, data?.last_name].filter(Boolean).join(' ') ||
+      (data?.username ? `@${data.username}` : '');
+    return name ? String(name) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The customer's name as the page's own inbox shows it.
+ *
+ * The profile endpoint above needs Meta's "Business Asset User Profile Access",
+ * and without it Graph refuses every Messenger lookup — every Facebook thread
+ * then reads «Нэргүй харилцагч». The page's conversation with that person needs
+ * only the permissions the bot already has (the history import reads the same
+ * list), and its participants carry the name. So this is the fallback.
+ *
+ * Messenger only: an Instagram thread's page id is the IG account, which this
+ * endpoint does not take.
+ */
+export async function getParticipantName(
+  token: string,
+  pageId: string,
+  userId: string,
+): Promise<string | null> {
+  if (!token || !pageId || !userId) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${GRAPH_URL}/${userId}?fields=name,first_name,last_name`, {
+    const url =
+      `${GRAPH_URL}/${encodeURIComponent(pageId)}/conversations` +
+      `?platform=messenger&user_id=${encodeURIComponent(userId)}&fields=participants`;
+    const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as any;
+      const reason = `participants ${res.status} ${body?.error?.code ?? ''} ${body?.error?.message ?? ''}`.trim();
+      if (!loggedProfileFailures.has(reason)) {
+        loggedProfileFailures.add(reason);
+        console.warn(`[chat/facebook] participant name lookup refused: ${reason}`);
+      }
+      return null;
+    }
 
     const data = (await res.json()) as any;
-    const name = data?.name ?? [data?.first_name, data?.last_name].filter(Boolean).join(' ');
-    return name ? String(name) : null;
+    for (const conversation of Array.isArray(data?.data) ? data.data : []) {
+      const participants = conversation?.participants?.data;
+      const customer = (Array.isArray(participants) ? participants : []).find(
+        (person: any) => String(person?.id ?? '') === userId,
+      );
+      const name = String(customer?.name ?? '').trim();
+      if (name) return name;
+    }
+    return null;
   } catch {
     return null;
   } finally {

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   sendQuickReplies: vi.fn(),
   sendCarousel: vi.fn(),
   getUserName: vi.fn(),
+  getParticipantName: vi.fn(),
   replyToComment: vi.fn(),
   sendPrivateReply: vi.fn(),
   fetchImageAsBase64: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("../../../api/chat/_lib/facebook.js", async () => {
     sendQuickReplies: mocks.sendQuickReplies,
     sendCarousel: mocks.sendCarousel,
     getUserName: mocks.getUserName,
+    getParticipantName: mocks.getParticipantName,
     replyToComment: mocks.replyToComment,
     sendPrivateReply: mocks.sendPrivateReply,
     fetchImageAsBase64: mocks.fetchImageAsBase64,
@@ -257,6 +259,7 @@ beforeEach(() => {
   fake = createFakeDb({ "chat_settings/main": activeSettings() });
   mocks.getAdminFirestore.mockReturnValue(Promise.resolve(fake.db));
   mocks.getUserName.mockResolvedValue("Батбаяр");
+  mocks.getParticipantName.mockResolvedValue(null);
   mocks.callGeminiAgent.mockResolvedValue({ text: "Тийм ээ, байгаа.", functionCall: null, functionCalls: [] });
   mocks.callGemini.mockResolvedValue("Энэ бол манай хужирт саван.");
   mocks.fetchImageAsBase64.mockResolvedValue({ base64: "AAAA", mimeType: "image/jpeg" });
@@ -1440,6 +1443,26 @@ describe("conversation records", () => {
     await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
 
     expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")?.customerName).toBe("Батбаяр");
+  });
+
+  it("falls back to the page inbox when the profile is refused", async () => {
+    mocks.getUserName.mockResolvedValue(null);
+    mocks.getParticipantName.mockResolvedValue("Сарангэрэл");
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("сайн уу") }, res);
+
+    expect(mocks.getParticipantName).toHaveBeenCalledWith(expect.any(String), "PAGE-1", "PSID-1");
+    expect(fake.store.get("chat_conversations/fb_PAGE-1_PSID-1")?.customerName).toBe("Сарангэрэл");
+  });
+
+  it("does not look the name up again once the thread has one", async () => {
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: messageEvent("сайн уу", "m_1") }, res);
+    await handler({ method: "POST", body: messageEvent("баярлалаа", "m_2") }, res);
+
+    expect(mocks.getUserName).toHaveBeenCalledTimes(1);
   });
 
   it("still answers when the name lookup is refused", async () => {

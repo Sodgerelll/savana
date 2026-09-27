@@ -1,5 +1,10 @@
 // POST /api/chat/importHistory
 //
+// With `{ mode: "names" }` it instead fills in the customer's name on every
+// Facebook thread stored without one (see _lib/customerNames.ts). Same route
+// because it is the same kind of job — an admin-triggered read of the page's
+// inbox — and a separate one would cost a serverless function of its own.
+//
 // Builds the knowledge base out of the page's own Messenger history: what
 // customers actually asked, and what the shop actually answered. Admin-only,
 // and it never touches the FAQs already in place — the generated entries land
@@ -8,6 +13,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { requirePrivilegedCaller } from './_lib/auth.js';
+import { backfillFacebookNames } from './_lib/customerNames.js';
 import { callGemini, GeminiError, geminiErrorToUserMessage } from './_lib/gemini.js';
 import {
   FAQ_FROM_HISTORY_INSTRUCTION,
@@ -42,8 +48,9 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
+  const namesOnly = req.body?.mode === 'names';
   const year = parseYear(req.body?.year);
-  if (!year) {
+  if (!namesOnly && !year) {
     res.status(400).json({ error: 'Он буруу байна (жишээ: 2026).' });
     return;
   }
@@ -64,8 +71,25 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
+    if (namesOnly) {
+      // Stops short of maxDuration and says how many are left, so a page with
+      // a long history is finished by pressing the button again.
+      const result = await backfillFacebookNames(db, token, { deadline: Date.now() + 200_000 });
+      res.status(200).json({
+        ok: true,
+        ...result,
+        message:
+          result.missing === 0
+            ? 'Нэргүй Facebook яриа алга.'
+            : `${result.missing} нэргүй ярианаас ${result.updated}-д нэр олдлоо.` +
+              (result.unresolved ? ` ${result.unresolved}-д Facebook нэр өгсөнгүй.` : '') +
+              (result.remaining ? ` ${result.remaining} үлдсэн — дахин дарна уу.` : ''),
+      });
+      return;
+    }
+
     const scan = await scanPageHistory(token, {
-      year,
+      year: year as string,
       maxConversations: Number(req.body?.maxConversations) || undefined,
     });
 

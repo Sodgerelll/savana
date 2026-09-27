@@ -76,6 +76,20 @@ async function authorizationHeader(): Promise<string> {
 }
 
 /**
+ * What to say when the server answered without one of our JSON errors.
+ *
+ * A bare 404 means the route is not there at all — which is what the local
+ * `npm run dev` server does for every /api/chat route, since only the deployed
+ * functions serve them. Saying so saves a hunt for a bug that is not in the code.
+ */
+function fallbackErrorMessage(status: number): string {
+  if (status === 404) {
+    return "Сервер энэ үйлдлийг олсонгүй (HTTP 404). AI Chat-ийн API зөвхөн deploy хийсэн сайт дээр ажиллана — локал dev сервер дээр биш.";
+  }
+  return `Хариу авч чадсангүй (HTTP ${status}).`;
+}
+
+/**
  * Authenticated POST to a chat route. Aborts on the client after
  * {@link CHAT_LIMITS.REQUEST_TIMEOUT_MS} so a hung request cannot leave a form
  * disabled forever, and turns every non-2xx into a {@link ChatApiError}
@@ -111,8 +125,10 @@ async function postToChatApi(
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message = typeof payload.error === "string" ? payload.error : "Хариу авч чадсангүй.";
-    throw new ChatApiError(message, response.status);
+    throw new ChatApiError(
+      typeof payload.error === "string" ? payload.error : fallbackErrorMessage(response.status),
+      response.status,
+    );
   }
 
   return payload;
@@ -171,6 +187,21 @@ export async function importFaqsFromHistory(year: string): Promise<HistoryImport
     conversationsScanned:
       typeof payload.conversationsScanned === "number" ? payload.conversationsScanned : 0,
     pairs: typeof payload.pairs === "number" ? payload.pairs : 0,
+    message: typeof payload.message === "string" ? payload.message : "Дууслаа.",
+  };
+}
+
+/**
+ * Fills in the customer's name on Facebook threads stored without one, read
+ * from the page's own inbox. Returns the server's summary line; when it says
+ * some are left, calling again continues where it stopped.
+ */
+export async function fillFacebookNames(): Promise<{ updated: number; remaining: number; message: string }> {
+  const payload = await postToChatApi("/api/chat/importHistory", { mode: "names" }, HISTORY_TIMEOUT_MS);
+
+  return {
+    updated: typeof payload.updated === "number" ? payload.updated : 0,
+    remaining: typeof payload.remaining === "number" ? payload.remaining : 0,
     message: typeof payload.message === "string" ? payload.message : "Дууслаа.",
   };
 }

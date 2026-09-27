@@ -101,7 +101,16 @@ describe("sendAssistantMessage", () => {
 
     await expect(sendAssistantMessage({ message: "hi" })).rejects.toMatchObject({
       status: 502,
-      message: "Хариу авч чадсангүй.",
+      message: "Хариу авч чадсангүй (HTTP 502).",
+    });
+  });
+
+  it("says a missing route is missing rather than a generic failure", async () => {
+    responder = () => new Response("", { status: 404 });
+
+    await expect(sendAssistantMessage({ message: "hi" })).rejects.toMatchObject({
+      status: 404,
+      message: expect.stringContaining("HTTP 404"),
     });
   });
 

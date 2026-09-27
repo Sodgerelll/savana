@@ -19,6 +19,7 @@ import {
   appendMessage,
   botShouldStaySilent,
   ensureConversation,
+  fillConversationContact,
   readRecentMessages,
   setConversationStatus,
   setConversationTopic,
@@ -248,13 +249,21 @@ export default async function handler(req: any, res: any): Promise<void> {
       // than read with the catalogue.
       imageUrlFor: (product) => storefrontUrl(`/api/chat/productImage?id=${product.id}`) || undefined,
       lookupOrder: (orderNumber) => lookupOrder(db, orderNumber),
-      placeOrder: (details) =>
-        placeChatOrder(
+      placeOrder: async (details) => {
+        const order = await placeChatOrder(
           db,
           storefront,
           { id: conversation.id, channel: 'widget', externalUserId: sessionId },
           details,
-        ),
+        );
+        // The widget has no profile to read a name from; the order is where
+        // the customer states it.
+        await fillConversationContact(db, conversation.id, {
+          customerName: details.customerName,
+          customerPhone: details.phone,
+        });
+        return order;
+      },
       // Read fresh each turn rather than carried in the conversation: the
       // customer may have added something from a carousel button since.
       basket: async () => {
@@ -499,6 +508,14 @@ async function captureContactDetails(db: any, conversationId: string, text: stri
   if (!open) {
     return;
   }
+
+  // The thread gets them too, so the inbox shows who wrote in. Only while an
+  // order is open, where a name beside a phone number is an answer to
+  // «нэр, утсаа үлдээнэ үү» rather than a greeting that happens to precede one.
+  await fillConversationContact(db, conversationId, {
+    customerName: extractName(text),
+    customerPhone: extractPhone(text),
+  });
 
   const patch: Record<string, unknown> = {};
   if (!String(open.data.customerPhone ?? '')) {
