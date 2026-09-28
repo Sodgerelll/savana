@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { firestoreMock } from "../helpers/firestoreMock";
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
 import {
@@ -365,5 +365,43 @@ describe("recountProductStock", () => {
     await expect(
       recountProductStock({ productId: 999, productName: "Байхгүй", remaining: 5, soldCount: 0, ...count }),
     ).rejects.toThrow(ProductNotFoundError);
+  });
+
+  it("books a shortfall the count found as a cost, taking it out of inventory", async () => {
+    firestoreMock.seed("products/211", { totalStock: 100, soldCount: -4, costPrice: 2500 });
+
+    await recountProductStock({ productId: 211, productName: "Саван", remaining: 96, soldCount: 0, ...count });
+
+    // 8 units short × 2500 cost.
+    const entry = firestoreMock.writes.find((write) => write.path.startsWith("journalEntries/"));
+    expect(entry?.data).toMatchObject({
+      sourceType: "stockAdjustment",
+      lines: [
+        expect.objectContaining({ accountCode: "5930", debit: 20000, credit: 0 }),
+        expect.objectContaining({ accountCode: "1210", debit: 0, credit: 20000 }),
+      ],
+    });
+  });
+
+  it("puts goods the count found extra back into inventory", async () => {
+    firestoreMock.seed("products/211", { totalStock: 100, soldCount: 10, costPrice: 1000 });
+
+    await recountProductStock({ productId: 211, productName: "Саван", remaining: 95, soldCount: 10, ...count });
+
+    const entry = firestoreMock.writes.find((write) => write.path.startsWith("journalEntries/"));
+    expect(entry?.data).toMatchObject({
+      lines: [
+        expect.objectContaining({ accountCode: "1210", debit: 5000 }),
+        expect.objectContaining({ accountCode: "5930", credit: 5000 }),
+      ],
+    });
+  });
+
+  it("posts nothing when the count matches the books", async () => {
+    firestoreMock.seed("products/211", { totalStock: 100, soldCount: 4, costPrice: 1000 });
+
+    await recountProductStock({ productId: 211, productName: "Саван", remaining: 96, soldCount: 4, ...count });
+
+    expect(firestoreMock.writes.some((write) => write.path.startsWith("journalEntries/"))).toBe(false);
   });
 });

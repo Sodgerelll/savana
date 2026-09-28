@@ -7,7 +7,7 @@ import { firestoreMock } from "../helpers/firestoreMock";
 // product documents to price the goods, so the mock models a small in-memory Firestore
 // rather than stubbing individual calls. See src/__tests__/helpers/firestoreMock.ts.
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
 import { onSnapshot } from "firebase/firestore";
@@ -285,6 +285,75 @@ describe("updateSale", () => {
     items: makeSaleInput().items,
   };
 
+  /** The edit undoes what the *stored* sale holds, not the screen's copy of it. */
+  function storeSale(overrides: Record<string, unknown> = {}) {
+    firestoreMock.seed("sales/sale-1", {
+      saleNumber: previous.saleNumber,
+      status: previous.status,
+      journalEntryId: previous.journalEntryId,
+      paidAt: previous.paidAt,
+      items: previous.items,
+      returns: [],
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => storeSale());
+
+  it("undoes the stored items even when the screen still shows an older version", async () => {
+    // The screen thinks the sale holds 2 units; by now it holds 5.
+    storeSale({ journalEntryId: null, items: [{ ...previous.items[0], quantity: 5, lineTotal: 45000 }] });
+    seedProduct(10, { totalStock: 100, soldCount: 5 });
+
+    await updateSale("sale-1", { ...previous, journalEntryId: null }, makeSaleInput());
+
+    // All 5 released, the edited 2 taken — not 5 − 2 + 2.
+    expect(stockWrittenFor(10)).toMatchObject({ soldCount: 2 });
+  });
+
+  it("refuses to cut a line below what has already been returned", async () => {
+    storeSale({
+      journalEntryId: null,
+      returns: [{ id: "r1", items: [{ productId: 10, variant: null, name: "Soap", quantity: 2, unitPrice: 9000 }] }],
+    });
+
+    await expect(
+      updateSale(
+        "sale-1",
+        { ...previous, journalEntryId: null },
+        makeSaleInput({ items: [{ ...previous.items[0], quantity: 1, lineTotal: 9000 }] }),
+      ),
+    ).rejects.toThrow("Буцаагдсан");
+  });
+
+  it("refuses to put a sale with returns back to unpaid", async () => {
+    storeSale({
+      journalEntryId: null,
+      returns: [{ id: "r1", items: [{ productId: 10, variant: null, name: "Soap", quantity: 1, unitPrice: 9000 }] }],
+    });
+
+    await expect(
+      updateSale("sale-1", { ...previous, journalEntryId: null }, makeSaleInput({ status: "new" })),
+    ).rejects.toThrow();
+  });
+
+  it("books delivery to its own revenue account, not to goods revenue", async () => {
+    seedJournalEntry("entry-1", []);
+
+    await updateSale(
+      "sale-1",
+      previous,
+      makeSaleInput({ totals: { subtotal: 18000, shippingFee: 5000, grandTotal: 23000, discountTotal: 0 } }),
+    );
+
+    const reposted = writtenJournalEntries().find((entry) => !entry.reversalOf);
+    expect(reposted?.lines).toEqual([
+      expect.objectContaining({ accountCode: "1010", debit: 23000 }),
+      expect.objectContaining({ accountCode: "4400", credit: 5000 }),
+      expect.objectContaining({ accountCode: "4300", credit: 18000 }),
+    ]);
+  });
+
   it("reverses the old entry and posts a fresh one for the new amount", async () => {
     seedJournalEntry("entry-1", [
       { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
@@ -364,6 +433,29 @@ describe("deleteSale", () => {
     items: makeSaleInput().items,
   };
 
+  /** deleteSale works from the stored document, so each test stores the sale it deletes. */
+  function storeSale(overrides: Record<string, unknown> = {}) {
+    firestoreMock.seed("sales/sale-1", {
+      saleNumber: settledSale.saleNumber,
+      status: settledSale.status,
+      journalEntryId: settledSale.journalEntryId,
+      items: settledSale.items,
+      returns: [],
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => storeSale());
+
+  it("refuses to delete a sale that already has returns", async () => {
+    storeSale({
+      returns: [{ id: "r1", items: [{ productId: 10, variant: null, name: "Soap", quantity: 1, unitPrice: 9000 }] }],
+    });
+
+    await expect(deleteSale("sale-1", settledSale)).rejects.toThrow("Буцаалт");
+    expect(firestoreMock.writesFor("sales/sale-1")).toHaveLength(0);
+  });
+
   it("reverses the posted entry and deletes the document", async () => {
     seedJournalEntry("entry-1", [
       { accountCode: "1010", accountName: "Cash", debit: 18000, credit: 0 },
@@ -392,6 +484,7 @@ describe("deleteSale", () => {
 
   it("leaves stock alone when deleting a sale that was never settled", async () => {
     seedProduct(10, { totalStock: 100, soldCount: 2 });
+    storeSale({ status: "new", journalEntryId: null });
 
     await deleteSale("sale-1", { ...settledSale, status: "new", journalEntryId: null });
 
@@ -399,6 +492,7 @@ describe("deleteSale", () => {
   });
 
   it("still deletes a sale that never posted an entry", async () => {
+    storeSale({ journalEntryId: null });
     await deleteSale("sale-1", { ...settledSale, journalEntryId: null });
 
     expect(writtenJournalEntries()).toHaveLength(0);
@@ -482,7 +576,8 @@ describe("createSaleReturn", () => {
 
   it("carves VAT out of the returned amount using the sale's own VAT mode", async () => {
     seedProduct(10, { soldCount: 2 });
-    seedSale({ totals: { subtotal: 18000, shippingFee: 0, grandTotal: 19800, discountTotal: 0, vatMode: "included", vatAmount: 1800 } });
+    // "included": the 18000 charged already contains round(18000 − 18000/1.1) = 1636 of tax.
+    seedSale({ totals: { subtotal: 18000, shippingFee: 0, grandTotal: 18000, discountTotal: 0, vatMode: "included", vatAmount: 1636 } });
 
     await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 2 }], "damaged", "uid-1", "Admin");
 
@@ -493,6 +588,48 @@ describe("createSaleReturn", () => {
       { accountCode: "2410", accountName: expect.any(String), debit: 1636, credit: 0 },
       { accountCode: "1010", accountName: expect.any(String), debit: 0, credit: 18000 },
     ]);
+  });
+
+  it("gives back the НӨАТ charged on top in 'added' mode, not a slice carved out of the net price", async () => {
+    seedProduct(10, { soldCount: 2 });
+    // Net 18000, 10% added on top: the buyer paid 19800.
+    seedSale({ totals: { subtotal: 18000, shippingFee: 0, grandTotal: 19800, discountTotal: 0, vatMode: "added", vatAmount: 1800 } });
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "damaged", "uid-1", "Admin");
+
+    const [entry] = writtenJournalEntries();
+    expect(entry.lines).toEqual([
+      { accountCode: "4910", accountName: expect.any(String), debit: 9000, credit: 0 },
+      { accountCode: "2410", accountName: expect.any(String), debit: 900, credit: 0 },
+      { accountCode: "1010", accountName: expect.any(String), debit: 0, credit: 9900 },
+    ]);
+    expect(saleReturns()[0]).toMatchObject({ subtotal: 9000, vatAmount: 900, totalAmount: 9900 });
+  });
+
+  it("scales a return by the whole-sale discount the buyer actually got", async () => {
+    seedProduct(10, { soldCount: 2 });
+    // Two lines worth 18000 at their prices, sold for 15000 after a 3000 хөнгөлөлт.
+    seedSale({ totals: { subtotal: 18000, shippingFee: 0, grandTotal: 15000, discountTotal: 3000, vatMode: "none", vatAmount: 0 } });
+
+    await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "damaged", "uid-1", "Admin");
+
+    // Half the goods came back, so half of what was really paid goes back — not 9000.
+    expect(saleReturns()[0]).toMatchObject({ totalAmount: 7500 });
+  });
+
+  it("never refunds more than was charged across partial returns", async () => {
+    seedProduct(10, { soldCount: 3 });
+    seedSale({
+      items: [{ ...makeSaleInput().items[0], quantity: 3, lineTotal: 27000 }],
+      totals: { subtotal: 27000, shippingFee: 0, grandTotal: 20000, discountTotal: 7000, vatMode: "none", vatAmount: 0 },
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      await createSaleReturn("sale-1", [{ productId: 10, variant: null, quantity: 1 }], "one", "uid-1", "Admin");
+    }
+
+    const refunded = saleReturns().reduce((sum, record) => sum + Number(record.totalAmount), 0);
+    expect(refunded).toBe(20000);
   });
 
   it("reverses the write-off entry, not Sales Returns, for a gift/own-use channel sale", async () => {

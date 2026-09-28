@@ -8,7 +8,7 @@ import { firestoreMock } from "../helpers/firestoreMock";
 // a small in-memory Firestore so those reads and writes can be asserted directly.
 // See src/__tests__/helpers/firestoreMock.ts.
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
 import {
@@ -87,6 +87,18 @@ function seedCustomer(
   { totalSales = 0, totalPaid = 0, outstandingBalance = 0 } = {},
 ) {
   firestoreMock.seed(`customers/${customerId}`, { totalSales, totalPaid, outstandingBalance });
+}
+
+/**
+ * Stores a transaction as Firestore holds it. An edit checks the stored record against the
+ * screen's copy before it reverses anything, so edits need the stored side to exist.
+ */
+function storeTx(record: CustomerTransactionRecord) {
+  firestoreMock.seed(`customerTransactions/${record.id}`, {
+    type: record.type,
+    payment: record.payment,
+    journalEntryId: record.journalEntryId ?? null,
+  });
 }
 
 function seedTxCounter(lastNumber: number) {
@@ -432,6 +444,18 @@ describe("updateCustomerTransaction", () => {
   beforeEach(() => {
     seedProduct(10, { soldCount: 8 });
     seedCustomer("cust-1", { totalSales: 10000, totalPaid: 10000, outstandingBalance: 0 });
+    storeTx(makeTxRecord());
+  });
+
+  it("refuses an edit from a stale screen instead of reversing the wrong entry", async () => {
+    // The stored record has moved on (another tab recorded a payment) since the screen
+    // loaded it.
+    storeTx(makeTxRecord({ journalEntryId: "entry-9" }));
+
+    await expect(updateCustomerTransaction("tx-1", makeTxRecord(), makeTxInput())).rejects.toThrow(
+      "өөрчлөгдсөн",
+    );
+    expect(journalEntries()).toHaveLength(0);
   });
 
   it("writes the edited transaction document", async () => {
@@ -533,6 +557,43 @@ describe("recordCustomerTransactionPayment", () => {
   beforeEach(() => {
     seedProduct(10, { soldCount: 8 });
     seedCustomer("cust-1", { totalSales: 10000, totalPaid: 3000, outstandingBalance: 7000 });
+    storeTx(makePartiallyPaidRecord());
+  });
+
+  it("books each payment to the account it came in by, on the day it was paid", async () => {
+    // The transaction was opened with a bank payment; this one comes in cash.
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 4000,
+      method: "cash",
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    const reposted = journalEntries().find((entry) => !entry.reversalOf) as
+      | { lines: Array<{ accountCode: string; debit: number; credit: number }>; date?: string }
+      | undefined;
+    expect(reposted?.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountCode: "1020", debit: 3000 }),
+        expect.objectContaining({ accountCode: "1010", debit: 4000 }),
+        expect.objectContaining({ accountCode: "1110", debit: 3000 }),
+      ]),
+    );
+    expect(reposted?.date).toBe("2024-02-01T12:00:00.000Z");
+  });
+
+  it("defaults a payment to the transaction's own method", async () => {
+    await recordCustomerTransactionPayment(makePartiallyPaidRecord(), {
+      date: "2024-02-01",
+      amount: 4000,
+      note: "",
+      createdByUid: "uid-admin",
+    });
+
+    expect(transactionDoc()).toMatchObject({
+      payment: expect.objectContaining({ entries: [expect.objectContaining({ method: "bank" })] }),
+    });
   });
 
   it("adds the amount to paidAmount and appends a payment entry", async () => {
@@ -657,6 +718,7 @@ describe("updateCustomerTransactionPaymentEntry / deleteCustomerTransactionPayme
   beforeEach(() => {
     seedProduct(10, { soldCount: 8 });
     seedCustomer("cust-1", { totalSales: 10000, totalPaid: 7000, outstandingBalance: 3000 });
+    storeTx(makeRecordWithEntry());
   });
 
   it("edit replaces the entry amount and recomputes paidAmount", async () => {
@@ -727,23 +789,21 @@ describe("updateCustomerTransactionPaymentEntry / deleteCustomerTransactionPayme
 
   it("delete of the only payment resets status to unpaid and clears paidAt", async () => {
     seedCustomer("cust-1", { totalSales: 10000, totalPaid: 4000, outstandingBalance: 6000 });
+    const record = makeTxRecord({
+      totals: { subtotal: 10000, discount: 0, grandTotal: 10000 },
+      payment: {
+        status: "partial",
+        paidAmount: 4000,
+        method: "bank",
+        paidAt: "2024-02-01T00:00:00.000Z",
+        entries: [
+          { date: "2024-02-01", amount: 4000, note: "", createdAt: null, createdByUid: "uid-admin" },
+        ],
+      },
+    });
+    storeTx(record);
 
-    await deleteCustomerTransactionPaymentEntry(
-      makeTxRecord({
-        totals: { subtotal: 10000, discount: 0, grandTotal: 10000 },
-        payment: {
-          status: "partial",
-          paidAmount: 4000,
-          method: "bank",
-          paidAt: "2024-02-01T00:00:00.000Z",
-          entries: [
-            { date: "2024-02-01", amount: 4000, note: "", createdAt: null, createdByUid: "uid-admin" },
-          ],
-        },
-      }),
-      0,
-      "uid-admin",
-    );
+    await deleteCustomerTransactionPaymentEntry(record, 0, "uid-admin");
 
     expect(transactionDoc()).toMatchObject({
       payment: expect.objectContaining({ status: "unpaid", paidAmount: 0, paidAt: null }),

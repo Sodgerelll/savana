@@ -12,7 +12,7 @@ const { firestoreMocks } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 vi.mock("firebase/firestore", () => ({
   collection: () => ({ __ref: "chat_faqs" }),

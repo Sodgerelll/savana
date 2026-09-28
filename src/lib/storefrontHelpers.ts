@@ -275,9 +275,21 @@ export function isDiscountActive(discount: Discount, today: string = localDateKe
   return discount.status === "active" && discount.startAt <= today && discount.endAt >= today;
 }
 
-export function getActiveDiscount(discounts: Discount[], productId: number): Discount | undefined {
+/**
+ * The discount a product sells at today. When two overlap, the one that leaves the lower
+ * price wins — which needs the price, so callers that have it pass it. This is the same
+ * choice the server makes when it prices an order (api/_lib/orderPricing.ts), so the price a
+ * shopper sees is the price they are invoiced.
+ */
+export function getActiveDiscount(discounts: Discount[], productId: number, price?: number): Discount | undefined {
   const today = localDateKey();
-  return discounts.find((d) => d.productId === productId && isDiscountActive(d, today));
+  const active = discounts.filter((d) => d.productId === productId && isDiscountActive(d, today));
+  if (active.length <= 1 || price === undefined) {
+    return active[0];
+  }
+  return active.reduce((best, candidate) =>
+    applyDiscount(price, candidate) < applyDiscount(price, best) ? candidate : best,
+  );
 }
 
 export function applyDiscount(price: number, discount: Discount): number {

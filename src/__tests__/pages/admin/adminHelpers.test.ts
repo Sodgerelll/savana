@@ -138,6 +138,12 @@ describe("getManageableRoleOptions", () => {
     expect(getManageableRoleOptions("customer")).toContain("customer");
     expect(getManageableRoleOptions("customer")).toHaveLength(4);
   });
+
+  it("never offers sysadmin to an admin, and freezes an existing sysadmin", () => {
+    expect(getManageableRoleOptions("worker", "admin")).toEqual(["admin", "worker"]);
+    expect(getManageableRoleOptions("customer", "admin")).toEqual(["admin", "worker", "customer"]);
+    expect(getManageableRoleOptions("sysadmin", "admin")).toEqual(["sysadmin"]);
+  });
 });
 
 // ─── getUserProviderSummary ───────────────────────────────────────────────────

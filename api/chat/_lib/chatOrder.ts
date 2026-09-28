@@ -203,6 +203,9 @@ export async function createChatOrder(
     },
     // Stock moves when the payment lands, exactly as it does for a web order.
     stockApplied: false,
+    // Every line above was priced here from the catalogue, never by the model, and the
+    // invoice was raised for exactly these totals — so the paid step books them as they are.
+    pricing: { verifiedBy: 'server', verifiedAt: now },
     chat: {
       conversationId: input.conversationId,
       channel: input.channel,

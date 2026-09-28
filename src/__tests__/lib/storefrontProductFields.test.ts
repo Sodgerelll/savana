@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { firestoreMock } from "../helpers/firestoreMock";
 
-vi.mock("../../lib/firebase", () => ({ db: {}, firestoreDatabaseId: "(default)" }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null }, firestoreDatabaseId: "(default)" }));
 vi.mock("firebase/firestore", async () => ({
   ...(await import("../helpers/firestoreMock")).firestoreMock.module,
   setDoc: vi.fn(),

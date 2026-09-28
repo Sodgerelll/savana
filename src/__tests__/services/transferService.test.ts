@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 const mockTxSet = vi.fn();
 const mockTxUpdate = vi.fn();
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 vi.mock("firebase/firestore", () => ({
   collection: vi.fn(() => ({ id: "col" })),
@@ -39,8 +39,12 @@ import {
   confirmTransfer,
   cancelTransfer,
   addPayment,
+  createReturn,
   deleteCustomerCascade,
+  deliverTransfer,
   generateTransferNumber,
+  settleTransferRefund,
+  shipTransfer,
   type CreateTransferInput,
 } from "../../services/transferService";
 
@@ -524,14 +528,45 @@ describe("addPayment — bounds", () => {
   });
 
   it("rejects a payment larger than what is still owed", async () => {
-    setupPaymentMocks(makeTransfer({ totalAmount: 20000, paidAmount: 18000 }), { outstandingBalance: 2000 });
+    setupPaymentMocks(
+      makeTransfer({ status: "CONFIRMED", totalAmount: 20000, paidAmount: 18000, remainingAmount: 2000 }),
+      { outstandingBalance: 2000 },
+    );
 
     // Overpaying used to push the receivable account negative without a word.
     await expect(addPayment(payment({ amount: 5000 }))).rejects.toThrow("үлдэгдлээс их");
   });
 
+  it("bounds a payment by what a return left owing, not by the total less what was paid", async () => {
+    // 20000 billed, nothing paid, but a return already cancelled 15000 of the debt.
+    setupPaymentMocks(
+      makeTransfer({ status: "DELIVERED", totalAmount: 20000, paidAmount: 0, remainingAmount: 5000 }),
+      { outstandingBalance: 5000 },
+    );
+
+    await expect(addPayment(payment({ amount: 6000 }))).rejects.toThrow("үлдэгдлээс их");
+  });
+
+  it("refuses a payment against a return record", async () => {
+    setupPaymentMocks(
+      makeTransfer({ type: "RETURN", status: "DELIVERED", remainingAmount: 3000 }),
+      { outstandingBalance: 0 },
+    );
+
+    await expect(addPayment(payment({ amount: 1000 }))).rejects.toThrow("Буцаалтын");
+  });
+
+  it("refuses a payment against a draft that never reached the customer's balance", async () => {
+    setupPaymentMocks(makeTransfer({ status: "DRAFT" }), { outstandingBalance: 0 });
+
+    await expect(addPayment(payment({ amount: 1000 }))).rejects.toThrow("батлагдсан");
+  });
+
   it("accepts a payment that exactly settles the balance", async () => {
-    setupPaymentMocks(makeTransfer({ totalAmount: 20000, paidAmount: 18000 }), { outstandingBalance: 2000 });
+    setupPaymentMocks(
+      makeTransfer({ status: "CONFIRMED", totalAmount: 20000, paidAmount: 18000, remainingAmount: 2000 }),
+      { outstandingBalance: 2000 },
+    );
 
     await addPayment(payment({ amount: 2000 }));
 
@@ -573,5 +608,164 @@ describe("deleteCustomerCascade", () => {
       .mockResolvedValueOnce({ docs: [{ id: "tx-1", data: () => ({}) }], empty: false, size: 1 });
 
     await expect(deleteCustomerCascade("cust-1")).rejects.toThrow("гүйлгээ");
+  });
+});
+
+// --- Delivery steps, returns and refunds ---
+
+/**
+ * A tiny document store behind runTransaction: every get() is answered from `docs` by path,
+ * which is enough for the flows below (counters that do not exist start at 1).
+ */
+function useStore(docs: Record<string, object>) {
+  (runTransaction as Mock).mockImplementation(async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      get: vi.fn(async (ref: { path: string }) => ({
+        exists: () => ref.path in docs,
+        id: ref.path.split("/").pop(),
+        data: () => docs[ref.path],
+      })),
+      set: mockTxSet,
+      update: mockTxUpdate,
+    }),
+  );
+}
+
+function journalLinesWritten() {
+  return (mockTxSet as Mock).mock.calls
+    .map(([, data]: [unknown, { lines?: Array<{ accountCode: string; debit: number; credit: number }> }]) => data)
+    .filter((data) => Array.isArray(data?.lines))
+    .map((data) => data.lines!.map(({ accountCode, debit, credit }) => ({ accountCode, debit, credit })));
+}
+
+function updateFor(pathPart: string) {
+  return (mockTxUpdate as Mock).mock.calls.find(([ref]: [{ path: string }]) => ref?.path === pathPart)?.[1];
+}
+
+describe("shipTransfer / deliverTransfer — status guards", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("will not ship a transfer that was cancelled in another tab", async () => {
+    useStore({ "transfers/trf-1": makeTransfer({ status: "CANCELLED" }) });
+
+    // Shipping it used to succeed, and the transfer could then be cancelled a second time.
+    await expect(shipTransfer("trf-1", "uid", "Admin")).rejects.toThrow("төлөв");
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+  });
+
+  it("ships a confirmed transfer", async () => {
+    useStore({ "transfers/trf-1": makeTransfer({ status: "CONFIRMED" }) });
+
+    await shipTransfer("trf-1", "uid", "Admin");
+
+    expect(updateFor("transfers/trf-1")).toMatchObject({ status: "SHIPPED" });
+  });
+
+  it("delivers only a shipped transfer", async () => {
+    useStore({ "transfers/trf-1": makeTransfer({ status: "CONFIRMED" }) });
+    await expect(deliverTransfer("trf-1", "uid", "Admin")).rejects.toThrow("төлөв");
+
+    vi.clearAllMocks();
+    useStore({ "transfers/trf-1": makeTransfer({ status: "SHIPPED" }) });
+    await deliverTransfer("trf-1", "uid", "Admin");
+    expect(updateFor("transfers/trf-1")).toMatchObject({ status: "DELIVERED" });
+  });
+});
+
+describe("createReturn — valuation and balances", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // 10 units listed at 2000 but billed with a 10% line discount: 18000 for the line.
+  const discountedTransfer = (overrides: object = {}) =>
+    makeTransfer({
+      status: "DELIVERED",
+      items: [
+        { productId: "prod-1", productName: "Soap", sku: "SKU-001", quantity: 10, unitPrice: 2000, originalPrice: 2000, discountPercent: 10, lineTotal: 18000 },
+      ],
+      subtotal: 18000,
+      totalAmount: 18000,
+      paidAmount: 0,
+      remainingAmount: 18000,
+      ...overrides,
+    });
+
+  const returnFive = [{ productId: "prod-1", productName: "Soap", sku: "SKU-001", quantity: 5, unitPrice: 2000 }];
+
+  it("values the returned units at what they were billed, not at list price", async () => {
+    useStore({
+      "transfers/trf-1": discountedTransfer(),
+      "products/prod-1": { totalStock: 50, soldCount: 10 },
+      "customers/cust-1": {},
+    });
+
+    await createReturn("trf-1", returnFive, "damaged", "uid", "Admin");
+
+    // 5 × 1800, even though the screen sent the 2000 list price.
+    expect(journalLinesWritten()[0]).toEqual([
+      { accountCode: "4910", debit: 9000, credit: 0 },
+      { accountCode: "1110", debit: 0, credit: 9000 },
+    ]);
+  });
+
+  it("lowers the original transfer's remaining debt so it cannot be cancelled twice", async () => {
+    useStore({
+      "transfers/trf-1": discountedTransfer(),
+      "products/prod-1": { totalStock: 50, soldCount: 10 },
+      "customers/cust-1": {},
+    });
+
+    await createReturn("trf-1", returnFive, "damaged", "uid", "Admin");
+
+    expect(updateFor("transfers/trf-1")).toMatchObject({ remainingAmount: 9000 });
+  });
+
+  it("owes a fully-paid customer their money back instead of pushing the receivable negative", async () => {
+    useStore({
+      "transfers/trf-1": discountedTransfer({ paidAmount: 18000, remainingAmount: 0, paymentStatus: "PAID" }),
+      "products/prod-1": { totalStock: 50, soldCount: 10 },
+      "customers/cust-1": {},
+    });
+
+    await createReturn("trf-1", returnFive, "damaged", "uid", "Admin");
+
+    expect(journalLinesWritten()[0]).toEqual([
+      { accountCode: "4910", debit: 9000, credit: 0 },
+      { accountCode: "2130", debit: 0, credit: 9000 },
+    ]);
+  });
+
+  it("refuses to return a return", async () => {
+    useStore({ "transfers/trf-1": discountedTransfer({ type: "RETURN" }) });
+
+    await expect(createReturn("trf-1", returnFive, "again", "uid", "Admin")).rejects.toThrow("Буцаалтын");
+  });
+});
+
+describe("settleTransferRefund", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("pays out what a return left owed and clears the liability", async () => {
+    useStore({
+      "transfers/ret-1": makeTransfer({ type: "RETURN", status: "DELIVERED", paidAmount: 0, remainingAmount: 9000, paymentStatus: "UNPAID" }),
+      "customers/cust-1": { totalPaid: 18000 },
+    });
+
+    await settleTransferRefund("ret-1", "CASH", "uid", "Admin");
+
+    expect(updateFor("transfers/ret-1")).toMatchObject({ remainingAmount: 0, paymentStatus: "PAID", paidAmount: 9000 });
+    expect(updateFor("customers/cust-1")?.totalPaid).toEqual({ _increment: -9000 });
+    expect(journalLinesWritten()[0]).toEqual([
+      { accountCode: "2130", debit: 9000, credit: 0 },
+      { accountCode: "1010", debit: 0, credit: 9000 },
+    ]);
+  });
+
+  it("refuses when nothing is left to pay back", async () => {
+    useStore({
+      "transfers/ret-1": makeTransfer({ type: "RETURN", status: "DELIVERED", remainingAmount: 0 }),
+      "customers/cust-1": {},
+    });
+
+    await expect(settleTransferRefund("ret-1", "CASH", "uid", "Admin")).rejects.toThrow("үлдээгүй");
   });
 });

@@ -20,10 +20,10 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [hovered, setHovered] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const activeDiscount = getActiveDiscount(discounts, product.id);
   const basePrice = product.variants
     ? Math.min(...product.variants.map((v) => v.price))
     : product.price;
+  const activeDiscount = getActiveDiscount(discounts, product.id, basePrice);
   const discountedPrice = activeDiscount ? applyDiscount(basePrice, activeDiscount) : null;
 
   const gradient = getCategoryGradient(collections, product.category);

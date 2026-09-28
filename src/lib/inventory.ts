@@ -7,6 +7,8 @@ import {
   type DocumentReference,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { buildStockRecountEntry, isEmptyEntry } from "./accounting/entryBuilders";
+import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
 
 /**
  * The single definition of what "stock" means for a product, shared by every module that
@@ -296,6 +298,10 @@ export class ProductNotFoundError extends Error {
  * relies on. A variant product takes its total from the sum of its variants.
  */
 export async function recountProductStock(input: ProductRecountInput): Promise<void> {
+  // Reserved up front because it runs its own transaction; a count that matches the books
+  // leaves it unused.
+  const entryNumber = await generateJournalEntryNumber();
+
   await runTransaction(db, async (t) => {
     const ref = productRef(input.productId);
     const snapshot = await t.get(ref);
@@ -341,12 +347,31 @@ export async function recountProductStock(input: ProductRecountInput): Promise<v
       updatedAt: serverTimestamp(),
     });
 
+    // The inventory account has to move with the shelf. A recount used to change the units
+    // alone, so every shortfall a count uncovered stayed on the books as stock that was not
+    // there — valued at the product's unit cost.
+    const valueChange = (after.remaining - before.remaining) * state.costPrice;
+    const built = buildStockRecountEntry({ valueChange });
+    let journalEntryId: string | null = null;
+    if (!isEmptyEntry(built)) {
+      const entryRef = postJournalEntry(t, entryNumber, built, {
+        sourceType: "stockAdjustment",
+        sourceId: String(input.productId),
+        sourceNumber: String(input.productId),
+        description: `Тооллогын зөрүү: ${input.productName} — ${input.reason}`,
+        createdBy: input.createdBy,
+        createdByName: input.createdByName ?? "",
+      });
+      journalEntryId = entryRef.id;
+    }
+
     t.set(doc(collection(db, STOCK_MOVEMENTS_COLLECTION)), {
       productId: input.productId,
       productName: input.productName,
       transferId: null,
       customerId: null,
       customerName: null,
+      journalEntryId,
       type: "ADJUSTMENT",
       // Positive when the count found more on the shelf than the system believed.
       quantity: after.remaining - before.remaining,

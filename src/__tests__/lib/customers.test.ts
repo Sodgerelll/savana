@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 // ─── Mock firebase ────────────────────────────────────────────────────────────
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 // Customer codes now come from a `counters/customers` document reserved in a transaction,
 // so the mock models that document rather than a scan over the whole collection.

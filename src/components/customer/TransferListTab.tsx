@@ -8,6 +8,7 @@ import { MoneyFormat } from "../shared/MoneyFormat";
 import { DateFormat } from "../shared/DateFormat";
 import { useCustomerProductStats } from "../../hooks/useCustomerProductStats";
 import { formatDate } from "../shared/DateFormat";
+import { isPayableTransfer, isReturnableTransfer } from "../../services/transferService";
 
 interface Props {
   customerId: string;
@@ -36,10 +37,8 @@ export function TransferListTab({ customerId, transfers, loading, hasMore, onLoa
     return true;
   });
 
-  const deliveredTransfers = transfers.filter((t) => t.status === "DELIVERED");
-  const unpaidTransfers = transfers.filter((t) =>
-    ["UNPAID", "PARTIAL", "CREDIT"].includes(t.paymentStatus)
-  );
+  const deliveredTransfers = transfers.filter(isReturnableTransfer);
+  const unpaidTransfers = transfers.filter(isPayableTransfer);
 
   const overdueStats = productStats.filter((s) => s.isOverdue);
 

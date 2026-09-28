@@ -9,6 +9,7 @@ import {
   addPayment,
   createReturn,
   createTransfer,
+  settleTransferRefund,
   type CreateTransferInput,
   type AddPaymentInput,
   type ReturnItem,
@@ -72,5 +73,8 @@ export function useTransferMutations() {
       returnItems: ReturnItem[],
       reason: string
     ) => run(() => createReturn(originalTransferId, returnItems, reason, userId, userName)),
+
+    settleTransferRefund: (returnTransferId: string, method: AddPaymentInput["method"]) =>
+      run(() => settleTransferRefund(returnTransferId, method, userId, userName)),
   };
 }

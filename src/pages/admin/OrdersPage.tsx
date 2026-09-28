@@ -283,7 +283,11 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                             <RotateCcw size={15} />
                           </button>
                         )}
-                        {order.source !== "web" && (
+                        {/* Mirrors deleteOrder: never a web order, never one Bonum collected
+                            money for, never one with returns booked against it. */}
+                        {order.source !== "web" &&
+                          !(order.payment.invoiceId && order.payment.status === "paid") &&
+                          order.returns.length === 0 && (
                           <button
                             type="button"
                             className="admin-icon-btn"

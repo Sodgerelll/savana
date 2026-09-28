@@ -105,13 +105,32 @@ export function buildTransferReturnEntry(params: {
   returnTotal: number;
   cogsAmount: number;
   taxAmount?: number;
+  /**
+   * The part of the return the customer no longer owed and must be paid back. It is owed to
+   * them (a liability) rather than taken off a receivable that was already settled — which
+   * used to push the AR account below what the customer ledger said they owed.
+   */
+  refundDue?: number;
 }): BuiltEntry {
   const taxAmount = Math.max(0, round(params.taxAmount ?? 0));
+  const gross = round(params.returnTotal) + taxAmount;
+  const refundDue = Math.max(0, Math.min(round(params.refundDue ?? 0), gross));
   const lines = [
     line(ACCOUNT_CODES.SALES_RETURNS, params.returnTotal, 0),
     line(ACCOUNT_CODES.VAT_PAYABLE, taxAmount, 0),
-    line(ACCOUNT_CODES.AR, 0, round(params.returnTotal) + taxAmount),
+    line(ACCOUNT_CODES.AR, 0, gross - refundDue),
+    line(ACCOUNT_CODES.CUSTOMER_REFUNDS_PAYABLE, 0, refundDue),
     ...cogsLines(params.cogsAmount).reverse().map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/** Paying a reseller back what a return left them owed: the liability clears, the money leaves. */
+export function buildRefundPaidEntry(params: { amount: number; method: string }): BuiltEntry {
+  const moneyAccount = mapPaymentMethodToAccount(params.method);
+  const lines = [
+    line(ACCOUNT_CODES.CUSTOMER_REFUNDS_PAYABLE, params.amount, 0),
+    line(moneyAccount, 0, params.amount),
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
@@ -219,11 +238,18 @@ export function buildOrderPaidEntry(params: {
   cogsAmount: number;
   vatAmount?: number;
   shippingAmount?: number;
+  /**
+   * How the order was settled. Omitted (or "bonum") it lands in the Bonum clearing account,
+   * which is where every storefront payment goes; an admin settling a legacy order by hand
+   * in cash or by transfer books it to that account instead.
+   */
+  paymentMethod?: string | null;
 }): BuiltEntry {
   const vatAmount = clampVat(params.grandTotal, params.vatAmount);
   const shippingAmount = clampShipping(params.grandTotal, vatAmount, params.shippingAmount);
+  const moneyAccount = params.paymentMethod ? mapPaymentMethodToAccount(params.paymentMethod) : ACCOUNT_CODES.CLEARING;
   const lines = [
-    line(ACCOUNT_CODES.CLEARING, params.grandTotal, 0),
+    line(moneyAccount, params.grandTotal, 0),
     line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
     line(ACCOUNT_CODES.REVENUE_SHIPPING, 0, shippingAmount),
     line(ACCOUNT_CODES.REVENUE_ONLINE, 0, round(params.grandTotal) - vatAmount - shippingAmount),
@@ -245,6 +271,22 @@ export function buildProductionCompletedEntry(params: { producedCost: number }):
     line(ACCOUNT_CODES.INVENTORY, params.producedCost, 0),
     line(ACCOUNT_CODES.RAW_MATERIALS, 0, params.producedCost),
   ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/**
+ * A physical count that disagreed with the books. `valueChange` is the cost value of the
+ * difference: negative when goods were found missing (the shortfall becomes a cost),
+ * positive when more was found than recorded. Empty when the count matched or nothing is
+ * costed.
+ */
+export function buildStockRecountEntry(params: { valueChange: number }): BuiltEntry {
+  const value = round(params.valueChange);
+  const lines = (
+    value < 0
+      ? [line(ACCOUNT_CODES.INVENTORY_ADJUSTMENT, -value, 0), line(ACCOUNT_CODES.INVENTORY, 0, -value)]
+      : [line(ACCOUNT_CODES.INVENTORY, value, 0), line(ACCOUNT_CODES.INVENTORY_ADJUSTMENT, 0, value)]
+  ).filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
 
@@ -327,15 +369,36 @@ export function buildCustomerTransactionSaleEntry(params: {
   grandTotal: number;
   cogsAmount: number;
   vatAmount?: number;
+  /**
+   * The payments that make up `paidAmount`, each with the method it came in by. Without
+   * them every payment was booked to the transaction's first method (cash when it had
+   * none), so a bank transfer landed in the cash account.
+   */
+  receipts?: Array<{ method: string | null; amount: number }>;
 }): BuiltEntry {
   // A payment can never exceed what is owed, so the receivable side is floored at zero
   // rather than turning into a negative debit that would misstate the AR balance.
-  const paidAmount = Math.min(round(params.paidAmount), round(params.grandTotal));
+  const paidAmount = Math.max(0, Math.min(round(params.paidAmount), round(params.grandTotal)));
   const remaining = round(params.grandTotal) - paidAmount;
-  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
   const vatAmount = clampVat(params.grandTotal, params.vatAmount);
+
+  // Money lines per account. The receipts are used only when they add up to exactly what
+  // was paid; anything else falls back to one line on the transaction's own method.
+  const receipts = (params.receipts ?? []).filter((receipt) => round(receipt.amount) > 0);
+  const receiptTotal = receipts.reduce((sum, receipt) => sum + round(receipt.amount), 0);
+  const byAccount = new Map<AccountCode, number>();
+  if (receipts.length > 0 && receiptTotal === paidAmount) {
+    for (const receipt of receipts) {
+      const account = mapPaymentMethodToAccount(receipt.method ?? params.paymentMethod);
+      byAccount.set(account, (byAccount.get(account) ?? 0) + round(receipt.amount));
+    }
+  } else {
+    byAccount.set(mapPaymentMethodToAccount(params.paymentMethod), paidAmount);
+  }
+  const moneyLines = Array.from(byAccount, ([account, amount]) => line(account, amount, 0));
+
   const lines = [
-    line(moneyAccount, paidAmount, 0),
+    ...moneyLines,
     line(ACCOUNT_CODES.AR, remaining, 0),
     line(ACCOUNT_CODES.VAT_PAYABLE, 0, vatAmount),
     line(ACCOUNT_CODES.REVENUE_WHOLESALE, 0, round(params.grandTotal) - vatAmount),

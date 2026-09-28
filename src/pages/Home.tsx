@@ -681,7 +681,11 @@ export default function Home() {
                   key={product.id}
                   product={product}
                   gradient={getCategoryGradient(collections, product.category)}
-                  discount={getActiveDiscount(discounts, product.id)}
+                  discount={getActiveDiscount(
+                    discounts,
+                    product.id,
+                    product.variants?.length ? Math.min(...product.variants.map((v) => v.price)) : product.price,
+                  )}
                 />
               ))}
             </div>

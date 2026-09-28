@@ -4,7 +4,7 @@ import type { Transfer } from "../../types/crm";
 import { TransferStatusBadge } from "./TransferStatusBadge";
 import { PaymentStatusBadge } from "./PaymentStatusBadge";
 import { StatusTransitionButtons } from "./StatusTransitionButtons";
-import { MoneyFormat } from "../shared/MoneyFormat";
+import { MoneyFormat, formatMoney } from "../shared/MoneyFormat";
 import { DateFormat } from "../shared/DateFormat";
 import { useTransferMutations } from "../../hooks/useTransferMutations";
 import { ConfirmDialog } from "../shared/ConfirmDialog";
@@ -146,6 +146,19 @@ export function TransferExpandPanel({ transfer, deliveredTransfers, unpaidTransf
         <StatusTransitionButtons
           status={transfer.status}
           paymentStatus={transfer.paymentStatus}
+          transferType={transfer.type}
+          refundDue={transfer.type === "RETURN" ? Number(transfer.remainingAmount ?? 0) : 0}
+          onRefund={() =>
+            setConfirmAction({
+              title: "Мөнгө буцаан олгох уу?",
+              desc: `${formatMoney(Number(transfer.remainingAmount ?? 0))} бэлнээр харилцагчид буцаан олгосныг бүртгэнэ.`,
+              fn: () =>
+                handleAction(
+                  () => mutations.settleTransferRefund(transfer.id, "CASH"),
+                  "Буцаан олголт бүртгэгдлээ"
+                ),
+            })
+          }
           loading={mutations.loading}
           onConfirm={() =>
             setConfirmAction({

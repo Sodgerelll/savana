@@ -80,6 +80,11 @@ export interface CustomerTransactionPaymentEntry {
   /** YYYY-MM-DD payment date. */
   date: string;
   amount: number;
+  /**
+   * How this payment came in. Null on entries recorded before it was asked, which count as
+   * the transaction's own method — what they were booked to at the time.
+   */
+  method?: CustomerTransactionPaymentMethod | null;
   note: string;
   createdAt: string | null;
   createdByUid: string;
@@ -499,6 +504,7 @@ function deserializeTransaction(
               return {
                 date: String(entryData.date ?? ""),
                 amount: Number(entryData.amount ?? 0),
+                method: normalizePaymentMethod(entryData.method),
                 note: String(entryData.note ?? ""),
                 createdAt: parseTimestamp(entryData.createdAt),
                 createdByUid: String(entryData.createdByUid ?? ""),
@@ -580,6 +586,8 @@ function sanitizePayment(payment: CustomerTransactionPayment): CustomerTransacti
       ...entry,
       amount: roundAmount(entry.amount),
       note: entry.note ?? "",
+      // Firestore refuses undefined, so an entry without a method stores null.
+      method: entry.method ?? null,
     })),
   };
 }
@@ -823,7 +831,22 @@ function buildEntryForTransaction(
     grandTotal: input.totals.grandTotal,
     cogsAmount,
     vatAmount,
+    receipts: paymentReceipts(input.payment),
   });
+}
+
+/**
+ * The payments behind `paidAmount`, each with the method it came in by: whatever was paid
+ * when the transaction was written (on its own method), then every later payment entry.
+ */
+function paymentReceipts(payment: CustomerTransactionPayment): Array<{ method: string | null; amount: number }> {
+  const entries = (payment.entries ?? []).filter((entry) => roundAmount(entry.amount) > 0);
+  const fromEntries = entries.reduce((sum, entry) => sum + roundAmount(entry.amount), 0);
+  const initial = Math.max(0, roundAmount(payment.paidAmount) - fromEntries);
+  return [
+    { method: payment.method, amount: initial },
+    ...entries.map((entry) => ({ method: entry.method ?? payment.method, amount: roundAmount(entry.amount) })),
+  ].filter((receipt) => receipt.amount > 0);
 }
 
 /**
@@ -911,7 +934,15 @@ export async function updateCustomerTransaction(
   id: string,
   previous: CustomerTransactionRecord,
   rawNext: CreateCustomerTransactionInput,
-  options?: { journalDescription?: string },
+  options?: {
+    journalDescription?: string;
+    /**
+     * Business date for the reversal and the re-posted entry. A payment recorded through this
+     * path passes its own date: the reversal and the repost cancel out except for the payment
+     * itself, so the money lands in the period it was actually received.
+     */
+    entryDate?: string;
+  },
 ): Promise<void> {
   const next = sanitizeTransactionInput(rawNext);
   const txRef = doc(db, CUSTOMER_TRANSACTIONS_COLLECTION, id);
@@ -925,6 +956,20 @@ export async function updateCustomerTransaction(
 
   await runTransaction(db, async (t) => {
     // ── All reads first: a Firestore transaction cannot read after it has written. ──
+    // The edit is worked out from `previous` — the screen's copy. If the stored record has
+    // moved on since (another tab, or the same payment submitted twice), reversing the
+    // screen's journal entry would reverse the wrong one, so the edit stops instead.
+    const storedSnap = await t.get(txRef);
+    if (!storedSnap.exists()) {
+      throw new Error("Гүйлгээ олдсонгүй");
+    }
+    const stored = storedSnap.data() as Record<string, unknown>;
+    const storedEntryId = typeof stored.journalEntryId === "string" ? stored.journalEntryId : null;
+    const storedPaid = roundAmount(Number((stored.payment as Record<string, unknown> | undefined)?.paidAmount ?? 0));
+    if (storedEntryId !== (previous.journalEntryId ?? null) || storedPaid !== roundAmount(previous.payment.paidAmount)) {
+      throw new Error("Гүйлгээ өөр газраас өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.");
+    }
+
     const states = await loadStockStates(t, [
       prevMovesStock ? previous.items : [],
       nextMovesStock ? next.items : [],
@@ -970,6 +1015,7 @@ export async function updateCustomerTransaction(
         description: `Гүйлгээ засварласан — хуучин бичилтийг цуцаллаа: ${previous.txNumber}`,
         reversalOf: previous.journalEntryId,
         createdBy: next.createdByUid,
+        ...(options?.entryDate ? { date: options.entryDate } : {}),
       });
     }
 
@@ -982,6 +1028,7 @@ export async function updateCustomerTransaction(
           sourceNumber: previous.txNumber,
           description: options?.journalDescription ?? `Гүйлгээ засварласан: ${previous.txNumber}`,
           createdBy: next.createdByUid,
+          ...(options?.entryDate ? { date: options.entryDate } : {}),
         });
 
     t.update(txRef, {
@@ -1037,6 +1084,8 @@ export interface RecordTransactionPaymentInput {
   /** YYYY-MM-DD payment date. */
   date: string;
   amount: number;
+  /** How the money came in. Defaults to the transaction's own method, then cash. */
+  method?: CustomerTransactionPaymentMethod | null;
   note?: string;
   createdByUid: string;
 }
@@ -1067,6 +1116,7 @@ async function applyPaymentChange(
   payment: CustomerTransactionPayment,
   createdByUid: string,
   journalDescription: string,
+  entryDate?: string,
 ): Promise<void> {
   await updateCustomerTransaction(
     previous.id,
@@ -1083,7 +1133,7 @@ async function applyPaymentChange(
       note: previous.note,
       createdByUid,
     },
-    { journalDescription },
+    { journalDescription, entryDate },
   );
 }
 
@@ -1112,6 +1162,7 @@ export async function recordCustomerTransactionPayment(
   const entry: CustomerTransactionPaymentEntry = {
     date: input.date,
     amount,
+    method: input.method ?? previous.payment.method ?? "cash",
     note: (input.note ?? "").trim(),
     createdAt: new Date().toISOString(),
     createdByUid: input.createdByUid,
@@ -1128,6 +1179,7 @@ export async function recordCustomerTransactionPayment(
     },
     input.createdByUid,
     `Төлбөр бүртгэсэн: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+    input.date,
   );
 }
 
@@ -1158,7 +1210,13 @@ export async function updateCustomerTransactionPaymentEntry(
   const newPaidAmount = paidWithoutEntry + amount;
   const nextEntries = entries.map((entry, idx) =>
     idx === entryIndex
-      ? { ...entry, date: input.date, amount, note: (input.note ?? "").trim() }
+      ? {
+          ...entry,
+          date: input.date,
+          amount,
+          method: input.method ?? entry.method ?? previous.payment.method ?? null,
+          note: (input.note ?? "").trim(),
+        }
       : entry,
   );
 
@@ -1173,6 +1231,7 @@ export async function updateCustomerTransactionPaymentEntry(
     },
     input.createdByUid,
     `Төлбөрийн бичилт засварласан: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+    input.date,
   );
 }
 
@@ -1207,6 +1266,8 @@ export async function deleteCustomerTransactionPaymentEntry(
     },
     createdByUid,
     `Төлбөрийн бичилт устгасан: ${previous.txNumber} — ${previous.customerSnapshot.name}`,
+    // Taken back on the day it was recorded as received, so that period no longer shows it.
+    oldEntry.date || undefined,
   );
 }
 

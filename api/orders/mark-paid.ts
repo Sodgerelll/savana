@@ -1,18 +1,18 @@
 // POST /api/orders/mark-paid
 // Body: { orderId: string }
-// Server-side counterpart to src/lib/orders.ts#markOrderAsPaid — re-verifies the order's
-// Bonum invoice, flips the order to "paid", and posts the accounting journal entry, all via
-// the Admin SDK. This keeps online-order revenue recognition (and the journal entry that
-// represents it) authored server-side instead of trusting the customer's own browser.
+// The "I have paid — check" button's server side, and the fallback for a Bonum webhook that
+// never arrived. Asks Bonum about the order's own invoice and, only if Bonum says it is paid
+// in full, flips the order to "paid", moves its stock and posts the journal entry — all via
+// the Admin SDK (api/_lib/postOrderPaidEntry.ts).
 //
-// If FIREBASE_SERVICE_ACCOUNT_JSON isn't configured (e.g. local dev), responds 503 with
-// { fallback: true } so the client can degrade to its previous direct-Firestore-write path
-// (no journal entry posted in that case — matches today's dev-without-credentials behavior).
+// Needs no caller identity: the only thing it can ever do is record a payment Bonum has
+// already confirmed for the invoice the server itself raised for this order. An order with
+// no invoice is refused outright — it used to be marked paid with no check at all.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { bonumGet } from '../bonum/_client.js';
-import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
+import { PaymentVerificationError, postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
 
 interface BonumInvoiceBody {
@@ -22,6 +22,8 @@ interface BonumInvoiceBody {
   completedAt?: string;
   terminalId?: string | number;
   amount?: number;
+  invoiceId?: string;
+  transactionId?: string;
 }
 
 interface BonumInvoiceStatus {
@@ -35,15 +37,15 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const { orderId } = (req.body ?? {}) as { orderId?: string };
-  if (!orderId || !orderId.trim()) {
+  const { orderId } = (req.body ?? {}) as { orderId?: unknown };
+  if (typeof orderId !== 'string' || !/^[A-Za-z0-9]{1,64}$/.test(orderId)) {
     res.status(400).json({ error: 'orderId is required' });
     return;
   }
 
   const dbPromise = getAdminFirestore();
   if (!dbPromise) {
-    res.status(503).json({ error: 'Service unavailable', fallback: true });
+    res.status(503).json({ error: 'Төлбөрийн баталгаажуулалт түр боломжгүй байна. Хэсэг хугацааны дараа дахин оролдоно уу.' });
     return;
   }
 
@@ -64,30 +66,44 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const invoiceId = typeof payment.invoiceId === 'string' ? payment.invoiceId : null;
-    const bonumFields: Record<string, unknown> = {};
-
-    if (invoiceId) {
-      const result = await bonumGet<BonumInvoiceStatus>(`/bonum-gateway/ecommerce/invoices/${invoiceId}`);
-      const body = result?.body;
-      const topStatus = String(result?.status ?? '').toUpperCase();
-      const bodyStatus = String(body?.status ?? body?.invoiceStatus ?? '').toUpperCase();
-      const paid = topStatus === 'PAID' || bodyStatus === 'PAID' || topStatus === 'SUCCESS' || bodyStatus === 'SUCCESS';
-
-      if (!paid) {
-        res.status(400).json({
-          error: 'Төлбөр Bonum системд баталгаажаагүй байна. Төлбөрөө хийсний дараа дахин шалгана уу.',
-        });
-        return;
-      }
-
-      if (body?.paymentVendor) bonumFields.bonumPaymentVendor = String(body.paymentVendor);
-      if (body?.completedAt) bonumFields.bonumCompletedAt = String(body.completedAt);
-      if (body?.terminalId != null) bonumFields.bonumTerminalId = String(body.terminalId);
-      if (body?.amount != null) bonumFields.bonumAmount = Number(body.amount);
+    const invoiceId = typeof payment.invoiceId === 'string' && payment.invoiceId ? payment.invoiceId : null;
+    if (!invoiceId) {
+      res.status(400).json({ error: 'Энэ захиалгад төлбөрийн нэхэмжлэх үүсээгүй байна.' });
+      return;
     }
 
-    await postOrderPaidEntry(db, orderId, bonumFields);
+    const result = await bonumGet<BonumInvoiceStatus>(
+      `/bonum-gateway/ecommerce/invoices/${encodeURIComponent(invoiceId)}`,
+    );
+    const body = result?.body;
+    const topStatus = String(result?.status ?? '').toUpperCase();
+    const bodyStatus = String(body?.status ?? body?.invoiceStatus ?? '').toUpperCase();
+    const paid = topStatus === 'PAID' || bodyStatus === 'PAID' || topStatus === 'SUCCESS' || bodyStatus === 'SUCCESS';
+
+    if (!paid) {
+      res.status(400).json({
+        error: 'Төлбөр Bonum системд баталгаажаагүй байна. Төлбөрөө хийсний дараа дахин шалгана уу.',
+      });
+      return;
+    }
+
+    // The invoice must be this order's own. Bonum echoes the transactionId it was raised
+    // with, which is the order id.
+    if (body?.transactionId && String(body.transactionId) !== orderId) {
+      res.status(400).json({ error: 'Төлөгдсөн нэхэмжлэх энэ захиалгынх биш байна.' });
+      return;
+    }
+
+    const bonumFields: Record<string, unknown> = {};
+    if (body?.paymentVendor) bonumFields.bonumPaymentVendor = String(body.paymentVendor);
+    if (body?.completedAt) bonumFields.bonumCompletedAt = String(body.completedAt);
+    if (body?.terminalId != null) bonumFields.bonumTerminalId = String(body.terminalId);
+    if (body?.amount != null) bonumFields.bonumAmount = Number(body.amount);
+
+    await postOrderPaidEntry(db, orderId, bonumFields, {
+      invoiceId: body?.invoiceId ? String(body.invoiceId) : invoiceId,
+      paidAmount: body?.amount != null ? Number(body.amount) : null,
+    });
 
     // The buyer joins the CRM directory, but never at the cost of the payment: a failure
     // here is logged and swallowed so the order is still reported as paid.
@@ -100,8 +116,12 @@ export default async function handler(req: any, res: any): Promise<void> {
     const updatedSnap = await orderRef.get();
     res.status(200).json({ payment: (updatedSnap.data() as Record<string, unknown>).payment });
   } catch (err) {
+    if (err instanceof PaymentVerificationError) {
+      console.error(`[orders/mark-paid] ${orderId}: ${err.code}`);
+      res.status(400).json({ error: err.message });
+      return;
+    }
     console.error('[orders/mark-paid] failed:', err);
-    const message = err instanceof Error ? err.message : 'Internal error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: 'Төлбөр шалгах үед алдаа гарлаа. Дахин оролдоно уу.' });
   }
 }

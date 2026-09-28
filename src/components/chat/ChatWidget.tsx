@@ -214,13 +214,23 @@ export default function ChatWidget() {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
+      // A signed-in shopper proves who they are with an ID token, so the server can let
+      // them read this thread back later. A guest sends none.
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (user && !user.isAnonymous) {
+        try {
+          headers.Authorization = `Bearer ${await user.getIdToken()}`;
+        } catch {
+          // Without a token the message still goes through, just unattributed.
+        }
+      }
+
       const response = await fetch("/api/chat/widget", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           sessionId: sessionIdRef.current,
           message,
-          userId: user?.uid ?? null,
         }),
         signal: controller.signal,
       });

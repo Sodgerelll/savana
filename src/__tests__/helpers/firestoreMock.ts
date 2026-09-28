@@ -96,6 +96,7 @@ export function createFirestoreMock(): FirestoreMock {
       return makeRef(segments.join("/"));
     }),
     getDoc: vi.fn(async (ref: DocRef) => snapshotFor(ref)),
+    setDoc: vi.fn(async (ref: DocRef, data: Record<string, unknown>) => record("set", ref, data)),
     getDocs: vi.fn(async () => ({ docs: [], empty: true })),
     onSnapshot: vi.fn(),
     orderBy: vi.fn(),

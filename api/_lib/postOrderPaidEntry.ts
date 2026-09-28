@@ -199,14 +199,75 @@ function verifiedGoodsValue(
 }
 
 /**
+ * A payment notice that does not settle this order: it names another invoice, it paid less
+ * than the invoice asked for, or the order never had an invoice to pay. The order is left
+ * unpaid; the caller records the problem where an admin will see it.
+ */
+export class PaymentVerificationError extends Error {
+  readonly code: "NO_INVOICE" | "INVOICE_MISMATCH" | "AMOUNT_MISMATCH";
+
+  constructor(code: PaymentVerificationError["code"], message: string) {
+    super(message);
+    this.name = "PaymentVerificationError";
+    this.code = code;
+  }
+}
+
+/** What the payment provider says was paid, checked against the order before it is settled. */
+export interface PaymentEvidence {
+  /** The invoice the provider says was paid, when it says. */
+  invoiceId?: string | null;
+  /** The amount the provider says it collected, when it says. */
+  paidAmount?: number | null;
+}
+
+/**
+ * Throws PaymentVerificationError unless the evidence settles the order as it stands.
+ *
+ * The invoice id on an order is written only by the server (api/bonum/invoice.ts), for the
+ * amount it priced itself, so "Bonum says this invoice is paid" is proof the order was paid
+ * in full — provided the invoice is this order's own and the collected amount, when Bonum
+ * reports one, is not short of it.
+ */
+export function assertPaymentSettlesOrder(data: Record<string, unknown>, evidence: PaymentEvidence): void {
+  const payment = (data.payment as Record<string, unknown> | undefined) ?? {};
+  const orderInvoiceId = typeof payment.invoiceId === "string" && payment.invoiceId ? payment.invoiceId : null;
+
+  if (!orderInvoiceId) {
+    throw new PaymentVerificationError("NO_INVOICE", "Захиалгад Bonum нэхэмжлэх үүсээгүй байна.");
+  }
+
+  if (evidence.invoiceId && evidence.invoiceId !== orderInvoiceId) {
+    throw new PaymentVerificationError(
+      "INVOICE_MISMATCH",
+      "Төлөгдсөн нэхэмжлэх энэ захиалгынх биш байна.",
+    );
+  }
+
+  const expected = Math.round(Number(payment.amount ?? 0));
+  if (evidence.paidAmount != null && Number.isFinite(Number(evidence.paidAmount))) {
+    if (Math.round(Number(evidence.paidAmount)) < expected) {
+      throw new PaymentVerificationError(
+        "AMOUNT_MISMATCH",
+        `Төлсөн дүн (${Math.round(Number(evidence.paidAmount))}₮) захиалгын дүнгээс (${expected}₮) бага байна.`,
+      );
+    }
+  }
+}
+
+/**
  * Posts the "order paid" journal entry and moves the ordered goods out of stock, exactly
  * once per order, guarded by the order's own payment.status (only acts while it is still
- * "pending"). Safe to call from both the Bonum webhook and the client-fallback mark-paid
- * endpoint — whichever gets there first wins, the other is a no-op.
+ * "pending"). Safe to call from both the Bonum webhook and the mark-paid endpoint —
+ * whichever gets there first wins, the other is a no-op.
  *
  * Payment is the moment revenue is recognised, so it is also the moment stock moves: the
  * ledger entry and the stock movement are written in the same transaction and can never
  * happen without each other.
+ *
+ * `evidence` is what Bonum reported; the order is only settled if it passes
+ * assertPaymentSettlesOrder, otherwise PaymentVerificationError is thrown and nothing is
+ * written.
  *
  * Returns the posted entry id, or null if the order was already paid (no-op).
  */
@@ -214,6 +275,7 @@ export async function postOrderPaidEntry(
   db: any,
   orderId: string,
   bonumFields: Record<string, unknown>,
+  evidence: PaymentEvidence = {},
 ): Promise<string | null> {
   const orderRef = db.collection("orders").doc(orderId);
   const preSnap = await orderRef.get();
@@ -222,6 +284,9 @@ export async function postOrderPaidEntry(
   if ((preData.payment as Record<string, unknown> | undefined)?.status === "paid") {
     return null; // already posted by the other path (webhook vs. mark-paid race)
   }
+  // Checked before an entry number is reserved, so a rejected notice burns no number. Checked
+  // again inside the transaction against the fresh document.
+  assertPaymentSettlesOrder(preData, evidence);
 
   const items = Array.isArray(preData.items) ? (preData.items as OrderItem[]) : [];
   const uniqueProductIds = Array.from(
@@ -239,6 +304,7 @@ export async function postOrderPaidEntry(
     const data = snap.data() as Record<string, unknown>;
     const currentPayment = (data.payment as Record<string, unknown>) ?? {};
     if (currentPayment.status === "paid") return null; // re-checked inside the transaction
+    assertPaymentSettlesOrder(data, evidence);
 
     const productSnaps = new Map<number, any>();
     for (const productId of uniqueProductIds) {
@@ -262,13 +328,26 @@ export async function postOrderPaidEntry(
     for (const [productId, snapshot] of productSnaps) {
       productData.set(productId, snapshot.data() as Record<string, unknown>);
     }
-    const goodsValue = verifiedGoodsValue(items, productData, Number(totals.subtotal ?? 0));
-    const vatAddedOnTop = totals.vatMode === "added";
-    const verifiedGrandTotal = Math.min(
-      Math.round(statedGrandTotal),
-      goodsValue + Math.round(shippingFee) + (vatAddedOnTop ? Math.round(vatAmount) : 0),
-    );
-    const grandTotal = Math.max(0, verifiedGrandTotal);
+    // An order the server priced itself (api/bonum/invoice.ts, or a chat order) was invoiced
+    // for exactly its totals, and that invoice is what was just paid — so the ledger books
+    // what was collected. Re-pricing it against today's catalogue could only make the books
+    // disagree with the money (a discount that ended between invoice and payment). Orders
+    // from before server pricing are still re-priced as a guard against browser-made totals.
+    const serverPriced = (data.pricing as Record<string, unknown> | undefined)?.verifiedBy === "server";
+    let grandTotal: number;
+    if (serverPriced) {
+      grandTotal = Math.max(0, Math.round(statedGrandTotal));
+    } else {
+      const goodsValue = verifiedGoodsValue(items, productData, Number(totals.subtotal ?? 0));
+      const vatAddedOnTop = totals.vatMode === "added";
+      grandTotal = Math.max(
+        0,
+        Math.min(
+          Math.round(statedGrandTotal),
+          goodsValue + Math.round(shippingFee) + (vatAddedOnTop ? Math.round(vatAmount) : 0),
+        ),
+      );
+    }
     const totalsAdjusted = grandTotal !== Math.round(statedGrandTotal);
 
     const { lines, totalAmount } = buildOrderPaidLines(grandTotal, cogsAmount, vatAmount, shippingFee);
@@ -322,6 +401,10 @@ export async function postOrderPaidEntry(
       stockShortfall,
       totalsAdjusted,
       ledgerGrandTotal: grandTotal,
+      // The entry that recognised this order's revenue. An admin putting the order back to
+      // unpaid reverses exactly this one (src/lib/orders.ts, updateOrderByAdmin).
+      journalEntryId: entryRef.id,
+      paymentIssue: null,
       updatedAt: FieldValue.serverTimestamp(),
     });
 

@@ -11,6 +11,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
+import { readRawBody } from '../_lib/rawBody.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { handleCommentEvent, parseCommentChange } from './_lib/comments.js';
 import { matchFaq } from './_lib/faqMatch.js';
@@ -193,48 +194,25 @@ export default async function handler(req: any, res: any): Promise<void> {
 }
 
 /**
- * The exact bytes of the delivery. Meta escapes non-ASCII in its payloads, so a
- * signature recomputed from `JSON.stringify(req.body)` would fail on every
- * Mongolian message — the raw stream is the only thing worth hashing.
- *
- * Returns null when something upstream already drained the request, which is
- * the one case the caller cannot verify.
- */
-async function readRawBody(req: any): Promise<string | null> {
-  if (typeof req.body === 'string') {
-    return req.body;
-  }
-
-  if (Buffer.isBuffer(req.body)) {
-    return req.body.toString('utf8');
-  }
-
-  // Already drained, or not a stream at all: either way the bytes are gone.
-  if (req.readableEnded || req.readable === false || typeof req[Symbol.asyncIterator] !== 'function') {
-    return null;
-  }
-
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  return Buffer.concat(chunks).toString('utf8');
-}
-
-/**
  * Meta signs every delivery with the app secret. Without this check anyone who
  * learns the URL can post fabricated events: the bot would message arbitrary
  * PSIDs, spend Gemini quota and file leads for customers who never wrote in.
  *
- * An unset secret means unverified — the behaviour before this check existed,
- * and loud in the log — rather than a webhook that silently stops answering
- * because a variable was never added.
+ * An unset secret fails closed in production. Elsewhere it means unverified —
+ * loud in the log — rather than a local or preview webhook that silently stops
+ * answering because a variable was never added.
  */
 function hasValidSignature(req: any, raw: string | null): boolean {
   const secret = (process.env.FB_APP_SECRET ?? '').trim();
 
   if (!secret) {
+    // A production deployment without the secret would let anyone who learns the URL post
+    // fabricated events, so there it fails closed. Elsewhere (local, preview) it stays open
+    // and says so loudly, so a missing variable is noticed rather than silently fatal.
+    if (process.env.VERCEL_ENV === 'production') {
+      console.error('[chat/webhook] FB_APP_SECRET is not set — refusing unverified deliveries');
+      return false;
+    }
     console.warn('[chat/webhook] FB_APP_SECRET is not set — deliveries are NOT verified');
     return true;
   }

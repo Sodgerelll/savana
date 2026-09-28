@@ -1,26 +1,41 @@
 // POST /api/bonum/webhook
-// Receives Bonum payment notifications, validates the HmacSHA256 checksum,
-// then updates the matching Firestore order to "paid".
+// Receives Bonum payment notifications, validates the HmacSHA256 checksum, then settles the
+// matching Firestore order (api/_lib/postOrderPaidEntry.ts) — but only if the notice names
+// the order's own invoice and did not collect less than it asked for.
 //
 // Required env vars:
-//   BONUM_CHECKSUM_KEY          — MERCHANT_CHECKSUM_KEY from Bonum
-//   FIREBASE_SERVICE_ACCOUNT_JSON — Firebase Admin service account JSON (optional;
-//                                   if omitted, webhook still returns 200 but won't
-//                                   update Firestore — frontend polling handles status)
+//   BONUM_CHECKSUM_KEY            — MERCHANT_CHECKSUM_KEY from Bonum
+//   FIREBASE_SERVICE_ACCOUNT_JSON — Firebase Admin service account JSON
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from './_firebaseAdmin.js';
-import { postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
+import { PaymentVerificationError, postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
+import { readRawBody } from '../_lib/rawBody.js';
 import { tellTheChatCustomer } from '../chat/_lib/orderPaid.js';
 
-// Validate x-checksum-v2 header using HmacSHA256 over the compact JSON body string
-function isValidChecksum(bodyStr: string, signature: string): boolean {
+// The checksum is computed over the body exactly as Bonum sent it, so the platform must
+// not parse it first.
+export const config = { api: { bodyParser: false } };
+
+function digestMatches(payload: string, key: string, signature: string): boolean {
+  const expected = Buffer.from(createHmac('sha256', key).update(payload, 'utf8').digest('hex'));
+  const received = Buffer.from(signature.trim().toLowerCase());
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
+/**
+ * Validates the x-checksum-v2 header: HmacSHA256 over the body. The raw bytes are what Bonum
+ * signed; the compact re-serialisation is accepted as well because that is what this route
+ * always checked against, and a sender that already emits compact JSON produces the same
+ * string either way.
+ */
+export function isValidChecksum(raw: string | null, parsed: unknown, signature: string): boolean {
   const key = process.env.BONUM_CHECKSUM_KEY ?? '';
-  if (!key) return false;
-  const computed = createHmac('sha256', key).update(bodyStr, 'utf8').digest('hex');
-  return computed === signature;
+  if (!key || !signature) return false;
+  if (raw !== null && digestMatches(raw, key, signature)) return true;
+  return parsed !== undefined && digestMatches(JSON.stringify(parsed), key, signature);
 }
 
 interface WebhookPayment {
@@ -47,50 +62,77 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  // Reconstruct compact JSON for checksum validation
-  const bodyStr = JSON.stringify(req.body);
-  const signature = String(req.headers['x-checksum-v2'] ?? '');
+  const raw = await readRawBody(req);
+  let parsed: BonumWebhookBody | undefined;
+  try {
+    parsed = raw !== null ? (JSON.parse(raw) as BonumWebhookBody) : (req.body as BonumWebhookBody | undefined);
+  } catch {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
 
-  if (!isValidChecksum(bodyStr, signature)) {
+  const signature = String(req.headers?.['x-checksum-v2'] ?? '');
+  if (!isValidChecksum(raw, parsed, signature)) {
     console.error('[bonum/webhook] Invalid checksum');
     res.status(401).json({ error: 'Invalid checksum' });
     return;
   }
 
-  const { type, status, body } = req.body as BonumWebhookBody;
+  const { type, status, body } = parsed ?? {};
 
-  // Only act on successful payments
-  if (type === 'PAYMENT' && status === 'SUCCESS' && body?.transactionId) {
-    const orderId = body.transactionId;
-    try {
-      await markOrderPaidViaAdmin(orderId, body);
-    } catch (err) {
-      // Log but still return 200 so Bonum doesn't retry endlessly.
-      // The frontend "Check payment" button serves as fallback.
-      console.error('[bonum/webhook] Firestore update failed:', err);
-    }
+  // Only successful payments settle anything; everything else is acknowledged and dropped.
+  if (!(type === 'PAYMENT' && status === 'SUCCESS' && body?.transactionId)) {
+    res.status(200).json({ ok: true });
+    return;
   }
 
-  // Always acknowledge receipt
-  res.status(200).json({ ok: true });
-}
-
-async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPayment): Promise<void> {
   const dbPromise = getAdminFirestore();
   if (!dbPromise) {
-    // Firebase Admin SDK not configured — frontend polling will handle status
+    // Nothing can be recorded, so ask Bonum to try again later rather than acknowledging a
+    // payment that went nowhere.
+    console.error('[bonum/webhook] FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+    res.status(503).json({ error: 'Not configured' });
     return;
   }
 
   const db = await dbPromise;
+  const orderId = String(body.transactionId);
 
+  try {
+    await markOrderPaidViaAdmin(db, orderId, body);
+  } catch (err) {
+    if (err instanceof PaymentVerificationError) {
+      // Not something a retry can fix. The order stays unpaid and says why, where an admin
+      // looking at it will see — money Bonum took for the wrong amount is theirs to settle.
+      console.error(`[bonum/webhook] ${orderId}: ${err.code} — ${err.message}`);
+      await recordPaymentIssue(db, orderId, err, body).catch((recordErr) =>
+        console.error('[bonum/webhook] could not record the payment issue:', recordErr),
+      );
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    // A transient failure (Firestore, a contended transaction): answer with an error so Bonum
+    // delivers the notice again. Settling is idempotent, so a repeat is harmless.
+    console.error('[bonum/webhook] settling the order failed:', err);
+    res.status(500).json({ error: 'Processing failed' });
+    return;
+  }
+
+  res.status(200).json({ ok: true });
+}
+
+async function markOrderPaidViaAdmin(db: any, orderId: string, paymentBody: WebhookPayment): Promise<void> {
   const bonumFields: Record<string, unknown> = {};
   if (paymentBody.paymentVendor) bonumFields['bonumPaymentVendor'] = String(paymentBody.paymentVendor);
   if (paymentBody.completedAt) bonumFields['bonumCompletedAt'] = String(paymentBody.completedAt);
   if (paymentBody.terminalId != null) bonumFields['bonumTerminalId'] = String(paymentBody.terminalId);
   if (paymentBody.amount != null) bonumFields['bonumAmount'] = Number(paymentBody.amount);
 
-  await postOrderPaidEntry(db, orderId, bonumFields);
+  await postOrderPaidEntry(db, orderId, bonumFields, {
+    invoiceId: paymentBody.invoiceId ? String(paymentBody.invoiceId) : null,
+    paidAmount: paymentBody.amount != null ? Number(paymentBody.amount) : null,
+  });
 
   // The buyer joins the CRM directory, but never at the cost of the payment: a failure
   // here is logged and swallowed so the order still ends up marked paid.
@@ -105,4 +147,24 @@ async function markOrderPaidViaAdmin(orderId: string, paymentBody: WebhookPaymen
   } catch (err) {
     console.error('[bonum/webhook] chat confirmation failed:', err);
   }
+}
+
+async function recordPaymentIssue(
+  db: any,
+  orderId: string,
+  error: PaymentVerificationError,
+  paymentBody: WebhookPayment,
+): Promise<void> {
+  const orderRef = db.collection('orders').doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) return;
+  await orderRef.update({
+    paymentIssue: {
+      code: error.code,
+      message: error.message,
+      invoiceId: paymentBody.invoiceId ?? null,
+      amount: paymentBody.amount ?? null,
+      recordedAt: new Date().toISOString(),
+    },
+  });
 }

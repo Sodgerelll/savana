@@ -4,7 +4,6 @@ import {
   getDoc,
   getDocs,
   addDoc,
-  updateDoc,
   deleteDoc,
   runTransaction,
   serverTimestamp,
@@ -29,6 +28,7 @@ import {
   buildReversalEntry,
   buildTransferReturnEntry,
   buildPaymentReceivedEntry,
+  buildRefundPaidEntry,
 } from "../lib/accounting/entryBuilders";
 import { generateJournalEntryNumber, postJournalEntry, readJournalEntryLines } from "../lib/accounting/postEntryClient";
 import { COUNTERS_COLLECTION, reserveDocumentNumber } from "../lib/documentNumbers";
@@ -114,6 +114,31 @@ export async function getEffectivePrice(
 
   // 4. Standard
   return { price: listPrice, type: "standard", label: "Стандарт" };
+}
+
+// ─── Which transfers an action applies to ─────────────────────────────────────
+
+/**
+ * A transfer money can be received against: goods that went out on the customer's account
+ * and are not paid off. A draft has not reached their balance, a cancelled one has left it,
+ * and a return is money owed the other way. addPayment enforces the same rule.
+ */
+export function isPayableTransfer(transfer: Pick<Transfer, "type" | "status" | "paymentStatus">): boolean {
+  return (
+    transfer.type !== "RETURN" &&
+    ["CONFIRMED", "SHIPPED", "DELIVERED"].includes(transfer.status) &&
+    ["UNPAID", "PARTIAL", "CREDIT"].includes(transfer.paymentStatus)
+  );
+}
+
+/** A delivered transfer whose goods can come back. A return record never can. */
+export function isReturnableTransfer(transfer: Pick<Transfer, "type" | "status">): boolean {
+  return transfer.type !== "RETURN" && transfer.status === "DELIVERED";
+}
+
+/** A return that left the customer owed money which has not been paid out yet. */
+export function hasRefundDue(transfer: Pick<Transfer, "type" | "remainingAmount">): boolean {
+  return transfer.type === "RETURN" && Number(transfer.remainingAmount ?? 0) > 0;
 }
 
 // ─── Customer balance ─────────────────────────────────────────────────────────
@@ -395,29 +420,68 @@ export async function confirmTransfer(
 
 // ─── Ship Transfer ────────────────────────────────────────────────────────────
 
+/**
+ * Moves a transfer along its delivery path, but only from the status the step belongs to.
+ *
+ * Neither step used to check where the transfer stood, so a stale tab could "ship" a transfer
+ * that had already been cancelled — after which it could be cancelled again, putting its
+ * stock back and reversing its entry a second time. The check and the write now happen in
+ * one transaction.
+ */
+async function advanceTransferStatus(
+  transferId: string,
+  from: Transfer["status"],
+  to: Transfer["status"],
+  timeline: { type: "TRANSFER_SHIPPED" | "TRANSFER_DELIVERED"; title: (transferNumber: string) => string },
+  userId: string,
+  userName: string,
+): Promise<void> {
+  const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
+
+  await runTransaction(db, async (t) => {
+    const snap = await t.get(transferRef);
+    if (!snap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
+    const transfer = snap.data() as Transfer;
+
+    if (transfer.status !== from) {
+      throw new Error(
+        `Шилжүүлгийн төлөв өөрчлөгдсөн байна (${transfer.status}). Хуудсаа шинэчлээд дахин оролдоно уу.`,
+      );
+    }
+
+    t.update(transferRef, {
+      status: to,
+      ...(to === "DELIVERED" ? { deliveredAt: serverTimestamp() } : {}),
+      updatedAt: serverTimestamp(),
+    });
+
+    t.set(doc(collection(db, CUSTOMER_TIMELINE_COLLECTION)), {
+      customerId: transfer.customerId,
+      type: timeline.type,
+      title: timeline.title(transfer.transferNumber),
+      description: `${formatMoney(transfer.totalAmount)}`,
+      relatedId: transferId,
+      amount: transfer.totalAmount,
+      createdBy: userId,
+      createdByName: userName,
+      createdAt: serverTimestamp(),
+    });
+  });
+}
+
 export async function shipTransfer(
   transferId: string,
   userId: string,
   userName: string
 ): Promise<void> {
-  const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
-  const snap = await getDoc(transferRef);
-  if (!snap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
-  const transfer = snap.data() as Transfer;
-
-  await updateDoc(transferRef, { status: "SHIPPED", updatedAt: serverTimestamp() });
-
-  await addDoc(collection(db, CUSTOMER_TIMELINE_COLLECTION), {
-    customerId: transfer.customerId,
-    type: "TRANSFER_SHIPPED",
-    title: `Илгээгдлээ: ${transfer.transferNumber}`,
-    description: `${formatMoney(transfer.totalAmount)}`,
-    relatedId: transferId,
-    amount: transfer.totalAmount,
-    createdBy: userId,
-    createdByName: userName,
-    createdAt: serverTimestamp(),
-  });
+  await advanceTransferStatus(
+    transferId,
+    "CONFIRMED",
+    "SHIPPED",
+    { type: "TRANSFER_SHIPPED", title: (number) => `Илгээгдлээ: ${number}` },
+    userId,
+    userName,
+  );
 }
 
 // ─── Deliver Transfer ─────────────────────────────────────────────────────────
@@ -427,28 +491,14 @@ export async function deliverTransfer(
   userId: string,
   userName: string
 ): Promise<void> {
-  const transferRef = doc(db, TRANSFERS_COLLECTION, transferId);
-  const snap = await getDoc(transferRef);
-  if (!snap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
-  const transfer = snap.data() as Transfer;
-
-  await updateDoc(transferRef, {
-    status: "DELIVERED",
-    deliveredAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  await addDoc(collection(db, CUSTOMER_TIMELINE_COLLECTION), {
-    customerId: transfer.customerId,
-    type: "TRANSFER_DELIVERED",
-    title: `Хүргэгдлээ: ${transfer.transferNumber}`,
-    description: `${formatMoney(transfer.totalAmount)}`,
-    relatedId: transferId,
-    amount: transfer.totalAmount,
-    createdBy: userId,
-    createdByName: userName,
-    createdAt: serverTimestamp(),
-  });
+  await advanceTransferStatus(
+    transferId,
+    "SHIPPED",
+    "DELIVERED",
+    { type: "TRANSFER_DELIVERED", title: (number) => `Хүргэгдлээ: ${number}` },
+    userId,
+    userName,
+  );
 }
 
 // ─── Cancel Transfer ──────────────────────────────────────────────────────────
@@ -641,10 +691,25 @@ export async function addPayment(input: AddPaymentInput): Promise<void> {
       if (!transferSnap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
       const transfer = transferSnap.data() as Transfer;
 
+      // Money is only ever received against goods that actually went out on the customer's
+      // account. A draft has not reached their balance yet, a cancelled transfer has left it,
+      // and a return is money owed the other way (settleTransferRefund) — a payment booked
+      // against any of them used to lower a balance it had never raised.
+      if (transfer.type === "RETURN") {
+        throw new Error("Буцаалтын бичлэгт төлбөр хүлээн авах боломжгүй.");
+      }
+      if (!["CONFIRMED", "SHIPPED", "DELIVERED"].includes(transfer.status)) {
+        throw new Error("Зөвхөн батлагдсан шилжүүлэгт төлбөр бүртгэнэ.");
+      }
+
       // A payment can never be larger than what is still owed on the transfer. Without
       // this the receivable account went negative and the customer's balance quietly
-      // turned into a credit no one had granted.
-      const remaining = Math.max(0, transfer.totalAmount - transfer.paidAmount);
+      // turned into a credit no one had granted. What is owed is `remainingAmount`, which a
+      // return also reduces — not simply the total less what was paid.
+      const remaining = Math.max(
+        0,
+        Number(transfer.remainingAmount ?? transfer.totalAmount - transfer.paidAmount),
+      );
       if (input.amount > remaining) {
         throw new Error(
           `Төлсөн дүн үлдэгдлээс их байж болохгүй. Үлдэгдэл: ${formatMoney(remaining)}`,
@@ -652,7 +717,7 @@ export async function addPayment(input: AddPaymentInput): Promise<void> {
       }
 
       const newPaid = transfer.paidAmount + input.amount;
-      const newRemaining = Math.max(0, transfer.totalAmount - newPaid);
+      const newRemaining = Math.max(0, remaining - input.amount);
       const newPaymentStatus: Transfer["paymentStatus"] =
         newRemaining <= 0 ? "PAID" : "PARTIAL";
 
@@ -780,6 +845,9 @@ export async function createReturn(
     if (!origSnap.exists()) throw new Error("Эх шилжүүлэг олдсонгүй");
     const orig = { id: origSnap.id, ...origSnap.data() } as Transfer;
 
+    if (orig.type === "RETURN") {
+      throw new Error("Буцаалтын бичлэгийг дахин буцаах боломжгүй");
+    }
     if (orig.status !== "DELIVERED") {
       throw new Error("Зөвхөн хүргэгдсэн шилжүүлгийн буцаалт хийх боломжтой");
     }
@@ -787,13 +855,18 @@ export async function createReturn(
     // Nothing used to stop the same goods being returned over and over: each return simply
     // added its quantity back to stock and credited the customer again. A line can only
     // give back what it delivered, minus whatever earlier returns already took.
-    const deliveredByLine = new Map<string, { quantity: number; name: string }>();
+    //
+    // Each line also carries what it was actually billed at: its line total already has the
+    // line discount taken off, so the unit value of a return is that total over the units —
+    // never the list unit price the screen sends, which refunded the discount as well.
+    const deliveredByLine = new Map<string, { quantity: number; name: string; billed: number }>();
     for (const item of orig.items) {
       const key = returnLineKey(item);
       const existing = deliveredByLine.get(key);
       deliveredByLine.set(key, {
         quantity: (existing?.quantity ?? 0) + Number(item.quantity ?? 0),
         name: item.productName,
+        billed: (existing?.billed ?? 0) + Number(item.lineTotal ?? Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0)),
       });
     }
 
@@ -829,7 +902,17 @@ export async function createReturn(
       states.set(productId, readProductStockState(productId, productSnap.data() as Record<string, unknown>));
     }
 
-    const returnTotal = returnItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    // Valued at what each line was billed, per unit (see deliveredByLine above).
+    const billedUnitPrice = (item: ReturnItem): number => {
+      const line = deliveredByLine.get(returnLineKey(item));
+      return line && line.quantity > 0 ? line.billed / line.quantity : 0;
+    };
+    const valuedItems = returnItems.map((item) => ({
+      ...item,
+      unitPrice: billedUnitPrice(item),
+      lineTotal: Math.round(item.quantity * billedUnitPrice(item)),
+    }));
+    const returnTotal = valuedItems.reduce((s, i) => s + i.lineTotal, 0);
     // The goods came back with the tax that was charged on them, so the tax comes back too.
     // Booking the return net of НӨАТ left the shop owing tax on a sale it had un-made.
     const returnTaxRate = Number(orig.taxRate ?? 0);
@@ -847,15 +930,15 @@ export async function createReturn(
     const returnRef = doc(collection(db, TRANSFERS_COLLECTION));
     returnId = returnRef.id;
 
-    const items: TransferItem[] = returnItems.map((i) => ({
+    const items: TransferItem[] = valuedItems.map((i) => ({
       productId: i.productId,
       productName: i.productName,
       sku: i.sku,
       quantity: i.quantity,
-      unitPrice: i.unitPrice,
-      originalPrice: i.unitPrice,
+      unitPrice: Math.round(i.unitPrice),
+      originalPrice: Math.round(i.unitPrice),
       discountPercent: 0,
-      lineTotal: i.quantity * i.unitPrice,
+      lineTotal: i.lineTotal,
       variant: i.variant ?? null,
     }));
 
@@ -918,6 +1001,17 @@ export async function createReturn(
 
     states.forEach((state) => writeProductStock(t, state));
 
+    // The original transfer owes less by the debt the return cancelled. Leaving its own
+    // remaining figure alone let a second return cancel the same debt again, and let a later
+    // payment collect money the return had already written off.
+    const origRemainingAfter = Math.max(0, outstandingOnOriginal - debtReduction);
+    t.update(origRef, {
+      remainingAmount: origRemainingAfter,
+      returnedAmount: increment(returnGrandTotal),
+      ...(origRemainingAfter <= 0 ? { paymentStatus: "PAID" } : {}),
+      updatedAt: serverTimestamp(),
+    });
+
     // Update customer: the return cancels what was billed, and cancels debt only as far as
     // there was debt to cancel.
     const customerRef = doc(db, CUSTOMERS_COLLECTION, orig.customerId);
@@ -931,7 +1025,7 @@ export async function createReturn(
     const entryRef = postJournalEntry(
       t,
       entryNumber,
-      buildTransferReturnEntry({ returnTotal, cogsAmount, taxAmount: returnTaxAmount }),
+      buildTransferReturnEntry({ returnTotal, cogsAmount, taxAmount: returnTaxAmount, refundDue }),
       {
         sourceType: "transfer",
         sourceId: returnRef.id,
@@ -961,6 +1055,73 @@ export async function createReturn(
   });
 
   return returnId;
+}
+
+// ─── Settle a return's refund ─────────────────────────────────────────────────
+
+/**
+ * Pays a reseller back what a return left them owed (`remainingAmount` on the RETURN record,
+ * held in the refunds-payable account by createReturn). The liability clears, the money
+ * leaves the account it is paid from, and the customer's paid total drops by the same
+ * amount — which is what keeps sales − paid equal to their outstanding balance.
+ */
+export async function settleTransferRefund(
+  returnTransferId: string,
+  method: AddPaymentInput["method"],
+  userId: string,
+  userName: string,
+): Promise<void> {
+  const entryNumber = await generateJournalEntryNumber();
+
+  await runTransaction(db, async (t) => {
+    const ref = doc(db, TRANSFERS_COLLECTION, returnTransferId);
+    const snap = await t.get(ref);
+    if (!snap.exists()) throw new Error("Шилжүүлэг олдсонгүй");
+    const record = snap.data() as Transfer;
+    if (record.type !== "RETURN") {
+      throw new Error("Зөвхөн буцаалтын бичлэгт мөнгө буцаан олгоно.");
+    }
+
+    const due = Math.max(0, Math.round(Number(record.remainingAmount ?? 0)));
+    if (due <= 0) {
+      throw new Error("Буцаан олгох төлбөр үлдээгүй байна.");
+    }
+
+    const customerRef = doc(db, CUSTOMERS_COLLECTION, record.customerId);
+    const customerSnap = await t.get(customerRef);
+    if (!customerSnap.exists()) throw new Error("Харилцагч олдсонгүй");
+
+    t.update(ref, {
+      paidAmount: Number(record.paidAmount ?? 0) + due,
+      remainingAmount: 0,
+      paymentStatus: "PAID",
+      paymentMethod: method,
+      updatedAt: serverTimestamp(),
+    });
+
+    t.update(customerRef, { totalPaid: increment(-due) });
+
+    postJournalEntry(t, entryNumber, buildRefundPaidEntry({ amount: due, method }), {
+      sourceType: "transfer",
+      sourceId: returnTransferId,
+      sourceNumber: record.transferNumber,
+      description: `Буцаалтын төлбөр олгосон: ${record.transferNumber}`,
+      createdBy: userId,
+      createdByName: userName,
+    });
+
+    t.set(doc(collection(db, CUSTOMER_TIMELINE_COLLECTION)), {
+      customerId: record.customerId,
+      type: "NOTE_ADDED",
+      title: `Буцаалтын төлбөр олгосон: ${record.transferNumber}`,
+      description: `${formatMoney(due)} — ${methodLabel(method)}`,
+      relatedId: returnTransferId,
+      amount: due,
+      createdBy: userId,
+      createdByName: userName,
+      createdAt: serverTimestamp(),
+    });
+  });
 }
 
 // ─── Add Timeline Note ────────────────────────────────────────────────────────

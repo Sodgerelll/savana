@@ -42,6 +42,51 @@ service cloud.firestore {
         && (profileRole() == "worker" || profileRole() == "admin" || profileRole() == "sysadmin");
     }
 
+    // Rules cannot loop, so this unrolls the comparison for up to 20 variants — far more
+    // than any product carries. A list longer than that is simply refused to staff.
+    function variantUnchanged(before, after, index) {
+      return after.size() <= index
+        || (after[index].name == before[index].name
+          && after[index].get("price", null) == before[index].get("price", null));
+    }
+
+    function variantNamesAndPricesUnchanged(before, after) {
+      return before is list && after is list
+        && after.size() == before.size()
+        && after.size() <= 20
+        && variantUnchanged(before, after, 0) && variantUnchanged(before, after, 1)
+        && variantUnchanged(before, after, 2) && variantUnchanged(before, after, 3)
+        && variantUnchanged(before, after, 4) && variantUnchanged(before, after, 5)
+        && variantUnchanged(before, after, 6) && variantUnchanged(before, after, 7)
+        && variantUnchanged(before, after, 8) && variantUnchanged(before, after, 9)
+        && variantUnchanged(before, after, 10) && variantUnchanged(before, after, 11)
+        && variantUnchanged(before, after, 12) && variantUnchanged(before, after, 13)
+        && variantUnchanged(before, after, 14) && variantUnchanged(before, after, 15)
+        && variantUnchanged(before, after, 16) && variantUnchanged(before, after, 17)
+        && variantUnchanged(before, after, 18) && variantUnchanged(before, after, 19);
+    }
+
+    // Journal entries a factory worker's own actions produce. Everything else in the ledger
+    // stays admin-only.
+    function isFactorySourceType(sourceType) {
+      return sourceType == "productionBatch"
+        || sourceType == "rawMaterialPurchase"
+        || sourceType == "rawMaterialUsage";
+    }
+
+    // A counter may only ever move forward by one, or restart at 1 when its year rolls over
+    // (see reserveDocumentNumber in src/lib/documentNumbers.ts). Used for the two counters
+    // staff advance, so a worker cannot rewind a series and hand out a number twice.
+    function isNextCounterValue() {
+      return request.resource.data.keys().hasOnly(["lastNumber", "year", "prefix"])
+        && request.resource.data.lastNumber is int
+        && (resource == null
+          ? request.resource.data.lastNumber == 1
+          : (request.resource.data.year == resource.data.year
+            ? request.resource.data.lastNumber == resource.data.lastNumber + 1
+            : request.resource.data.lastNumber == 1));
+    }
+
     function isValidUserRole(role) {
       return role == "customer"
         || role == "worker"
@@ -178,6 +223,9 @@ service cloud.firestore {
       allow create, delete: if hasPrivilegedProfileRole();
       allow update: if hasPrivilegedProfileRole();
       // Staff move stock and record production cost; they never reprice the catalogue.
+      // `variants` has to be writable for stock to move on a sized product, but each variant
+      // also carries its own price — so a staff write must leave every variant's name and
+      // price exactly as they were.
       allow update: if hasStaffProfileRole()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "totalStock",
@@ -185,7 +233,9 @@ service cloud.firestore {
           "variants",
           "costPrice",
           "updatedAt",
-        ]);
+        ])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["variants"])
+          || variantNamesAndPricesUnchanged(resource.data.variants, request.resource.data.variants));
     }
 
     match /collections/{documentId} {
@@ -229,7 +279,33 @@ service cloud.firestore {
       // Order lookup now goes through /api/orders/lookup, which returns no personal data.
       allow list: if hasPrivilegedProfileRole()
         || (isSignedIn() && request.auth.uid == resource.data.auth.uid);
+      // A storefront checkout. The shopper says what they want and where it goes; they do
+      // not get to say what it costs or that it is paid. The order is saved with no invoice
+      // and api/bonum/invoice.ts (Admin SDK) re-prices it from the catalogue, raises the
+      // Bonum invoice for that figure and writes the invoice onto the order. The payment
+      // fields below are pinned to their unpaid, invoice-less values, and there is no update
+      // rule for the shopper at all — they used to be able to flip their own order to
+      // "paid" without paying, and to attach any invoice id they liked.
       allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          "orderNumber",
+          "schemaVersion",
+          "status",
+          "source",
+          "isManual",
+          "currency",
+          "auth",
+          "customer",
+          "address",
+          "items",
+          "totals",
+          "payment",
+          "stockApplied",
+          "createdAt",
+          "updatedAt",
+        ])
+        && request.resource.data.source == "web"
+        && request.resource.data.isManual == false
         && request.resource.data.auth.uid == request.auth.uid
         && request.resource.data.auth.isAnonymous == (request.auth.token.firebase.sign_in_provider == "anonymous")
         && request.resource.data.status == "new"
@@ -247,24 +323,31 @@ service cloud.firestore {
         && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
-        // Rules cannot sum a list, so the line totals behind `subtotal` cannot be checked
-        // here — api/_lib/postOrderPaidEntry.ts re-derives them against the catalogue
-        // before anything reaches the ledger. This bound just keeps a single order from
-        // carrying an unreasonable payload.
+        // Rules cannot sum a list, so the line totals cannot be checked here — the server
+        // re-prices every line before an invoice exists. This bound just keeps a single
+        // order from carrying an unreasonable payload.
         && request.resource.data.items.size() <= 100
+        && request.resource.data.payment.keys().hasOnly([
+          "method", "provider", "status", "amount", "qrPayload", "invoiceId", "paidAt",
+        ])
         && request.resource.data.payment.method == "bonum"
         && request.resource.data.payment.provider == "bonum"
         && request.resource.data.payment.status == "pending"
         && request.resource.data.payment.amount == request.resource.data.totals.grandTotal
-        && request.resource.data.payment.qrPayload is string
-        && request.resource.data.payment.qrPayload.size() > 0
-        && (request.resource.data.payment.invoiceId == null || request.resource.data.payment.invoiceId is string)
+        // A placeholder until the server writes the real link (AWAITING_INVOICE_QR).
+        && request.resource.data.payment.qrPayload == "awaiting-invoice"
+        && request.resource.data.payment.invoiceId == null
         && request.resource.data.payment.paidAt == null
         && request.resource.data.stockApplied == false
-        && request.resource.data.totals.shippingFee == 8000
+        // The fee comes from the shop settings and may be waived above a threshold, so it is
+        // not pinned to a number here (a fixed 8000 broke every checkout the moment the fee
+        // changed); the server re-derives it with the rest of the price.
+        && request.resource.data.totals.shippingFee is number
+        && request.resource.data.totals.shippingFee >= 0
         // Delivery is billed at cost and stays outside НӨАТ. "added" mode bills the tax on
         // top of the goods; the other modes leave the charged total untouched.
-        && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal + 8000
+        && request.resource.data.totals.grandTotal == request.resource.data.totals.subtotal
+          + request.resource.data.totals.shippingFee
           + (request.resource.data.totals.vatMode == "added" ? request.resource.data.totals.vatAmount : 0);
       // Orders an admin registers by hand (Messenger, phone, walk-in, …): no Bonum
       // invoice, so the payment method/status and shipping fee come from the form.
@@ -297,25 +380,22 @@ service cloud.firestore {
             && request.resource.data.payment.paidAt is string
             && request.resource.data.payment.paidAt.size() > 0)
         );
-      allow update: if isOrderOwner()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "payment", "updatedAt"])
-        && resource.data.status == "new"
-        && request.resource.data.status == "paid"
-        && request.resource.data.payment.method == resource.data.payment.method
-        && request.resource.data.payment.provider == resource.data.payment.provider
-        && request.resource.data.payment.amount == resource.data.payment.amount
-        && request.resource.data.payment.qrPayload == resource.data.payment.qrPayload
-        && request.resource.data.payment.invoiceId == resource.data.payment.invoiceId
-        && resource.data.payment.status == "pending"
-        && request.resource.data.payment.status == "paid"
-        && request.resource.data.payment.paidAt is string
-        && request.resource.data.payment.paidAt.size() > 0;
       allow update: if hasPrivilegedProfileRole()
-        // `stockApplied` belongs here: updateOrderByAdmin moves stock in the same
-        // transaction as the status change and flips this flag with it. Leaving it out
-        // meant every admin edit that crossed the paid boundary — the only kind that moves
-        // stock — was rejected outright.
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "source", "payment", "customer", "address", "stockApplied", "updatedAt"])
+        // `stockApplied` and `journalEntryId` belong here: updateOrderByAdmin moves stock and
+        // posts (or reverses) the revenue entry in the same transaction as the status change.
+        // `returns` is what createOrderReturn writes — without it no order could ever be
+        // returned.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "source",
+          "payment",
+          "customer",
+          "address",
+          "stockApplied",
+          "journalEntryId",
+          "returns",
+          "updatedAt",
+        ])
         && isOrderStatus(request.resource.data.status)
         && isOrderSource(request.resource.data.source)
         && request.resource.data.customer.fullName is string
@@ -323,18 +403,23 @@ service cloud.firestore {
         && request.resource.data.customer.phoneNumber.size() > 0
         && (request.resource.data.customer.email == null || request.resource.data.customer.email is string)
         && request.resource.data.customer.note is string
+        // A chat order keeps the whole address the customer typed in `streetAddress` and
+        // leaves the structured fields empty, so only that one has to be filled in.
         && request.resource.data.address.region is string
-        && request.resource.data.address.region.size() > 0
         && request.resource.data.address.districtOrSoum is string
-        && request.resource.data.address.districtOrSoum.size() > 0
         && request.resource.data.address.khorooOrBag is string
-        && request.resource.data.address.khorooOrBag.size() > 0
         && request.resource.data.address.streetAddress is string
         && request.resource.data.address.streetAddress.size() > 0
         && request.resource.data.address.additionalAddress is string
         && request.resource.data.payment.method is string
         && request.resource.data.payment.method.size() > 0
         && request.resource.data.payment.amount == resource.data.payment.amount
+        // An invoice is the server's to issue and Bonum's to settle: its id never changes by
+        // hand, and an order Bonum collected money for cannot be put back to unpaid.
+        && request.resource.data.payment.get("invoiceId", null) == resource.data.payment.get("invoiceId", null)
+        && !(resource.data.payment.status == "paid"
+          && resource.data.payment.get("invoiceId", null) is string
+          && request.resource.data.payment.status != "paid")
         && (
           (request.resource.data.status == "new"
             && request.resource.data.payment.status == "pending"
@@ -344,9 +429,13 @@ service cloud.firestore {
             && request.resource.data.payment.paidAt is string
             && request.resource.data.payment.paidAt.size() > 0)
         );
-      // Web (storefront) orders are never deletable; orders from every other channel
-      // (manual, messenger, phone, …) can be removed by a privileged admin.
-      allow delete: if hasPrivilegedProfileRole() && resource.data.source != "web";
+      // Web (storefront) orders are never deletable. Orders from other channels can be
+      // removed by an admin, except one Bonum has collected money for (that goes back through
+      // a return) or one that already has returns booked against it.
+      allow delete: if hasPrivilegedProfileRole()
+        && resource.data.source != "web"
+        && !(resource.data.payment.status == "paid" && resource.data.payment.get("invoiceId", null) is string)
+        && resource.data.get("returns", []).size() == 0;
     }
 
     match /customers/{customerId} {
@@ -443,6 +532,14 @@ service cloud.firestore {
           "customers",
           "crmContacts"
         ];
+      // The factory floor numbers its batches and the ledger entries its work posts. Staff
+      // could not do either before, so every batch a worker created, and every completion
+      // or costed purchase, failed on a permission error. They may only step a counter
+      // forward by one.
+      allow get: if hasStaffProfileRole() && counterId in ["productionBatches", "journalEntries"];
+      allow create, update: if hasStaffProfileRole()
+        && counterId in ["productionBatches", "journalEntries"]
+        && isNextCounterValue();
     }
 
     // Finance: Chart of accounts
@@ -458,6 +555,12 @@ service cloud.firestore {
     match /journalEntries/{entryId} {
       allow read, list: if hasPrivilegedProfileRole();
       allow create: if hasPrivilegedProfileRole();
+      // Staff post (and, when a completed batch is deleted, read back to reverse) only the
+      // entries their own factory work produces, and always as themselves.
+      allow get: if hasStaffProfileRole() && isFactorySourceType(resource.data.sourceType);
+      allow create: if hasStaffProfileRole()
+        && isFactorySourceType(request.resource.data.sourceType)
+        && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -551,6 +654,10 @@ service cloud.firestore {
           "updatedAt",
         ])
         && isValidUserRole(request.resource.data.role)
+        // Only a sysadmin grants or takes away sysadmin — an admin used to be able to make
+        // anyone, themselves included, a sysadmin.
+        && (profileRole() == "sysadmin"
+          || (request.resource.data.role != "sysadmin" && resource.data.role != "sysadmin"))
         && (request.resource.data.displayName == null || request.resource.data.displayName is string)
         && (request.resource.data.email == null || request.resource.data.email is string)
         && (request.resource.data.phoneNumber == null || request.resource.data.phoneNumber is string);

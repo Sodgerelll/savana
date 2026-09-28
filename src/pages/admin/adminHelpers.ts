@@ -93,7 +93,19 @@ export function getRoleLabel(role: UserRole, language: "MN" | "EN") {
   }
 }
 
-export function getManageableRoleOptions(currentRole: UserRole): UserRole[] {
+/**
+ * The roles an editor may give a user. Only a sysadmin grants or takes away sysadmin — the
+ * Firestore rules refuse anything else, so an admin is not offered it: a sysadmin's role is
+ * shown but cannot be changed, and sysadmin is left out for everyone else.
+ */
+export function getManageableRoleOptions(currentRole: UserRole, editorRole: UserRole = "sysadmin"): UserRole[] {
+  if (editorRole !== "sysadmin") {
+    if (currentRole === "sysadmin") {
+      return ["sysadmin"];
+    }
+    const roles: UserRole[] = ["admin", "worker"];
+    return currentRole === "customer" ? [...roles, "customer" as const] : roles;
+  }
   const roles: UserRole[] = ["sysadmin", "admin", "worker"];
   return currentRole === "customer" ? [...roles, "customer" as const] : roles;
 }

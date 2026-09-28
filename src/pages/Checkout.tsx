@@ -8,7 +8,9 @@ import { getDistrictOrSoumOptions, getKhorooOrBagOptions, DEFAULT_ADDRESS_REGION
 import {
   createOrder,
   markOrderAsPaid,
+  OrderInvoiceError,
   registerOrderContact,
+  requestOrderInvoice,
   type OrderItemPayload,
   type OrderPaymentPayload,
   type OrderTotalsPayload,
@@ -219,7 +221,7 @@ export default function Checkout() {
   const liveSummaryItems = useMemo<OrderItemPayload[]>(
     () =>
       items.map((item) => {
-        const discount = getActiveDiscount(discounts, item.product.id);
+        const discount = getActiveDiscount(discounts, item.product.id, item.unitPrice);
         const effectivePrice = discount ? applyDiscount(item.unitPrice, discount) : item.unitPrice;
         return {
           productId: item.product.id,
@@ -414,6 +416,17 @@ export default function Checkout() {
       return;
     }
 
+    // The shop's own floor for a delivered order. The server enforces it as well; checking
+    // here saves the shopper a round trip and an order that could never be invoiced.
+    if (settings.minOrderForDelivery > 0 && liveTotals.subtotal < settings.minOrderForDelivery) {
+      setSubmitError(
+        language === "MN"
+          ? `${formatStorePrice(settings.minOrderForDelivery)}-өөс доош дүнтэй захиалгыг хүргэх боломжгүй.`
+          : `Orders under ${formatStorePrice(settings.minOrderForDelivery)} cannot be delivered.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError("");
     setPaymentFeedback("");
@@ -452,17 +465,52 @@ export default function Checkout() {
       // step regardless.
       void registerOrderContact(result.id);
 
+      // The server prices the order from the catalogue and the invoice is for its figure,
+      // so that is what the summary shows from here on. It only differs from what the
+      // browser worked out when a price or a discount changed while the cart sat open.
       setPendingOrder({
         id: result.id,
         orderNumber: result.orderNumber,
-        items: nextItems,
-        totals: nextTotals,
+        items: result.items,
+        totals: result.totals,
         payment: result.payment,
       });
       clearCart();
       setActiveStep("payment");
-      setPaymentFeedback(copy.orderSaved);
+      setPaymentFeedback(
+        result.totals.grandTotal !== nextTotals.grandTotal
+          ? language === "MN"
+            ? `Үнэ шинэчлэгдсэн тул төлөх дүн ${formatStorePrice(result.totals.grandTotal)} болж өөрчлөгдлөө.`
+            : `Prices were updated; the amount to pay is now ${formatStorePrice(result.totals.grandTotal)}.`
+          : copy.orderSaved,
+      );
     } catch (error) {
+      if (error instanceof OrderInvoiceError) {
+        // The order is saved; only its invoice is missing. Keep it and let the shopper ask
+        // for the invoice again from the payment step instead of placing a second order.
+        void registerOrderContact(error.orderId);
+        setPendingOrder({
+          id: error.orderId,
+          orderNumber: error.orderNumber,
+          items: nextItems,
+          totals: nextTotals,
+          payment: {
+            method: "bonum",
+            provider: "bonum",
+            status: "pending",
+            amount: nextTotals.grandTotal,
+            qrPayload: "",
+            invoiceId: null,
+            paidAt: null,
+          },
+        });
+        clearCart();
+        setActiveStep("payment");
+        setPaymentFeedback(
+          `${error.message} ${language === "MN" ? "Доорх товчийг дарж дахин оролдоно уу." : "Press the button below to try again."}`,
+        );
+        return;
+      }
       setSubmitError(error instanceof Error ? error.message : "Order creation failed.");
     } finally {
       setSubmitting(false);
@@ -477,6 +525,34 @@ export default function Checkout() {
 
     setCheckingPayment(true);
     setPaymentFeedback("");
+
+    // No invoice yet (raising it failed when the order was placed): ask for it again.
+    if (!pendingOrder.payment.qrPayload) {
+      try {
+        const invoice = await requestOrderInvoice(pendingOrder.id);
+        setPendingOrder((current) =>
+          current
+            ? {
+                ...current,
+                items: invoice.items,
+                totals: invoice.totals,
+                payment: {
+                  ...current.payment,
+                  amount: invoice.totals.grandTotal,
+                  qrPayload: invoice.followUpLink,
+                  invoiceId: invoice.invoiceId,
+                },
+              }
+            : current,
+        );
+        setPaymentFeedback(copy.orderSaved);
+      } catch (error) {
+        setPaymentFeedback(error instanceof Error ? error.message : copy.paymentCheckFailed);
+      } finally {
+        setCheckingPayment(false);
+      }
+      return;
+    }
 
     try {
       const payment = await markOrderAsPaid(pendingOrder.id);
@@ -803,7 +879,13 @@ export default function Checkout() {
                     disabled={checkingPayment}
                   >
                     <RefreshCcw size={16} />
-                    {checkingPayment ? copy.checkingPayment : copy.checkPayment}
+                    {checkingPayment
+                      ? copy.checkingPayment
+                      : pendingOrder.payment.qrPayload
+                        ? copy.checkPayment
+                        : language === "MN"
+                          ? "Нэхэмжлэх дахин үүсгэх"
+                          : "Create the invoice again"}
                   </button>
 
                   <div className={`checkout-payment-status ${pendingOrder.payment.status === "paid" ? "paid" : "pending"}`}>

@@ -66,9 +66,13 @@ describe("sweepPendingChatPayments", () => {
     const result = await sweepPendingChatPayments(db, { now: NOW, force: true });
 
     expect(result).toEqual({ checked: 1, settled: 1 });
-    expect(mocks.postOrderPaidEntry).toHaveBeenCalledWith(db, "o1", {
-      bonumPaymentVendor: "qpay",
-    });
+    expect(mocks.postOrderPaidEntry).toHaveBeenCalledWith(
+      db,
+      "o1",
+      { bonumPaymentVendor: "qpay" },
+      // The invoice it checked goes along as evidence, so the order is only settled by its own.
+      { invoiceId: "inv-1", paidAmount: null },
+    );
     expect(mocks.sendText).toHaveBeenCalledWith(
       "PAGE-TOKEN",
       "PSID-1",

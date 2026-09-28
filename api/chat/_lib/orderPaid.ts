@@ -105,7 +105,7 @@ export async function sweepPendingChatPayments(
     result.checked += 1;
 
     try {
-      const status: any = await bonumGet(`/bonum-gateway/ecommerce/invoices/${invoiceId}`);
+      const status: any = await bonumGet(`/bonum-gateway/ecommerce/invoices/${encodeURIComponent(invoiceId)}`);
       const top = String(status?.status ?? '').toUpperCase();
       const inner = String(status?.body?.status ?? status?.body?.invoiceStatus ?? '').toUpperCase();
       const paid = ['PAID', 'SUCCESS'].includes(top) || ['PAID', 'SUCCESS'].includes(inner);
@@ -114,11 +114,21 @@ export async function sweepPendingChatPayments(
         continue;
       }
 
-      await postOrderPaidEntry(db, doc.id, {
-        ...(status?.body?.paymentVendor && { bonumPaymentVendor: String(status.body.paymentVendor) }),
-        ...(status?.body?.completedAt && { bonumCompletedAt: String(status.body.completedAt) }),
-        ...(status?.body?.amount != null && { bonumAmount: Number(status.body.amount) }),
-      });
+      // Same evidence as the webhook and mark-paid: the invoice and the amount Bonum reports
+      // are checked against the order before it is settled.
+      await postOrderPaidEntry(
+        db,
+        doc.id,
+        {
+          ...(status?.body?.paymentVendor && { bonumPaymentVendor: String(status.body.paymentVendor) }),
+          ...(status?.body?.completedAt && { bonumCompletedAt: String(status.body.completedAt) }),
+          ...(status?.body?.amount != null && { bonumAmount: Number(status.body.amount) }),
+        },
+        {
+          invoiceId,
+          paidAmount: status?.body?.amount != null ? Number(status.body.amount) : null,
+        },
+      );
       await tellTheChatCustomer(db, doc.id);
       result.settled += 1;
     } catch (err) {

@@ -4447,7 +4447,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                             // leaving a blank that moves the product-level counter alone.
                             const firstVariant = product?.variants?.[0] ?? null;
                             const listPrice = Math.round(firstVariant?.price ?? product?.price ?? 0);
-                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
+                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId, listPrice);
                             // A percentage typed into "Нэгж үнийн хөнгөлөлт" governs the whole
                             // transfer, so a product added afterwards comes in already reduced
                             // rather than at full price; without one the storefront's own
@@ -4506,7 +4506,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                                 (v: any)=> v.name === variantName,
                               );
                               const listPrice = Math.round(variant?.price ?? selectedProduct.price);
-                              const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
+                              const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId, listPrice);
                               const unitPrice = transactionModal.unitDiscountPercent
                                 ? discountedUnitPrice(listPrice, transactionModal.unitDiscountPercent)
                                 : activeDiscount
@@ -4950,6 +4950,10 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
   // When editing, the entry's own amount is freed up before re-applying the new one.
   const available = remaining + (editEntry ? Math.round(editEntry.amount) : 0);
   const draftAmount = Math.max(0, Math.round(Number(txPaymentModal.draft.amount) || 0));
+  // How the money came in: what the admin picked, else the entry being edited, else the
+  // transaction's own method — booked to that account in the ledger.
+  const draftMethod: "cash" | "bank" | "qpay" | "other" =
+    txPaymentModal.draft.method ?? editEntry?.method ?? liveTx?.payment?.method ?? "cash";
   const afterRemaining = available - draftAmount;
   const customerName =
     liveTx?.customerSnapshot?.name ??
@@ -4995,6 +4999,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             const input = {
               date: txPaymentModal.draft.date || new Date().toISOString().slice(0, 10),
               amount: draftAmount,
+              method: draftMethod,
               note: txPaymentModal.draft.note,
               createdByUid: user?.uid ?? "",
             };
@@ -5091,6 +5096,23 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               }
               required
             />
+          </label>
+          <label className="admin-field">
+            <span>{language === "MN" ? "Төлбөрийн хэлбэр" : "Paid by"}</span>
+            <select
+              value={draftMethod}
+              onChange={(event: any) =>
+                setTxPaymentModal({
+                  ...txPaymentModal,
+                  draft: { ...txPaymentModal.draft, method: event.target.value },
+                })
+              }
+            >
+              <option value="cash">{language === "MN" ? "Бэлэн" : "Cash"}</option>
+              <option value="bank">{language === "MN" ? "Банк" : "Bank transfer"}</option>
+              <option value="qpay">QPay</option>
+              <option value="other">{language === "MN" ? "Бусад" : "Other"}</option>
+            </select>
           </label>
           <label className="admin-field admin-field-wide">
             <span>{language === "MN" ? "Тайлбар" : "Note"}</span>
@@ -6746,7 +6768,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                           // a blank that would move the product-level counter alone.
                           const firstVariant = product?.variants?.[0] ?? null;
                           const listPrice = Math.round(firstVariant?.price ?? product?.price ?? 0);
-                          const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId);
+                          const activeDiscount = getActiveDiscount((discounts ?? []) as any[], productId, listPrice);
                           const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                           const primaryImage = product ? getProductPrimaryImage(product) : "";
                           patchItem(idx, {
@@ -6789,7 +6811,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                             const variantName = event.target.value || null;
                             const variant = selectedProduct.variants?.find((v: any) => v.name === variantName);
                             const listPrice = Math.round(variant?.price ?? selectedProduct.price);
-                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId);
+                            const activeDiscount = getActiveDiscount((discounts ?? []) as any[], item.productId, listPrice);
                             const unitPrice = activeDiscount ? applyDiscount(listPrice, activeDiscount) : listPrice;
                             patchItem(idx, {
                               variant: variantName,

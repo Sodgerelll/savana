@@ -541,7 +541,8 @@ interface TransactionPaymentModalState {
   customerId: string;
   /** Transaction the payment applies to — selectable in the modal when recording. */
   txId: string | null;
-  draft: { date: string; amount: number; note: string };
+  /** `method` is how the money came in; left unset the transaction's own method applies. */
+  draft: { date: string; amount: number; note: string; method?: "cash" | "bank" | "qpay" | "other" };
   /** When set, the modal edits the payment entry at this index instead of recording a new one. */
   editIndex?: number;
 }
@@ -3531,14 +3532,10 @@ export default function Account() {
       additionalAddress: orderModal.draft.address.additionalAddress.trim(),
     };
 
-    if (
-      !nextCustomer.fullName ||
-      !nextCustomer.phoneNumber ||
-      !nextAddress.region ||
-      !nextAddress.districtOrSoum ||
-      !nextAddress.khorooOrBag ||
-      !nextAddress.streetAddress
-    ) {
+    // Region, district and khoroo are not required: an order placed through the chat keeps
+    // the whole address the customer typed in the street field, and demanding the other three
+    // made every chat order impossible to update — status included.
+    if (!nextCustomer.fullName || !nextCustomer.phoneNumber || !nextAddress.streetAddress) {
       setOrderModalError(copy.orderUpdateFailed);
       return;
     }
@@ -3991,7 +3988,7 @@ export default function Account() {
     openSellerSaleModal,
     openSellerTxEditModal,
     clearTransactionSoldQuantities,
-    getManageableRoleOptions,
+    getManageableRoleOptions: (currentRole: UserRole) => getManageableRoleOptions(currentRole, role),
     getUserProviderSummary,
     // modal state
     settingsModal,

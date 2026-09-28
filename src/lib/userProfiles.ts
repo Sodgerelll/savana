@@ -174,7 +174,14 @@ export function resolveUserRole(identity: {
   phoneNumber?: string | null;
   role?: UserRole | null;
 }) {
-  if (identity.role === "sysadmin" || identity.role === "admin" || identity.role === "worker") {
+  // A stored role — customer included — is the answer: it is what the Firestore rules check.
+  // The allow-lists below only describe someone who has no profile document yet.
+  if (
+    identity.role === "sysadmin" ||
+    identity.role === "admin" ||
+    identity.role === "worker" ||
+    identity.role === "customer"
+  ) {
     return identity.role;
   }
 

@@ -7,12 +7,12 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  writeBatch,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
+  type Transaction,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import {
   buildGoodsWriteOffEntry,
   buildReversalEntry,
@@ -24,7 +24,7 @@ import {
 import {
   generateJournalEntryNumber,
   postJournalEntry,
-  JOURNAL_ENTRIES_COLLECTION,
+  readJournalEntryLines,
 } from "./accounting/postEntryClient";
 import { reserveDocumentNumber } from "./documentNumbers";
 import {
@@ -36,9 +36,11 @@ import {
   type ProductStockState,
   type StockMovementRequest,
 } from "./inventory";
-import { calculateVat, vatCarriedBy, VAT_MODE_VALUES, VAT_RATE, type VatMode } from "./vat";
+import { calculateVat, VAT_MODE_VALUES, VAT_RATE, type VatMode } from "./vat";
 import {
+  completesReturn,
   deserializeReturns,
+  retailReturnMoney,
   returnLineKey,
   returnedQuantities,
   type RetailReturnItem,
@@ -394,11 +396,14 @@ function movementsForItems(items: SaleItemPayload[]): StockMovementRequest[] {
 }
 
 /**
- * Loads the current stock position of every product touched by the given item lists. Reads
- * happen up front because a WriteBatch cannot read, so the caller must have the whole
- * picture before it starts assembling writes.
+ * Reads the current stock position of every product touched by the given item lists, inside
+ * the caller's transaction. Sequential because a transaction must finish all its reads before
+ * the first write. Reading here — rather than before a WriteBatch, as this used to — is what
+ * keeps two sales saved at the same moment from each writing back a count that ignores the
+ * other.
  */
 async function loadStockStates(
+  t: Transaction,
   itemLists: (SaleItemPayload[] | undefined)[],
 ): Promise<Map<number | string, ProductStockState>> {
   const productIds = Array.from(
@@ -411,15 +416,13 @@ async function loadStockStates(
   );
   const states = new Map<number | string, ProductStockState>();
 
-  await Promise.all(
-    productIds.map(async (productId) => {
-      const snapshot = await getDoc(productRef(productId));
-      states.set(
-        productId,
-        readProductStockState(productId, snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null),
-      );
-    }),
-  );
+  for (const productId of productIds) {
+    const snapshot = await t.get(productRef(productId));
+    states.set(
+      productId,
+      readProductStockState(productId, snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null),
+    );
+  }
 
   return states;
 }
@@ -456,6 +459,10 @@ function applyItemMovements(
  * The ledger entry a settled sale produces: revenue for a normal channel, a write-off at
  * cost for a gift or own use. Returns an empty entry when there is nothing to post (a
  * giveaway of goods whose cost is unknown).
+ *
+ * Delivery goes to its own revenue account, exactly as it does for a storefront order —
+ * it used to be folded into goods revenue here, so the same delivery fee was reported two
+ * different ways depending on the channel.
  */
 function buildEntryForSale(
   input: Pick<SaleDraftInput, "channel" | "paymentMethod" | "totals">,
@@ -468,41 +475,22 @@ function buildEntryForSale(
   return buildSaleEntry({
     grandTotal: input.totals.grandTotal,
     vatAmount: input.totals.vatAmount ?? 0,
+    shippingAmount: input.totals.shippingFee ?? 0,
     cogsAmount,
     paymentMethod: input.paymentMethod,
   });
 }
 
-/** Queues a mirror-image reversal of an already posted entry so the ledger nets to zero. */
-async function queueReversal(
-  batch: ReturnType<typeof writeBatch>,
-  journalEntryId: string,
-  saleId: string,
-  saleNumber: string,
-  description: string,
-): Promise<void> {
-  const snapshot = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, journalEntryId));
-  if (!snapshot.exists()) {
-    return;
-  }
-
-  const lines = (snapshot.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-  const entryNumber = await generateJournalEntryNumber();
-  postJournalEntry(batch, entryNumber, buildReversalEntry(lines), {
-    sourceType: "sale",
-    sourceId: saleId,
-    sourceNumber: saleNumber,
-    description,
-    reversalOf: journalEntryId,
-    createdBy: "system",
-  });
+/** Who is acting, for the journal entries an edit or deletion posts. */
+function currentActorUid(fallback: string): string {
+  return auth?.currentUser?.uid ?? fallback;
 }
 
 /**
  * Registers a sale made outside the storefront. When it is saved as settled
  * (paid/delivering/delivered) the journal entry AND the stock movement are written in the
- * same batch, so offline sales reach Finance the same way Bonum-paid web orders do and the
- * ledger can never disagree with what is on the shelf.
+ * same transaction, so offline sales reach Finance the same way Bonum-paid web orders do and
+ * the ledger can never disagree with what is on the shelf.
  *
  * Throws InsufficientStockError before writing anything when the items exceed what is in
  * stock, so a settled sale can never oversell.
@@ -511,173 +499,254 @@ export async function createSale(input: SaleDraftInput): Promise<CreatedSale> {
   const saleRef = doc(collection(db, SALES_COLLECTION));
   const settled = isSaleSettled(input.status);
 
-  // Every read — product stock, entry number, sale number — must complete before the batch
-  // is assembled, since writeBatch itself cannot read.
-  const states = settled ? await loadStockStates([input.items]) : new Map<number | string, ProductStockState>();
-  const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
-
-  if (settled) {
-    // Raises InsufficientStockError before any number is reserved or written.
-    applyItemMovements(states, input.items, 1);
-  }
-
+  // Both run their own transactions, so they are reserved before this one opens.
   const saleNumber = await createSaleNumber();
-  const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
-  const entryNumber = builtEntry && !isEmptyEntry(builtEntry) ? await generateJournalEntryNumber() : null;
+  const entryNumber = settled ? await generateJournalEntryNumber() : null;
 
-  const batch = writeBatch(db);
-  let journalEntryId: string | null = null;
+  await runTransaction(db, async (t) => {
+    const states = settled ? await loadStockStates(t, [input.items]) : new Map<number | string, ProductStockState>();
+    const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
 
-  if (builtEntry && entryNumber) {
-    const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
-      sourceType: "sale",
-      sourceId: saleRef.id,
-      sourceNumber: saleNumber,
-      description: saleEarnsRevenue(input.channel, input.paymentMethod)
-        ? `Борлуулалт: ${saleNumber}`
-        : `Бэлэг/дотоод хэрэглээ: ${saleNumber}`,
-      createdBy: input.createdByUid,
+    if (settled) {
+      applyItemMovements(states, input.items, 1);
+    }
+
+    const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
+    let journalEntryId: string | null = null;
+
+    if (builtEntry && entryNumber && !isEmptyEntry(builtEntry)) {
+      const entryRef = postJournalEntry(t, entryNumber, builtEntry, {
+        sourceType: "sale",
+        sourceId: saleRef.id,
+        sourceNumber: saleNumber,
+        description: saleEarnsRevenue(input.channel, input.paymentMethod)
+          ? `Борлуулалт: ${saleNumber}`
+          : `Бэлэг/дотоод хэрэглээ: ${saleNumber}`,
+        createdBy: input.createdByUid,
+        createdByName: input.createdByName ?? "",
+      });
+      journalEntryId = entryRef.id;
+    }
+
+    t.set(saleRef, {
+      saleNumber,
+      schemaVersion: SALE_SCHEMA_VERSION,
+      status: input.status,
+      channel: input.channel,
+      currency: "MNT",
+      customer: normalizeSaleCustomer(input.customer),
+      address: input.address,
+      items: input.items,
+      totals: input.totals,
+      paymentMethod: input.paymentMethod,
+      paidAt: settled ? new Date().toISOString() : null,
+      createdByUid: input.createdByUid,
       createdByName: input.createdByName ?? "",
+      journalEntryId,
+      createdAt: input.saleDate ? saleDateToTimestamp(input.saleDate) : serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
-    journalEntryId = entryRef.id;
-  }
 
-  batch.set(saleRef, {
-    saleNumber,
-    schemaVersion: SALE_SCHEMA_VERSION,
-    status: input.status,
-    channel: input.channel,
-    currency: "MNT",
-    customer: normalizeSaleCustomer(input.customer),
-    address: input.address,
-    items: input.items,
-    totals: input.totals,
-    paymentMethod: input.paymentMethod,
-    paidAt: settled ? new Date().toISOString() : null,
-    createdByUid: input.createdByUid,
-    createdByName: input.createdByName ?? "",
-    journalEntryId,
-    createdAt: input.saleDate ? saleDateToTimestamp(input.saleDate) : serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    states.forEach((state) => writeProductStock(t, state));
   });
-
-  states.forEach((state) => writeProductStock(batch, state));
-
-  await batch.commit();
 
   return { id: saleRef.id, saleNumber };
 }
 
 /**
- * Saves an edited sale. Any previously posted entry is reversed and a fresh one posted for
- * the new amounts, and the stock the old version held is released before the new version
- * reserves what it needs — so an edit that changes both the status and the item list nets
- * out correctly in one batch.
+ * The goods a sale's returns have already brought back, per line. An edit must keep at least
+ * that many on the sale — otherwise the returns would refer to units the sale no longer has.
+ */
+function assertEditKeepsReturnedUnits(
+  returns: RetailReturnRecord[],
+  nextItems: SaleItemPayload[],
+  nextSettled: boolean,
+): void {
+  if (returns.length === 0) return;
+
+  if (!nextSettled) {
+    throw new Error("Буцаалт бүртгэгдсэн борлуулалтыг төлөгдөөгүй төлөвт шилжүүлэх боломжгүй.");
+  }
+
+  const kept = new Map<string, number>();
+  for (const item of nextItems) {
+    const key = returnLineKey(item.productId, item.variant);
+    kept.set(key, (kept.get(key) ?? 0) + item.quantity);
+  }
+  for (const [key, returnedQuantity] of returnedQuantities(returns)) {
+    if ((kept.get(key) ?? 0) < returnedQuantity) {
+      throw new Error("Буцаагдсан тооноос бага болгож засах боломжгүй — эхлээд буцаалтыг шалгана уу.");
+    }
+  }
+}
+
+/**
+ * Saves an edited sale. Whatever the stored sale held is undone first (stock back, entry
+ * reversed) and the edited version is applied fresh, in one transaction.
+ *
+ * The undo works from the sale as it is stored, not from the copy the screen was showing, so
+ * an edit made from a stale tab cannot put back goods the sale no longer holds. A sale with
+ * returns stays settled and keeps at least the returned units; its return entries stand.
  */
 export async function updateSale(
   id: string,
   previous: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "paidAt" | "status" | "items" | "createdAt">,
   input: SaleDraftInput,
 ): Promise<void> {
-  const wasSettled = isSaleSettled(previous.status);
+  const saleRef = doc(db, SALES_COLLECTION, id);
   const settled = isSaleSettled(input.status);
 
-  const states = await loadStockStates([previous.items, input.items]);
-
-  // Release first, then reserve, so swapping one item for another never trips the stock
-  // check on quantity the sale itself is already holding.
-  if (wasSettled) {
-    applyItemMovements(states, previous.items, -1);
+  // Which entries the edit will post depends on the stored sale; read it first so the numbers
+  // can be reserved (they run their own transactions), then confirm it inside.
+  const pre = await getDoc(saleRef);
+  if (!pre.exists()) {
+    throw new Error("Борлуулалт олдсонгүй");
   }
-  if (settled) {
-    applyItemMovements(states, input.items, 1);
-  }
+  const preData = pre.data() as Record<string, unknown>;
+  const storedEntryId = typeof preData.journalEntryId === "string" ? preData.journalEntryId : null;
+  const reversalNumber = storedEntryId ? await generateJournalEntryNumber() : null;
+  const entryNumber = settled ? await generateJournalEntryNumber() : null;
 
-  const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
-  const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
+  await runTransaction(db, async (t) => {
+    const snap = await t.get(saleRef);
+    if (!snap.exists()) {
+      throw new Error("Борлуулалт олдсонгүй");
+    }
+    const data = snap.data() as Record<string, unknown>;
+    const currentEntryId = typeof data.journalEntryId === "string" ? data.journalEntryId : null;
+    if (currentEntryId !== storedEntryId) {
+      throw new Error("Борлуулалт өөр газраас өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.");
+    }
 
-  const batch = writeBatch(db);
+    const storedItems = deserializeSaleItems(data.items);
+    const wasSettled = isSaleSettled(normalizeStatus(data.status));
+    assertEditKeepsReturnedUnits(deserializeReturns(data.returns), input.items, settled);
 
-  if (previous.journalEntryId) {
-    await queueReversal(
-      batch,
-      previous.journalEntryId,
-      id,
-      previous.saleNumber,
-      "Борлуулалт засварласан — хуучин бичилтийг цуцаллаа",
-    );
-  }
+    // ── Reads ──
+    const states = await loadStockStates(t, [storedItems, input.items]);
+    const oldLines = storedEntryId ? await readJournalEntryLines(t, storedEntryId) : null;
 
-  let journalEntryId: string | null = null;
+    // ── Stock ──
+    if (wasSettled) {
+      applyItemMovements(states, storedItems, -1);
+    }
+    if (settled) {
+      applyItemMovements(states, input.items, 1);
+    }
 
-  if (builtEntry && !isEmptyEntry(builtEntry)) {
-    const entryNumber = await generateJournalEntryNumber();
-    const entryRef = postJournalEntry(batch, entryNumber, builtEntry, {
-      sourceType: "sale",
-      sourceId: id,
-      sourceNumber: previous.saleNumber,
-      description: `Борлуулалт засварласан: ${previous.saleNumber}`,
-      createdBy: input.createdByUid,
-      createdByName: input.createdByName ?? "",
+    // ── Ledger ──
+    if (storedEntryId && oldLines && reversalNumber) {
+      postJournalEntry(t, reversalNumber, buildReversalEntry(oldLines), {
+        sourceType: "sale",
+        sourceId: id,
+        sourceNumber: previous.saleNumber,
+        description: "Борлуулалт засварласан — хуучин бичилтийг цуцаллаа",
+        reversalOf: storedEntryId,
+        createdBy: currentActorUid(input.createdByUid),
+      });
+    }
+
+    const cogsAmount = settled ? cogsForMovements(states, movementsForItems(input.items)) : 0;
+    const builtEntry = settled ? buildEntryForSale(input, cogsAmount) : null;
+    let journalEntryId: string | null = null;
+
+    if (builtEntry && entryNumber && !isEmptyEntry(builtEntry)) {
+      const entryRef = postJournalEntry(t, entryNumber, builtEntry, {
+        sourceType: "sale",
+        sourceId: id,
+        sourceNumber: previous.saleNumber,
+        description: `Борлуулалт засварласан: ${previous.saleNumber}`,
+        createdBy: input.createdByUid,
+        createdByName: input.createdByName ?? "",
+      });
+      journalEntryId = entryRef.id;
+    }
+
+    // The date field only moves when the admin actually picked a different day; re-saving an
+    // untouched date keeps the original timestamp rather than re-stamping it with the edit's
+    // time of day.
+    const storedCreatedAt = parseTimestamp(data.createdAt) ?? previous.createdAt;
+    const previousSaleDate = storedCreatedAt ? toDateInputValue(new Date(storedCreatedAt)) : null;
+    const createdAtUpdate =
+      input.saleDate && input.saleDate !== previousSaleDate
+        ? { createdAt: saleDateToTimestamp(input.saleDate) }
+        : {};
+    const storedPaidAt = parseTimestamp(data.paidAt);
+
+    t.update(saleRef, {
+      status: input.status,
+      channel: input.channel,
+      customer: normalizeSaleCustomer(input.customer),
+      address: input.address,
+      items: input.items,
+      totals: input.totals,
+      paymentMethod: input.paymentMethod,
+      paidAt: settled ? (storedPaidAt ?? new Date().toISOString()) : null,
+      journalEntryId,
+      ...createdAtUpdate,
+      updatedAt: serverTimestamp(),
     });
-    journalEntryId = entryRef.id;
-  }
 
-  // The sale date only moves when it was actually changed — otherwise editing an unrelated
-  // field would nudge createdAt to "now" and reorder the sale in every list sorted by it.
-  const previousSaleDate = previous.createdAt ? toDateInputValue(new Date(previous.createdAt)) : null;
-  const createdAtUpdate =
-    input.saleDate && input.saleDate !== previousSaleDate
-      ? { createdAt: saleDateToTimestamp(input.saleDate) }
-      : {};
-
-  batch.update(doc(db, SALES_COLLECTION, id), {
-    status: input.status,
-    channel: input.channel,
-    customer: normalizeSaleCustomer(input.customer),
-    address: input.address,
-    items: input.items,
-    totals: input.totals,
-    paymentMethod: input.paymentMethod,
-    paidAt: settled ? (previous.paidAt ?? new Date().toISOString()) : null,
-    journalEntryId,
-    ...createdAtUpdate,
-    updatedAt: serverTimestamp(),
+    states.forEach((state) => writeProductStock(t, state));
   });
-
-  states.forEach((state) => writeProductStock(batch, state));
-
-  await batch.commit();
 }
 
+/**
+ * Deletes a sale: its stock comes back and its entry is reversed, in one transaction. A sale
+ * with returns cannot be deleted — its returned units are already back on the shelf and its
+ * return entries already refunded the buyer, so deleting it would do both a second time.
+ */
 export async function deleteSale(
   id: string,
   sale: Pick<SaleRecord, "saleNumber" | "journalEntryId" | "status" | "items">,
 ): Promise<void> {
-  const wasSettled = isSaleSettled(sale.status);
-  const states = wasSettled ? await loadStockStates([sale.items]) : new Map<number | string, ProductStockState>();
+  const saleRef = doc(db, SALES_COLLECTION, id);
 
-  if (wasSettled) {
-    applyItemMovements(states, sale.items, -1);
+  const pre = await getDoc(saleRef);
+  if (!pre.exists()) {
+    return;
   }
-
-  const batch = writeBatch(db);
-
-  if (sale.journalEntryId) {
-    await queueReversal(
-      batch,
-      sale.journalEntryId,
-      id,
-      sale.saleNumber,
-      "Борлуулалт устгасан — бичилтийг цуцаллаа",
-    );
+  const preData = pre.data() as Record<string, unknown>;
+  if (deserializeReturns(preData.returns).length > 0) {
+    throw new Error("Буцаалт бүртгэгдсэн борлуулалтыг устгах боломжгүй.");
   }
+  const storedEntryId = typeof preData.journalEntryId === "string" ? preData.journalEntryId : null;
+  const reversalNumber = storedEntryId ? await generateJournalEntryNumber() : null;
 
-  batch.delete(doc(db, SALES_COLLECTION, id));
+  await runTransaction(db, async (t) => {
+    const snap = await t.get(saleRef);
+    if (!snap.exists()) {
+      return;
+    }
+    const data = snap.data() as Record<string, unknown>;
+    const currentEntryId = typeof data.journalEntryId === "string" ? data.journalEntryId : null;
+    if (currentEntryId !== storedEntryId || deserializeReturns(data.returns).length > 0) {
+      throw new Error("Борлуулалт өөр газраас өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.");
+    }
 
-  states.forEach((state) => writeProductStock(batch, state));
+    const storedItems = deserializeSaleItems(data.items);
+    const wasSettled = isSaleSettled(normalizeStatus(data.status));
+    const states = wasSettled ? await loadStockStates(t, [storedItems]) : new Map<number | string, ProductStockState>();
+    const oldLines = storedEntryId ? await readJournalEntryLines(t, storedEntryId) : null;
 
-  await batch.commit();
+    if (wasSettled) {
+      applyItemMovements(states, storedItems, -1);
+    }
+
+    if (storedEntryId && oldLines && reversalNumber) {
+      postJournalEntry(t, reversalNumber, buildReversalEntry(oldLines), {
+        sourceType: "sale",
+        sourceId: id,
+        sourceNumber: sale.saleNumber,
+        description: "Борлуулалт устгасан — бичилтийг цуцаллаа",
+        reversalOf: storedEntryId,
+        createdBy: currentActorUid("system"),
+      });
+    }
+
+    t.delete(saleRef);
+    states.forEach((state) => writeProductStock(t, state));
+  });
 }
 
 /** One line of a return request — the caller only picks a product/variant and a quantity. */
@@ -758,10 +827,31 @@ export async function createSaleReturn(
       );
     }
 
-    const returnGross = returnItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-    const vatMode = normalizeVatMode((data.totals as Record<string, unknown> | undefined)?.vatMode);
-    const vatAmount = vatCarriedBy(returnGross, vatMode);
-    const returnNet = returnGross - vatAmount;
+    // What the buyer was actually charged for the goods: the total less delivery and any
+    // НӨАТ added on top. Worked out from the total rather than `subtotal`, which some sales
+    // store before the whole-sale discount and others (migrated orders) after it — and a
+    // return valued at list price refunded the discount back to the buyer.
+    const totalsData = (data.totals as Record<string, unknown> | undefined) ?? {};
+    const vatMode = normalizeVatMode(totalsData.vatMode);
+    const chargedVat = Number(totalsData.vatAmount ?? 0);
+    const chargedGoodsValue = Math.max(
+      0,
+      Number(totalsData.grandTotal ?? 0) -
+        Number(totalsData.shippingFee ?? 0) -
+        (vatMode === "added" ? chargedVat : 0),
+    );
+    const money = retailReturnMoney({
+      linesValue: returnItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
+      allLinesValue: items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
+      chargedGoodsValue,
+      chargedVat,
+      vatMode,
+      priorReturns: existingReturns,
+      completesReturn: completesReturn(items, existingReturns, returnItems),
+    });
+    const vatAmount = money.vat;
+    const returnNet = money.net;
+    const returnGross = money.gross;
 
     const movements: StockMovementRequest[] = returnItems.map((item) => ({
       productId: item.productId,

@@ -11,6 +11,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
+import { identifyCaller, readBearerToken } from '../_lib/callerIdentity.js';
 import { buildStorefrontPrompt, loadStorefrontContext, storefrontUrl } from './_lib/buildPrompt.js';
 import { getRecentPosts } from './_lib/facebook.js';
 import { classifyTopic, mergeTopic } from './_lib/topics.js';
@@ -207,11 +208,20 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
+    // The signed-in uid decides who may read this thread back (firestore.rules,
+    // isChatConversationOwner), so it is taken from a verified ID token — never from
+    // the request body, where anyone could name anyone.
+    let userId: string | null = null;
+    if (readBearerToken(req)) {
+      const caller = await identifyCaller(req);
+      userId = caller.ok ? caller.uid : null;
+    }
+
     const conversation = await ensureConversation(db, {
       channel: 'widget',
       pageId: WIDGET_PAGE_ID,
       externalUserId: sessionId,
-      userId: typeof body.userId === 'string' ? body.userId : null,
+      userId,
     });
 
     // Handled before the message is recorded and before the silence rule, which

@@ -1,27 +1,26 @@
 import {
-  arrayRemove,
-  arrayUnion,
   collection,
   deleteDoc,
   doc,
   type DocumentData,
   type FirestoreError,
-  getDoc,
-  increment,
   onSnapshot,
   type QueryDocumentSnapshot,
   serverTimestamp,
   setDoc,
   type Unsubscribe,
-  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { buildRawMaterialPurchaseEntry, buildRawMaterialWriteOffEntry } from "./accounting/entryBuilders";
 import {
-  buildRawMaterialPurchaseEntry,
-  buildRawMaterialWriteOffEntry,
-  buildReversalEntry,
-} from "./accounting/entryBuilders";
-import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
+  blendUnitCost,
+  landedAmount,
+  recordMaterialPurchase,
+  recordMaterialUsage,
+  removeMaterialPurchase,
+  removeMaterialUsage,
+  type MaterialLedgerConfig,
+} from "./materialLedger";
 
 export const RAW_MATERIALS_COLLECTION = "rawMaterials";
 
@@ -53,6 +52,8 @@ export interface RawMaterialPurchaseEntry {
    * reversal defaulted to cash, so a bank purchase deleted cash it never spent.
    */
   paymentMethod?: string | null;
+  /** What the purchase posted to the ledger (goods + freight). Absent on older entries. */
+  ledgerAmount?: number;
 }
 
 export interface RawMaterialUsageEntry {
@@ -98,6 +99,7 @@ function deserializePurchaseEntry(raw: unknown): RawMaterialPurchaseEntry | null
     // Purchases recorded before the field existed all went to cash, which is what the
     // reversal will now use for them too — the same account their original entry hit.
     paymentMethod: typeof r.paymentMethod === "string" ? r.paymentMethod : null,
+    ...(typeof r.ledgerAmount === "number" ? { ledgerAmount: r.ledgerAmount } : {}),
   };
 }
 
@@ -196,50 +198,43 @@ export interface AddRawMaterialPurchaseInput {
   paymentMethod?: string | null;
 }
 
-/** What a purchase cost in total — 0 when no unit cost was recorded. */
-function purchaseAmount(entry: Pick<RawMaterialPurchaseEntry, "quantity" | "unitCost">): number {
-  return entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
-}
-
 /** Landed cost of a purchase — the material itself plus what it cost to freight in. */
 export function purchaseLandedCost(
   entry: Pick<RawMaterialPurchaseEntry, "quantity" | "unitCost" | "cargo">,
 ): number {
-  return purchaseAmount(entry) + Math.max(0, entry.cargo || 0);
+  return landedAmount(entry);
+}
+
+export { blendUnitCost };
+
+const RAW_MATERIAL_LEDGER: MaterialLedgerConfig = {
+  collectionName: RAW_MATERIALS_COLLECTION,
+  purchaseSourceType: "rawMaterialPurchase",
+  usageSourceType: "rawMaterialUsage",
+  buildPurchaseEntry: buildRawMaterialPurchaseEntry,
+  buildWriteOffEntry: buildRawMaterialWriteOffEntry,
+  notFoundMessage: "Material not found",
+  describePurchase: (entry, itemId) => `Түүхий эд худалдан авалт: ${String(entry.supplier ?? "") || String(itemId)}`,
+  describePurchaseRemoval: "Түүхий эдийн худалдан авалт устгасан — бичилтийг цуцаллаа",
+  describeUsage: (entry, itemId) => `Түүхий эдийн зарцуулалт: ${String(entry.reason ?? "") || String(itemId)}`,
+  describeUsageRemoval: "Түүхий эдийн зарцуулалт устгасан — бичилтийг цуцаллаа",
+};
+
+function newEntryId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 /**
- * The material's unit cost after `quantity` units arrive at `unitCost`, blended with what
- * was already on the shelf.
- *
- * Buying used to leave `unitCost` alone, so it stayed at whatever figure was typed in by
- * hand while the ledger recorded what was really paid — recipes and journal entries then
- * costed the same material two different ways. Returns null when there is nothing to go
- * on, which leaves the existing figure untouched.
- */
-export function blendUnitCost(
-  currentRemaining: number,
-  currentUnitCost: number | null,
-  quantity: number,
-  unitCost: number | null,
-): number | null {
-  if (unitCost === null || unitCost <= 0 || quantity <= 0) return null;
-  const held = Math.max(0, currentRemaining);
-  if (currentUnitCost === null || currentUnitCost <= 0 || held <= 0) return unitCost;
-  return Math.round((held * currentUnitCost + quantity * unitCost) / (held + quantity));
-}
-
-/**
- * Records a raw-material purchase. The stock of materials grows and the money account it
- * was paid from shrinks — the ledger side used to be missing entirely, which left the
- * inventory accounts only ever being credited by COGS and never debited.
+ * Records a raw-material purchase: the stock of materials grows by the quantity and the money
+ * account it was paid from shrinks by the landed cost (goods plus freight). See
+ * src/lib/materialLedger.ts.
  */
 export async function addRawMaterialPurchase(
   materialId: number,
   input: AddRawMaterialPurchaseInput,
 ): Promise<void> {
-  const entry: RawMaterialPurchaseEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  await recordMaterialPurchase(RAW_MATERIAL_LEDGER, materialId, {
+    id: newEntryId(),
     quantity: input.quantity,
     unitCost: input.unitCost,
     supplier: input.supplier,
@@ -250,86 +245,14 @@ export async function addRawMaterialPurchase(
     createdByUid: input.createdByUid,
     createdAt: new Date().toISOString(),
     paymentMethod: input.paymentMethod ?? null,
-  };
-
-  const amount = purchaseAmount(entry);
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const materialRef = doc(rawMaterialsRef, String(materialId));
-
-  // Read before writing so the new unit cost can be blended with what is already held.
-  const currentSnap = await getDoc(materialRef);
-  const currentData = currentSnap.exists() ? (currentSnap.data() as Record<string, unknown>) : {};
-  const nextUnitCost = blendUnitCost(
-    Number(currentData.remaining ?? 0),
-    currentData.unitCost === null || currentData.unitCost === undefined ? null : Number(currentData.unitCost),
-    input.quantity,
-    input.unitCost,
-  );
-
-  const batch = writeBatch(db);
-
-  batch.update(materialRef, {
-    remaining: increment(input.quantity),
-    purchaseLog: arrayUnion(entry),
-    ...(nextUnitCost !== null ? { unitCost: nextUnitCost } : {}),
-    _updatedAt: serverTimestamp(),
   });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildRawMaterialPurchaseEntry({ amount, paymentMethod: input.paymentMethod }),
-      {
-        sourceType: "rawMaterialPurchase",
-        sourceId: `${materialId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Түүхий эд худалдан авалт: ${input.supplier || String(materialId)}`,
-        createdBy: input.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
 }
 
 export async function removeRawMaterialPurchase(
   materialId: number,
   entry: RawMaterialPurchaseEntry,
 ): Promise<void> {
-  const amount = purchaseAmount(entry);
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-  const materialRef = doc(rawMaterialsRef, String(materialId));
-
-  batch.update(materialRef, {
-    remaining: increment(-entry.quantity),
-    purchaseLog: arrayRemove(entry),
-    _updatedAt: serverTimestamp(),
-  });
-
-  if (entryNumber) {
-    // Mirror image of the purchase: the materials leave again and the money goes back to
-    // the account it was actually paid from, not whichever one happens to be the default.
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildReversalEntry(
-        buildRawMaterialPurchaseEntry({ amount, paymentMethod: entry.paymentMethod }).lines,
-      ),
-      {
-        sourceType: "rawMaterialPurchase",
-        sourceId: `${materialId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Түүхий эдийн худалдан авалт устгасан — бичилтийг цуцаллаа`,
-        createdBy: entry.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
+  await removeMaterialPurchase(RAW_MATERIAL_LEDGER, materialId, entry);
 }
 
 export interface AddRawMaterialUsageInput {
@@ -349,88 +272,20 @@ export async function addRawMaterialUsage(
   materialId: number,
   input: AddRawMaterialUsageInput,
 ): Promise<void> {
-  const materialRef = doc(rawMaterialsRef, String(materialId));
-  const currentSnap = await getDoc(materialRef);
-  if (!currentSnap.exists()) throw new Error("Material not found");
-  const currentData = currentSnap.data() as Record<string, unknown>;
-  const remaining = Number(currentData.remaining ?? 0);
-  if (input.quantity > remaining) {
-    throw new Error("INSUFFICIENT_STOCK");
-  }
-  const unitCost = currentData.unitCost === null || currentData.unitCost === undefined
-    ? null
-    : Number(currentData.unitCost);
-
-  const entry: RawMaterialUsageEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  await recordMaterialUsage(RAW_MATERIAL_LEDGER, materialId, {
+    id: newEntryId(),
     quantity: input.quantity,
-    unitCost,
     reason: input.reason,
     usedAt: input.usedAt,
     notes: input.notes,
     createdByUid: input.createdByUid,
     createdAt: new Date().toISOString(),
-  };
-
-  const amount = unitCost && unitCost > 0 ? Math.round(input.quantity * unitCost) : 0;
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-
-  batch.update(materialRef, {
-    remaining: increment(-input.quantity),
-    usageLog: arrayUnion(entry),
-    _updatedAt: serverTimestamp(),
   });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildRawMaterialWriteOffEntry({ amount }),
-      {
-        sourceType: "rawMaterialUsage",
-        sourceId: `${materialId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Түүхий эдийн зарцуулалт: ${input.reason || String(materialId)}`,
-        createdBy: input.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
 }
 
 export async function removeRawMaterialUsage(
   materialId: number,
   entry: RawMaterialUsageEntry,
 ): Promise<void> {
-  const amount = entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-  const materialRef = doc(rawMaterialsRef, String(materialId));
-
-  batch.update(materialRef, {
-    remaining: increment(entry.quantity),
-    usageLog: arrayRemove(entry),
-    _updatedAt: serverTimestamp(),
-  });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildReversalEntry(buildRawMaterialWriteOffEntry({ amount }).lines),
-      {
-        sourceType: "rawMaterialUsage",
-        sourceId: `${materialId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Түүхий эдийн зарцуулалт устгасан — бичилтийг цуцаллаа`,
-        createdBy: entry.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
+  await removeMaterialUsage(RAW_MATERIAL_LEDGER, materialId, entry);
 }

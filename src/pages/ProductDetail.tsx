@@ -51,7 +51,7 @@ export default function ProductDetail() {
   const currentPrice = selectedVariant
     ? product.variants?.find((v) => v.name === selectedVariant)?.price ?? product.price
     : product.price;
-  const activeDiscount = getActiveDiscount(discounts, product.id);
+  const activeDiscount = getActiveDiscount(discounts, product.id, currentPrice);
   const effectivePrice = activeDiscount ? applyDiscount(currentPrice, activeDiscount) : currentPrice;
 
   const hasVariants = (product.variants?.length ?? 0) > 0;

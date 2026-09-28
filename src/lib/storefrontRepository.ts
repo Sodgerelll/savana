@@ -1,6 +1,4 @@
 import {
-  arrayRemove,
-  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -9,7 +7,6 @@ import {
   type FirestoreError,
   getDoc,
   getDocs,
-  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -35,13 +32,15 @@ import {
   type Testimonial,
 } from "../data/storefront";
 import { db, firestoreDatabaseId } from "./firebase";
-import { blendUnitCost } from "./rawMaterials";
+import { buildPackagingPurchaseEntry, buildPackagingWriteOffEntry } from "./accounting/entryBuilders";
 import {
-  buildPackagingPurchaseEntry,
-  buildPackagingWriteOffEntry,
-  buildReversalEntry,
-} from "./accounting/entryBuilders";
-import { generateJournalEntryNumber, postJournalEntry } from "./accounting/postEntryClient";
+  landedAmount,
+  recordMaterialPurchase,
+  recordMaterialUsage,
+  removeMaterialPurchase,
+  removeMaterialUsage,
+  type MaterialLedgerConfig,
+} from "./materialLedger";
 
 export const STOREFRONT_SITE_ID = "main";
 const STOREFRONT_SCHEMA_VERSION = 1;
@@ -73,6 +72,8 @@ export interface PackagingPurchaseEntry {
   createdAt: string;
   /** Money account the purchase settled from, kept so a reversal returns money to the same place. */
   paymentMethod?: string | null;
+  /** What the purchase posted to the ledger (goods + freight). Absent on older entries. */
+  ledgerAmount?: number;
 }
 
 export interface PackagingUsageEntry {
@@ -114,6 +115,7 @@ function deserializePackagingPurchaseEntry(raw: unknown): PackagingPurchaseEntry
     createdByUid: String(r.createdByUid ?? ""),
     createdAt: String(r.createdAt ?? ""),
     paymentMethod: typeof r.paymentMethod === "string" ? r.paymentMethod : null,
+    ...(typeof r.ledgerAmount === "number" ? { ledgerAmount: r.ledgerAmount } : {}),
   };
 }
 
@@ -202,28 +204,40 @@ export interface AddPackagingPurchaseInput {
   paymentMethod?: string | null;
 }
 
-/** What a purchase cost in total — 0 when no unit cost was recorded. */
-function packagingPurchaseAmount(entry: Pick<PackagingPurchaseEntry, "quantity" | "unitCost">): number {
-  return entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
-}
-
 /** Landed cost of a purchase — the item itself plus what it cost to freight in. */
 export function packagingPurchaseLandedCost(
   entry: Pick<PackagingPurchaseEntry, "quantity" | "unitCost" | "cargo">,
 ): number {
-  return packagingPurchaseAmount(entry) + Math.max(0, entry.cargo || 0);
+  return landedAmount(entry);
+}
+
+const PACKAGING_LEDGER: MaterialLedgerConfig = {
+  collectionName: "packaging",
+  purchaseSourceType: "packagingPurchase",
+  usageSourceType: "packagingUsage",
+  buildPurchaseEntry: buildPackagingPurchaseEntry,
+  buildWriteOffEntry: buildPackagingWriteOffEntry,
+  notFoundMessage: "Packaging item not found",
+  describePurchase: (entry, itemId) => `Сав баглаа боодол худалдан авалт: ${String(entry.supplier ?? "") || String(itemId)}`,
+  describePurchaseRemoval: "Сав баглаа боодлын худалдан авалт устгасан — бичилтийг цуцаллаа",
+  describeUsage: (entry, itemId) => `Сав баглаа боодлын зарцуулалт: ${String(entry.reason ?? "") || String(itemId)}`,
+  describeUsageRemoval: "Сав баглаа боодлын зарцуулалт устгасан — бичилтийг цуцаллаа",
+};
+
+function newPackagingEntryId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 /**
- * Records a packaging purchase. Stock grows and the money account it was paid from shrinks,
- * mirroring addRawMaterialPurchase in rawMaterials.ts.
+ * Records a packaging purchase. Stock grows and the money account it was paid from shrinks
+ * by the landed cost — see src/lib/materialLedger.ts, shared with raw materials.
  */
 export async function addPackagingPurchase(
   itemId: number,
   input: AddPackagingPurchaseInput,
 ): Promise<void> {
-  const entry: PackagingPurchaseEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  await recordMaterialPurchase(PACKAGING_LEDGER, itemId, {
+    id: newPackagingEntryId(),
     quantity: input.quantity,
     unitCost: input.unitCost,
     supplier: input.supplier,
@@ -234,84 +248,14 @@ export async function addPackagingPurchase(
     createdByUid: input.createdByUid,
     createdAt: new Date().toISOString(),
     paymentMethod: input.paymentMethod ?? null,
-  };
-
-  const amount = packagingPurchaseAmount(entry);
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const itemRef = doc(packagingRef, String(itemId));
-
-  // Read before writing so the new unit cost can be blended with what is already held.
-  const currentSnap = await getDoc(itemRef);
-  const currentData = currentSnap.exists() ? (currentSnap.data() as Record<string, unknown>) : {};
-  const nextUnitCost = blendUnitCost(
-    Number(currentData.remaining ?? 0),
-    currentData.unitCost === null || currentData.unitCost === undefined ? null : Number(currentData.unitCost),
-    input.quantity,
-    input.unitCost,
-  );
-
-  const batch = writeBatch(db);
-
-  batch.update(itemRef, {
-    remaining: increment(input.quantity),
-    purchaseLog: arrayUnion(entry),
-    ...(nextUnitCost !== null ? { unitCost: nextUnitCost } : {}),
-    _updatedAt: serverTimestamp(),
   });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildPackagingPurchaseEntry({ amount, paymentMethod: input.paymentMethod }),
-      {
-        sourceType: "packagingPurchase",
-        sourceId: `${itemId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Сав баглаа боодол худалдан авалт: ${input.supplier || String(itemId)}`,
-        createdBy: input.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
 }
 
 export async function removePackagingPurchase(
   itemId: number,
   entry: PackagingPurchaseEntry,
 ): Promise<void> {
-  const amount = packagingPurchaseAmount(entry);
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-  const itemRef = doc(packagingRef, String(itemId));
-
-  batch.update(itemRef, {
-    remaining: increment(-entry.quantity),
-    purchaseLog: arrayRemove(entry),
-    _updatedAt: serverTimestamp(),
-  });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildReversalEntry(
-        buildPackagingPurchaseEntry({ amount, paymentMethod: entry.paymentMethod }).lines,
-      ),
-      {
-        sourceType: "packagingPurchase",
-        sourceId: `${itemId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Сав баглаа боодлын худалдан авалт устгасан — бичилтийг цуцаллаа`,
-        createdBy: entry.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
+  await removeMaterialPurchase(PACKAGING_LEDGER, itemId, entry);
 }
 
 export interface AddPackagingUsageInput {
@@ -330,90 +274,22 @@ export async function addPackagingUsage(
   itemId: number,
   input: AddPackagingUsageInput,
 ): Promise<void> {
-  const itemRef = doc(packagingRef, String(itemId));
-  const currentSnap = await getDoc(itemRef);
-  if (!currentSnap.exists()) throw new Error("Packaging item not found");
-  const currentData = currentSnap.data() as Record<string, unknown>;
-  const remaining = Number(currentData.remaining ?? 0);
-  if (input.quantity > remaining) {
-    throw new Error("INSUFFICIENT_STOCK");
-  }
-  const unitCost = currentData.unitCost === null || currentData.unitCost === undefined
-    ? null
-    : Number(currentData.unitCost);
-
-  const entry: PackagingUsageEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  await recordMaterialUsage(PACKAGING_LEDGER, itemId, {
+    id: newPackagingEntryId(),
     quantity: input.quantity,
-    unitCost,
     reason: input.reason,
     usedAt: input.usedAt,
     notes: input.notes,
     createdByUid: input.createdByUid,
     createdAt: new Date().toISOString(),
-  };
-
-  const amount = unitCost && unitCost > 0 ? Math.round(input.quantity * unitCost) : 0;
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-
-  batch.update(itemRef, {
-    remaining: increment(-input.quantity),
-    usageLog: arrayUnion(entry),
-    _updatedAt: serverTimestamp(),
   });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildPackagingWriteOffEntry({ amount }),
-      {
-        sourceType: "packagingUsage",
-        sourceId: `${itemId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Сав баглаа боодлын зарцуулалт: ${input.reason || String(itemId)}`,
-        createdBy: input.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
 }
 
 export async function removePackagingUsage(
   itemId: number,
   entry: PackagingUsageEntry,
 ): Promise<void> {
-  const amount = entry.unitCost && entry.unitCost > 0 ? Math.round(entry.quantity * entry.unitCost) : 0;
-  const entryNumber = amount > 0 ? await generateJournalEntryNumber() : null;
-
-  const batch = writeBatch(db);
-  const itemRef = doc(packagingRef, String(itemId));
-
-  batch.update(itemRef, {
-    remaining: increment(entry.quantity),
-    usageLog: arrayRemove(entry),
-    _updatedAt: serverTimestamp(),
-  });
-
-  if (entryNumber) {
-    postJournalEntry(
-      batch,
-      entryNumber,
-      buildReversalEntry(buildPackagingWriteOffEntry({ amount }).lines),
-      {
-        sourceType: "packagingUsage",
-        sourceId: `${itemId}:${entry.id}`,
-        sourceNumber: entry.id,
-        description: `Сав баглаа боодлын зарцуулалт устгасан — бичилтийг цуцаллаа`,
-        createdBy: entry.createdByUid,
-      },
-    );
-  }
-
-  await batch.commit();
+  await removeMaterialUsage(PACKAGING_LEDGER, itemId, entry);
 }
 
 function deserializeStatus(value: unknown) {

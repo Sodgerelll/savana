@@ -24,7 +24,8 @@ export type SourceType =
   | "rawMaterialUsage"
   | "packagingPurchase"
   | "packagingUsage"
-  | "financeEntry";
+  | "financeEntry"
+  | "stockAdjustment";
 
 export interface PostJournalEntryMeta {
   sourceType: SourceType;
@@ -32,8 +33,22 @@ export interface PostJournalEntryMeta {
   sourceNumber: string;
   description: string;
   reversalOf?: string | null;
+  /**
+   * Business date the entry belongs to (YYYY-MM-DD or a full ISO string). Defaults to now.
+   * Depreciation for a past month and an opening register dated at the cut-over need it,
+   * otherwise the expense lands in whatever month the button happened to be pressed.
+   */
+  date?: string;
   createdBy: string;
   createdByName?: string;
+}
+
+/**
+ * A plain YYYY-MM-DD becomes midday UTC on that day, so it reads as the same calendar day
+ * both in UTC and in Ulaanbaatar (UTC+8). Full ISO strings pass through unchanged.
+ */
+export function businessDateToIso(date: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00.000Z` : date;
 }
 
 /** Structural subset shared by Firestore's Transaction and WriteBatch — both support write-only `.set()`. */
@@ -63,7 +78,7 @@ export function postJournalEntry(
   const ref = doc(collection(db, JOURNAL_ENTRIES_COLLECTION));
   writer.set(ref, {
     entryNumber,
-    date: new Date().toISOString(),
+    date: meta.date ? businessDateToIso(meta.date) : new Date().toISOString(),
     sourceType: meta.sourceType,
     sourceId: meta.sourceId,
     sourceNumber: meta.sourceNumber,

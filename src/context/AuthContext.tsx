@@ -18,7 +18,6 @@ import { auth } from "../lib/firebase";
 import {
   createPhoneLoginEmail,
   isPrivilegedRole,
-  resolveUserRole,
   subscribeToUserProfile,
   syncUserProfile,
   type UserAuthMethod,
@@ -110,27 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onData: (existingProfile) => {
           if (active) {
             if (existingProfile) {
+              // The stored role is the one the security rules check, so it is the one the app
+              // uses. There used to be a "reconcile with the allow-lists" step here that re-ran
+              // syncUserProfile whenever the two disagreed — but a sync never changes a stored role
+              // (a client may not raise its own), so the disagreement never went away and every
+              // write re-triggered this snapshot: an endless loop of profile writes.
               setProfile(existingProfile);
-
-              // The stored role can drift from the admin allow-lists (VITE_ADMIN_UIDS/EMAILS/PHONES)
-              // whenever they change after the account was first synced — reconcile it here so an
-              // already-signed-in session picks up the correct Firestore-persisted role (which is
-              // what security rules check) without requiring the user to log out and back in.
-              const resolvedRole = resolveUserRole({
-                uid: nextUser.uid,
-                email: existingProfile.email ?? nextUser.email,
-                phoneNumber: existingProfile.phoneNumber ?? nextUser.phoneNumber,
-                role: existingProfile.role,
-              });
-              if (resolvedRole !== existingProfile.role) {
-                void syncUserProfile(nextUser)
-                  .then((syncedProfile) => {
-                    if (active && syncedProfile) {
-                      setProfile(syncedProfile);
-                    }
-                  })
-                  .catch(() => {});
-              }
               return;
             }
 
@@ -321,12 +305,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.replace("/");
   };
 
-  const role = resolveUserRole({
-    uid: user?.uid,
-    email: profile?.email ?? user?.email,
-    phoneNumber: profile?.phoneNumber ?? user?.phoneNumber,
-    role: profile?.role ?? null,
-  });
+  // Only the stored role. It used to fall back on the VITE_* allow-lists matched against the
+  // profile's email and phone — fields a user may edit on their own profile — so anyone could
+  // show themselves the admin screens by typing an allow-listed phone number. The rules never
+  // trusted that; the screens now agree with the rules.
+  const role: UserRole = profile?.role ?? "customer";
   const authMethod = getDerivedAuthMethod(user, profile);
 
   return (

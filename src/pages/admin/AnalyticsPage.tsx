@@ -14,6 +14,7 @@ import {
   LabelList,
 } from "recharts";
 import type { AdminCtx } from "./adminShellTypes";
+import { auth } from "../../lib/firebase";
 
 interface GaSummary {
   today: number;
@@ -63,12 +64,23 @@ const CHANNEL_LABELS_MN: Record<string, string> = {
   SMS: "SMS",
 };
 
-function useAnalyticsFetch<T>(url: string): FetchState<T> {
+/** Adds the signed-in admin's ID token, for the routes that only answer an admin. */
+async function adminFetch(url: string): Promise<Response> {
+  const currentUser = auth.currentUser;
+  const headers: Record<string, string> = {};
+  if (currentUser) {
+    headers.Authorization = `Bearer ${await currentUser.getIdToken()}`;
+  }
+  return fetch(url, { headers });
+}
+
+function useAnalyticsFetch<T>(url: string, options: { authorized?: boolean } = {}): FetchState<T> {
   const [state, setState] = useState<FetchState<T>>({ status: "loading" });
+  const authorized = options.authorized === true;
 
   useEffect(() => {
     let cancelled = false;
-    fetch(url)
+    (authorized ? adminFetch(url) : fetch(url))
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 503) {
@@ -89,7 +101,7 @@ function useAnalyticsFetch<T>(url: string): FetchState<T> {
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, authorized]);
 
   return state;
 }
@@ -180,7 +192,7 @@ export default function AnalyticsPage({ ctx }: { ctx: AdminCtx }) {
   const mn = language === "MN";
 
   const summaryState = useAnalyticsFetch<GaSummary>("/api/analytics/summary");
-  const chartsState = useAnalyticsFetch<GaChartData>("/api/analytics/charts");
+  const chartsState = useAnalyticsFetch<GaChartData>("/api/analytics/charts", { authorized: true });
 
   const cards = [
     { icon: <CalendarDays size={18} />, label: mn ? "Өнөөдөр" : "Today", value: "today" as const },

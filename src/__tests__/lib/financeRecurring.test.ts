@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // ─── Mock firebase/firestore (listDueOccurrences is pure, but the module imports firebase) ───
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 vi.mock("firebase/firestore", () => ({
   addDoc: vi.fn(),

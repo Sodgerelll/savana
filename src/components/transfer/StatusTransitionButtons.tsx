@@ -1,9 +1,14 @@
-import { CheckCircle, Truck, PackageCheck, XCircle, RotateCcw } from "lucide-react";
-import type { TransferStatus } from "../../types/crm";
+import { CheckCircle, Truck, PackageCheck, XCircle, RotateCcw, Banknote } from "lucide-react";
+import type { TransferStatus, TransferType } from "../../types/crm";
 
 interface Props {
   status: TransferStatus;
   paymentStatus: string;
+  /** A return record takes neither payments nor returns — only a refund payout. */
+  transferType?: TransferType;
+  /** What a return still owes the customer back. */
+  refundDue?: number;
+  onRefund?: () => void;
   onConfirm: () => void;
   onShip: () => void;
   onDeliver: () => void;
@@ -16,6 +21,9 @@ interface Props {
 export function StatusTransitionButtons({
   status,
   paymentStatus,
+  transferType,
+  refundDue = 0,
+  onRefund,
   onConfirm,
   onShip,
   onDeliver,
@@ -50,6 +58,15 @@ export function StatusTransitionButtons({
       </button>
     );
   };
+
+  if (transferType === "RETURN") {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {refundDue > 0 && onRefund &&
+          btn(<Banknote className="w-4 h-4" />, "Мөнгө буцаан олгох", onRefund, "purple")}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap gap-2">

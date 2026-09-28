@@ -7,6 +7,7 @@ import { PaymentDialog } from "../shared/PaymentDialog";
 import { MoneyFormat } from "../shared/MoneyFormat";
 import { DateFormat } from "../shared/DateFormat";
 import { toast } from "../shared/Toast";
+import { isPayableTransfer } from "../../services/transferService";
 
 interface Props {
   customer: Customer;
@@ -25,9 +26,7 @@ export function PaymentTab({ customer, transfers }: Props) {
   const mutations = useTransferMutations();
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
 
-  const unpaidTransfers = transfers.filter((t) =>
-    ["UNPAID", "PARTIAL", "CREDIT"].includes(t.paymentStatus)
-  );
+  const unpaidTransfers = transfers.filter(isPayableTransfer);
 
   const creditUsage =
     customer.creditLimit > 0

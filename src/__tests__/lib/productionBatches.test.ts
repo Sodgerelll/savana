@@ -1,50 +1,15 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { firestoreMock } from "../helpers/firestoreMock";
 
 // ─── Mock firebase ────────────────────────────────────────────────────────────
+//
+// Every batch step now reads and writes inside one transaction, so the mock is the shared
+// in-memory Firestore (src/__tests__/helpers/firestoreMock.ts): seeded documents, recorded
+// writes. Batch codes and journal entry numbers come from `counters/` documents in it too.
 
-const mockBatchSet = vi.fn();
-const mockBatchUpdate = vi.fn();
-const mockBatchDelete = vi.fn();
-const mockBatchCommit = vi.fn().mockResolvedValue(undefined);
-const mockBatch = { set: mockBatchSet, update: mockBatchUpdate, delete: mockBatchDelete, commit: mockBatchCommit };
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
+vi.mock("firebase/firestore", async () => (await import("../helpers/firestoreMock")).firestoreMock.module);
 
-// Batch codes and journal entry numbers both come from `counters/` documents reserved in
-// their own transaction, so the mock keeps one shared counter value per series.
-const counters: Record<string, number> = {};
-
-vi.mock("../../lib/firebase", () => ({ db: {} }));
-vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(() => ({ id: "productionBatches" })),
-  doc: vi.fn((_db: unknown, col?: string, id?: string) => ({
-    path: `${col ?? "col"}/${id ?? "new"}`,
-    id: id ?? "new-batch-id",
-  })),
-  getDoc: vi.fn(),
-  getDocs: vi.fn(),
-  onSnapshot: vi.fn(),
-  orderBy: vi.fn(),
-  query: vi.fn(),
-  serverTimestamp: vi.fn(() => ({ _ts: true })),
-  writeBatch: vi.fn(() => mockBatch),
-  runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) => {
-    let counterId = "";
-    return fn({
-      get: vi.fn(async (ref: { path?: string }) => {
-        counterId = String(ref?.path ?? "").split("/").pop() ?? "";
-        const lastNumber = counters[counterId];
-        return {
-          exists: () => lastNumber !== undefined,
-          data: () => ({ lastNumber, year: new Date().getFullYear() }),
-        };
-      }),
-      set: vi.fn((_ref: unknown, data: { lastNumber: number }) => {
-        counters[counterId] = data.lastNumber;
-      }),
-    });
-  }),
-}));
-
-import { getDoc } from "firebase/firestore";
 import {
   createProductionBatch,
   updateProductionBatch,
@@ -56,10 +21,9 @@ import {
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
 
-/** Puts a number series' counter at a given last-issued value. */
-function seedBatchCounter(lastNumber: number) {
-  counters.productionBatches = lastNumber;
-}
+const year = Number(
+  new Intl.DateTimeFormat("en", { timeZone: "Asia/Ulaanbaatar", year: "numeric" }).format(new Date()),
+);
 
 function makeCreateInput(overrides: Partial<CreateProductionBatchInput> = {}): CreateProductionBatchInput {
   return {
@@ -89,6 +53,8 @@ function makeBatch(overrides: Partial<ProductionBatch> = {}): ProductionBatch {
     startedAt: null,
     expectedReadyAt: null,
     readyAt: null,
+    plannedVariant: null,
+    producedVariant: null,
     supplies: [
       { rawMaterialId: 10, rawMaterialName: "Olive Oil", quantity: 5, unit: "L", unitCost: 8000 },
     ],
@@ -101,345 +67,371 @@ function makeBatch(overrides: Partial<ProductionBatch> = {}): ProductionBatch {
   };
 }
 
+/** Stores a batch as Firestore holds it — the steps read this, not the screen's copy. */
+function storeBatch(batch: ProductionBatch, extra: Record<string, unknown> = {}) {
+  firestoreMock.seed(`productionBatches/${batch.id}`, { ...batch, ...extra });
+}
+
+function journalEntriesWritten() {
+  return firestoreMock.writes
+    .filter((write) => write.op === "set" && write.data && "lines" in write.data)
+    .map(
+      (write) =>
+        write.data as {
+          lines: Array<{ accountCode: string; debit: number; credit: number }>;
+          reversalOf?: string | null;
+        },
+    );
+}
+
+function batchWrite() {
+  return firestoreMock.writes.find((write) => write.path.startsWith("productionBatches/"));
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  firestoreMock.reset();
+});
+
 // ─── createProductionBatch ────────────────────────────────────────────────────
 
 describe("createProductionBatch", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
   it("generates batch code starting at 0001 when the counter has never been used", async () => {
+    await createProductionBatch(makeCreateInput());
 
-    const id = await createProductionBatch(makeCreateInput());
-    expect(id).toBe("new-batch-id");
-
-    const year = new Date().getFullYear();
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ batchCode: `BATCH-${year}-0001` }),
-    );
+    expect(batchWrite()?.data).toMatchObject({ batchCode: `BATCH-${year}-0001` });
   });
 
   it("continues the batch code series from the shared counter", async () => {
-    const year = new Date().getFullYear();
-    seedBatchCounter(3);
+    firestoreMock.seed("counters/productionBatches", { lastNumber: 3, year, prefix: "BATCH" });
 
     await createProductionBatch(makeCreateInput());
 
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ batchCode: `BATCH-${year}-0004` }),
-    );
+    expect(batchWrite()?.data).toMatchObject({ batchCode: `BATCH-${year}-0004` });
   });
 
-  it("sets status to planning", async () => {
+  it("sets status to planning and stores every supply", async () => {
     await createProductionBatch(makeCreateInput());
 
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: "planning", actualQuantity: null }),
-    );
-  });
-
-  it("stores all supplies in the document", async () => {
-    await createProductionBatch(makeCreateInput());
-
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        supplies: expect.arrayContaining([
-          expect.objectContaining({ rawMaterialId: 10 }),
-          expect.objectContaining({ rawMaterialId: 11 }),
-        ]),
-      }),
-    );
+    expect(batchWrite()?.data).toMatchObject({ status: "planning", actualQuantity: null });
+    expect((batchWrite()?.data?.supplies as unknown[]).length).toBe(2);
   });
 });
 
 // ─── advanceProductionBatch — planning → curing ──────────────────────────────
 
 describe("advanceProductionBatch — planning → curing", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
   it("throws when no supplies are defined", async () => {
-    const batch = makeBatch({ status: "planning", supplies: [] });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" });
+    const batch = makeBatch({ supplies: [] });
+    storeBatch(batch);
 
     await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("No supplies");
   });
 
   it("deducts raw materials and advances status", async () => {
-    const batch = makeBatch({ status: "planning" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" })
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ remaining: 20 }), id: "10" }); // rawMaterial 10
+    const batch = makeBatch();
+    storeBatch(batch);
+    firestoreMock.seed("rawMaterials/10", { remaining: 20, unitCost: 8000 });
 
     await advanceProductionBatch("batch-1", batch, "curing");
 
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: "curing" }),
-    );
-    // Raw material should be deducted: 20 - 5 = 15
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ remaining: 15 }),
-    );
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({ status: "curing" });
+    expect(firestoreMock.lastWriteData("rawMaterials/10")).toMatchObject({ remaining: 15 });
+  });
+
+  it("records what the materials were worth when they left the shelf, keeping the planned figure", async () => {
+    const batch = makeBatch({ totalCost: 40000 });
+    storeBatch(batch);
+    // The oil has got dearer since the batch was planned.
+    firestoreMock.seed("rawMaterials/10", { remaining: 20, unitCost: 9000 });
+
+    await advanceProductionBatch("batch-1", batch, "curing");
+
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({
+      totalCost: 45000,
+      plannedTotalCost: 40000,
+    });
   });
 
   it("throws INSUFFICIENT when raw material stock is too low", async () => {
-    const batch = makeBatch({ status: "planning" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "planning" }), id: "batch-1" })
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ remaining: 3 }), id: "10" }); // only 3, need 5
+    const batch = makeBatch();
+    storeBatch(batch);
+    firestoreMock.seed("rawMaterials/10", { remaining: 3 }); // need 5
 
     await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("INSUFFICIENT");
+    expect(firestoreMock.writesFor("rawMaterials/10")).toHaveLength(0);
   });
 
-  it("throws stale error if batch status changed since read", async () => {
+  it("throws the stale error if the batch already moved on (a double click)", async () => {
     const batch = makeBatch({ status: "planning" });
-    (getDoc as Mock).mockResolvedValue({
-      exists: () => true,
-      data: () => ({ status: "ready" }), // mismatch with previous "planning"
-      id: "batch-1",
-    });
+    storeBatch(batch, { status: "curing" });
+    firestoreMock.seed("rawMaterials/10", { remaining: 20 });
 
     await expect(advanceProductionBatch("batch-1", batch, "curing")).rejects.toThrow("changed");
+    // The materials were not taken a second time.
+    expect(firestoreMock.writesFor("rawMaterials/10")).toHaveLength(0);
   });
 });
 
 // ─── advanceProductionBatch — curing → ready ─────────────────────────────────
 
 describe("advanceProductionBatch — curing → ready", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
   it("throws when actualQuantity is 0", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" });
+    storeBatch(batch);
 
-    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 0 })).rejects.toThrow("Actual quantity");
+    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 0 })).rejects.toThrow(
+      "Actual quantity",
+    );
   });
 
-  it("adds actualQuantity to product totalStock", async () => {
+  it("adds actualQuantity to product totalStock and posts the completion entry", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ totalStock: 50 }), id: "1" }); // product
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { totalStock: 50 });
 
     await advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 });
 
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ totalStock: 140 }), // 50 + 90
+    expect(firestoreMock.writesFor("products/1").some((write) => write.data?.totalStock === 140)).toBe(true);
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({
+      status: "ready",
+      actualQuantity: 90,
+    });
+    expect(journalEntriesWritten()[0].lines).toEqual([
+      expect.objectContaining({ accountCode: "1210", debit: 40000 }),
+      expect.objectContaining({ accountCode: "1220", credit: 40000 }),
+    ]);
+  });
+
+  it("does not add the output twice when the batch was already completed", async () => {
+    const batch = makeBatch({ status: "curing" });
+    storeBatch(batch, { status: "ready" });
+    firestoreMock.seed("products/1", { totalStock: 50 });
+
+    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 })).rejects.toThrow(
+      "changed",
     );
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: "ready", actualQuantity: 90 }),
-    );
+    expect(firestoreMock.writesFor("products/1")).toHaveLength(0);
+  });
+
+  it("remembers the cost before and after so a deletion can put it back", async () => {
+    const batch = makeBatch({ status: "curing", totalCost: 40000 });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { totalStock: 10, soldCount: 0, costPrice: 300 });
+
+    await advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 });
+
+    // (10 × 300 + 40000) / 100 = 430
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({
+      costPriceBefore: 300,
+      costPriceAfter: 430,
+    });
+    expect(firestoreMock.lastWriteData("products/1")).toMatchObject({ costPrice: 430 });
   });
 
   it("throws when product is not found", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
-      .mockResolvedValueOnce({ exists: () => false });
+    storeBatch(batch);
 
-    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 })).rejects.toThrow("Product not found");
+    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 90 })).rejects.toThrow(
+      "Product not found",
+    );
   });
 
   it("adds produced quantity to the chosen variant for variant products", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        id: "1",
-        data: () => ({
-          totalStock: 30,
-          variants: [
-            { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
-            { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
-          ],
-        }),
-      });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", {
+      totalStock: 30,
+      variants: [
+        { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+        { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
+      ],
+    });
 
     await advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 15, variantName: "Large" });
 
-    // Chosen variant quantity bumped (20 → 35); totalStock mirrors variant sum (10 + 35).
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        variants: [
-          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
-          { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
-        ],
-        totalStock: 45,
-      }),
-    );
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: "ready", actualQuantity: 15, producedVariant: "Large" }),
-    );
+    const stockWrite = firestoreMock.writesFor("products/1").find((write) => write.data?.variants);
+    expect(stockWrite?.data).toMatchObject({
+      variants: [
+        { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+        { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
+      ],
+      totalStock: 45,
+    });
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({
+      status: "ready",
+      actualQuantity: 15,
+      producedVariant: "Large",
+    });
   });
 
   it("throws VARIANT_REQUIRED when a variant product has no variant chosen", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock)
-      .mockResolvedValueOnce({ exists: () => true, data: () => ({ status: "curing" }), id: "batch-1" })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        id: "1",
-        data: () => ({ variants: [{ name: "Small", price: 1000, quantity: 10 }] }),
-      });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { variants: [{ name: "Small", price: 1000, quantity: 10 }] });
 
-    await expect(
-      advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 5 }),
-    ).rejects.toThrow("VARIANT_REQUIRED");
+    await expect(advanceProductionBatch("batch-1", batch, "ready", { actualQuantity: 5 })).rejects.toThrow(
+      "VARIANT_REQUIRED",
+    );
   });
 });
 
 // ─── deleteProductionBatch ────────────────────────────────────────────────────
 
 describe("deleteProductionBatch", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
   it("deletes a PLANNING batch without side effects", async () => {
-    const batch = makeBatch({ status: "planning" });
-    await deleteProductionBatch(batch);
-
-    expect(mockBatchDelete).toHaveBeenCalledTimes(1);
-    expect(mockBatchUpdate).not.toHaveBeenCalled();
-  });
-
-  it("reverses the produced quantity from the variant when deleting a READY variant batch", async () => {
-    const batch = makeBatch({ status: "ready", actualQuantity: 15, producedVariant: "Large" });
-    (getDoc as Mock).mockResolvedValue({
-      exists: () => true,
-      id: "1",
-      data: () => ({
-        totalStock: 45,
-        variants: [
-          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
-          { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
-        ],
-      }),
-    });
+    const batch = makeBatch();
+    storeBatch(batch);
 
     await deleteProductionBatch(batch);
 
-    expect(mockBatchDelete).toHaveBeenCalledTimes(1);
-    // Large variant reverted (35 → 20); totalStock mirrors variant sum (10 + 20).
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        variants: [
-          { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
-          { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
-        ],
-        totalStock: 30,
-      }),
-    );
+    expect(firestoreMock.writes).toEqual([{ op: "delete", path: "productionBatches/batch-1", data: undefined }]);
   });
 
   it("restores raw materials when deleting a CURING batch", async () => {
     const batch = makeBatch({ status: "curing" });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ remaining: 0 }), id: "10" });
+    storeBatch(batch);
+    firestoreMock.seed("rawMaterials/10", { remaining: 0 });
 
     await deleteProductionBatch(batch);
 
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ remaining: 5 }), // 0 + 5 restored
-    );
+    expect(firestoreMock.lastWriteData("rawMaterials/10")).toMatchObject({ remaining: 5 });
+    expect(firestoreMock.writesFor("productionBatches/batch-1").some((write) => write.op === "delete")).toBe(true);
   });
 
-  it("removes actualQuantity from product stock when deleting a READY batch", async () => {
-    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ totalStock: 150 }), id: "1" });
-
-    await deleteProductionBatch(batch);
-
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ totalStock: 60 }), // 150 - 90
-    );
-  });
-
-  it("shows the shortfall rather than clamping when removing more than is on the shelf", async () => {
-    const batch = makeBatch({ status: "ready", actualQuantity: 200 });
-    (getDoc as Mock).mockResolvedValue({ exists: () => true, data: () => ({ totalStock: 50 }), id: "1" });
-
-    await deleteProductionBatch(batch);
-
-    // Clamping at zero used to invent 150 units out of nothing: the batch's output had
-    // already been sold, so undoing it has to leave the shelf showing what it really owes.
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ totalStock: -150 }),
-    );
-  });
-
-  it("puts the consumed raw materials back when deleting a READY batch", async () => {
-    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
-    (getDoc as Mock).mockResolvedValue({
-      exists: () => true,
-      data: () => ({ totalStock: 150, remaining: 0 }),
-      id: "1",
+  it("reverses the produced quantity from the variant when deleting a READY variant batch", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 15, producedVariant: "Large" });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", {
+      totalStock: 45,
+      variants: [
+        { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+        { name: "Large", price: 2000, quantity: 35, soldCount: 0 },
+      ],
     });
 
     await deleteProductionBatch(batch);
 
-    // The reversal moves the batch's cost back into the raw-material account, so the
-    // materials themselves have to come back with it.
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ path: expect.stringContaining("rawMaterials") }),
-      expect.objectContaining({ remaining: 5 }),
-    );
+    expect(firestoreMock.lastWriteData("products/1")).toMatchObject({
+      variants: [
+        { name: "Small", price: 1000, quantity: 10, soldCount: 0 },
+        { name: "Large", price: 2000, quantity: 20, soldCount: 0 },
+      ],
+      totalStock: 30,
+    });
+  });
+
+  it("removes actualQuantity from product stock when deleting a READY batch", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { totalStock: 150 });
+
+    await deleteProductionBatch(batch);
+
+    expect(firestoreMock.lastWriteData("products/1")).toMatchObject({ totalStock: 60 });
+  });
+
+  it("shows the shortfall rather than clamping when removing more than is on the shelf", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 200 });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { totalStock: 50 });
+
+    await deleteProductionBatch(batch);
+
+    // Clamping at zero used to invent 150 units out of nothing.
+    expect(firestoreMock.lastWriteData("products/1")).toMatchObject({ totalStock: -150 });
+  });
+
+  it("puts the consumed raw materials back when deleting a READY batch", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
+    storeBatch(batch);
+    firestoreMock.seed("products/1", { totalStock: 150 });
+    firestoreMock.seed("rawMaterials/10", { remaining: 0 });
+
+    await deleteProductionBatch(batch);
+
+    expect(firestoreMock.lastWriteData("rawMaterials/10")).toMatchObject({ remaining: 5 });
+  });
+
+  it("reverses the completion entry and restores the cost the batch had blended in", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 90, journalEntryId: "entry-1" });
+    storeBatch(batch, { costPriceBefore: 300, costPriceAfter: 430 });
+    firestoreMock.seed("products/1", { totalStock: 100, costPrice: 430 });
+    firestoreMock.seed("journalEntries/entry-1", {
+      lines: [
+        { accountCode: "1210", accountName: "Inventory", debit: 40000, credit: 0 },
+        { accountCode: "1220", accountName: "Raw", debit: 0, credit: 40000 },
+      ],
+    });
+
+    await deleteProductionBatch(batch);
+
+    const [reversal] = journalEntriesWritten();
+    expect(reversal.reversalOf).toBe("entry-1");
+    expect(reversal.lines).toEqual([
+      expect.objectContaining({ accountCode: "1210", credit: 40000 }),
+      expect.objectContaining({ accountCode: "1220", debit: 40000 }),
+    ]);
+    expect(firestoreMock.lastWriteData("products/1")).toMatchObject({ costPrice: 300 });
+  });
+
+  it("leaves a cost that something newer has since set", async () => {
+    const batch = makeBatch({ status: "ready", actualQuantity: 90 });
+    storeBatch(batch, { costPriceBefore: 300, costPriceAfter: 430 });
+    firestoreMock.seed("products/1", { totalStock: 100, costPrice: 500 });
+
+    await deleteProductionBatch(batch);
+
+    expect(firestoreMock.writesFor("products/1").some((write) => "costPrice" in (write.data ?? {}))).toBe(false);
   });
 });
 
 // ─── updateProductionBatch ────────────────────────────────────────────────────
 
 describe("updateProductionBatch", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockBatchCommit.mockResolvedValue(undefined);
-  });
-
   it("allows full update when batch is in PLANNING status", async () => {
-    const previous = makeBatch({ status: "planning" });
+    const previous = makeBatch();
+    storeBatch(previous);
     const next = { productId: 2, productName: "New Soap", plannedQuantity: 200, supplies: [], totalCost: 50000 };
 
     await updateProductionBatch("batch-1", previous, next);
 
-    expect(mockBatchUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ productId: 2, plannedQuantity: 200 }),
-    );
+    expect(firestoreMock.lastWriteData("productionBatches/batch-1")).toMatchObject({
+      productId: 2,
+      plannedQuantity: 200,
+    });
   });
 
   it("restricts update to soft fields for non-PLANNING batches", async () => {
     const previous = makeBatch({ status: "curing" });
-    const next = { productId: 2, productName: "New Soap", plannedQuantity: 200, supplies: [], totalCost: 50000, notes: "updated note" };
+    storeBatch(previous);
+    const next = {
+      productId: 2,
+      productName: "New Soap",
+      plannedQuantity: 200,
+      supplies: [],
+      totalCost: 50000,
+      notes: "updated note",
+    };
 
     await updateProductionBatch("batch-1", previous, next);
 
-    const updatePayload = (mockBatchUpdate as Mock).mock.calls[0][1];
-    // Should NOT update productId, plannedQuantity, supplies
-    expect(updatePayload).not.toHaveProperty("productId");
-    expect(updatePayload).not.toHaveProperty("plannedQuantity");
-    expect(updatePayload).not.toHaveProperty("supplies");
-    // Should only update soft fields
-    expect(updatePayload).toHaveProperty("notes");
+    const update = firestoreMock.writesFor("productionBatches/batch-1").find((write) => write.op === "update");
+    expect(update?.data).not.toHaveProperty("productId");
+    expect(update?.data).not.toHaveProperty("plannedQuantity");
+    expect(update?.data).not.toHaveProperty("supplies");
+    expect(update?.data).toHaveProperty("notes", "updated note");
+  });
+
+  it("keeps the recipe when the screen still thinks a started batch is in planning", async () => {
+    const previous = makeBatch({ status: "planning" });
+    storeBatch(previous, { status: "curing" });
+    const next = { productId: 2, productName: "New Soap", plannedQuantity: 200, supplies: [], totalCost: 50000 };
+
+    await updateProductionBatch("batch-1", previous, next);
+
+    const update = firestoreMock.writesFor("productionBatches/batch-1").find((write) => write.op === "update");
+    expect(update?.data).not.toHaveProperty("supplies");
   });
 });

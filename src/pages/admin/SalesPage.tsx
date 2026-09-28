@@ -494,17 +494,20 @@ export default function SalesPage({ ctx }: { ctx: AdminCtx }) {
                             <RotateCcw size={15} />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="admin-icon-btn"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleSaleDeleteRequest(sale);
-                          }}
-                          aria-label={`${copy.delete} ${sale.saleNumber}`}
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {/* A sale with returns cannot be deleted (deleteSale refuses it). */}
+                        {(sale.returns ?? []).length === 0 && (
+                          <button
+                            type="button"
+                            className="admin-icon-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleSaleDeleteRequest(sale);
+                            }}
+                            aria-label={`${copy.delete} ${sale.saleNumber}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

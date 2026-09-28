@@ -1,23 +1,24 @@
 import {
   collection,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   writeBatch,
   type DocumentData,
   type FirestoreError,
   type QueryDocumentSnapshot,
+  type Transaction,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { RAW_MATERIALS_COLLECTION } from "./rawMaterials";
 import { buildProductionCompletedEntry, buildReversalEntry } from "./accounting/entryBuilders";
 import {
   generateJournalEntryNumber,
   postJournalEntry,
-  JOURNAL_ENTRIES_COLLECTION,
+  readJournalEntryLines,
 } from "./accounting/postEntryClient";
 import { reserveDocumentNumber } from "./documentNumbers";
 import {
@@ -112,6 +113,27 @@ function normalizeStatus(value: unknown): ProductionBatchStatus {
   return "planning";
 }
 
+/** A batch's stored supply list, tolerant of anything malformed. */
+function deserializeSupplies(value: unknown): ProductionBatchSupply[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item): ProductionBatchSupply | null => {
+      if (typeof item !== "object" || item === null) return null;
+      const s = item as Record<string, unknown>;
+      const rawCost = s.unitCost;
+      return {
+        rawMaterialId: Number(s.rawMaterialId ?? 0),
+        rawMaterialName: String(s.rawMaterialName ?? ""),
+        quantity: Number(s.quantity ?? 0),
+        unit: String(s.unit ?? ""),
+        unitCost: rawCost === null || rawCost === undefined ? null : Number(rawCost),
+      };
+    })
+    .filter((s): s is ProductionBatchSupply => s !== null);
+}
+
 function deserializeBatch(
   snapshot: QueryDocumentSnapshot<DocumentData>,
 ): ProductionBatch {
@@ -137,25 +159,7 @@ function deserializeBatch(
         : null,
     producedVariant:
       typeof data.producedVariant === "string" ? data.producedVariant : null,
-    supplies: Array.isArray(data.supplies)
-      ? data.supplies
-          .map((item): ProductionBatchSupply | null => {
-            if (typeof item !== "object" || item === null) return null;
-            const s = item as Record<string, unknown>;
-            const rawCost = s.unitCost;
-            return {
-              rawMaterialId: Number(s.rawMaterialId ?? 0),
-              rawMaterialName: String(s.rawMaterialName ?? ""),
-              quantity: Number(s.quantity ?? 0),
-              unit: String(s.unit ?? ""),
-              unitCost:
-                rawCost === null || rawCost === undefined
-                  ? null
-                  : Number(rawCost),
-            };
-          })
-          .filter((s): s is ProductionBatchSupply => s !== null)
-      : [],
+    supplies: deserializeSupplies(data.supplies),
     totalCost: Number(data.totalCost ?? 0),
     notes: String(data.notes ?? ""),
     createdByUid: String(data.createdByUid ?? ""),
@@ -169,76 +173,79 @@ function generateBatchCode(): Promise<string> {
   return reserveDocumentNumber("productionBatch");
 }
 
-interface RawMaterialPatch {
+interface RawMaterialState {
   rawMaterialId: number;
+  exists: boolean;
   remaining: number;
+  unitCost: number | null;
 }
 
-async function loadRawMaterialPatches(
-  supplies: ProductionBatchSupply[],
-): Promise<Map<number, RawMaterialPatch>> {
-  const uniqueIds = Array.from(new Set(supplies.map((s) => s.rawMaterialId)));
-  const patches = new Map<number, RawMaterialPatch>();
-
-  await Promise.all(
-    uniqueIds.map(async (rawMaterialId) => {
-      const ref = doc(db, RAW_MATERIALS_COLLECTION, String(rawMaterialId));
-      const snap = await getDoc(ref);
-      if (!snap.exists()) return;
-      const data = snap.data() as Record<string, unknown>;
-      patches.set(rawMaterialId, {
-        rawMaterialId,
-        remaining: Number(data.remaining ?? 0),
-      });
-    }),
-  );
-
-  return patches;
+/** Who is acting, for the journal entries a batch posts. */
+function currentActorUid(fallback: string): string {
+  return auth?.currentUser?.uid ?? fallback;
 }
 
-function applySuppliesToPatches(
-  patches: Map<number, RawMaterialPatch>,
+/**
+ * Reads every raw material a batch uses, inside the caller's transaction. Sequential because
+ * a transaction must finish all its reads before the first write.
+ */
+async function loadRawMaterials(
+  t: Transaction,
   supplies: ProductionBatchSupply[],
-  sign: number,
-) {
+): Promise<Map<number, RawMaterialState>> {
+  const states = new Map<number, RawMaterialState>();
+  for (const rawMaterialId of Array.from(new Set(supplies.map((s) => s.rawMaterialId)))) {
+    const snap = await t.get(doc(db, RAW_MATERIALS_COLLECTION, String(rawMaterialId)));
+    const data = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+    states.set(rawMaterialId, {
+      rawMaterialId,
+      exists: snap.exists(),
+      remaining: Number(data.remaining ?? 0),
+      unitCost: data.unitCost === null || data.unitCost === undefined ? null : Number(data.unitCost),
+    });
+  }
+  return states;
+}
+
+function applySupplies(states: Map<number, RawMaterialState>, supplies: ProductionBatchSupply[], sign: 1 | -1) {
   supplies.forEach((supply) => {
-    const patch = patches.get(supply.rawMaterialId);
-    if (!patch) return;
-    patch.remaining = patch.remaining + supply.quantity * sign;
+    const state = states.get(supply.rawMaterialId);
+    if (state?.exists) state.remaining += supply.quantity * sign;
   });
 }
 
-function writeRawMaterialPatches(
-  batch: ReturnType<typeof writeBatch>,
-  patches: Map<number, RawMaterialPatch>,
-) {
-  patches.forEach((patch) => {
-    const ref = doc(db, RAW_MATERIALS_COLLECTION, String(patch.rawMaterialId));
-    batch.update(ref, {
-      remaining: patch.remaining,
+function writeRawMaterials(t: Transaction, states: Map<number, RawMaterialState>) {
+  states.forEach((state) => {
+    if (!state.exists) return;
+    t.update(doc(db, RAW_MATERIALS_COLLECTION, String(state.rawMaterialId)), {
+      remaining: state.remaining,
       _updatedAt: serverTimestamp(),
     });
   });
 }
 
-function validateSufficientStock(
-  patches: Map<number, RawMaterialPatch>,
-  supplies: ProductionBatchSupply[],
-): string | null {
-  const insufficient: string[] = [];
-  supplies.forEach((supply) => {
-    const patch = patches.get(supply.rawMaterialId);
-    if (!patch) {
-      insufficient.push(supply.rawMaterialName || String(supply.rawMaterialId));
-      return;
-    }
-    if (patch.remaining < 0) {
-      insufficient.push(
-        `${supply.rawMaterialName || String(supply.rawMaterialId)}`,
-      );
-    }
-  });
-  return insufficient.length > 0 ? insufficient.join(", ") : null;
+function insufficientSupplies(states: Map<number, RawMaterialState>, supplies: ProductionBatchSupply[]): string | null {
+  const insufficient = supplies
+    .filter((supply) => {
+      const state = states.get(supply.rawMaterialId);
+      return !state?.exists || state.remaining < 0;
+    })
+    .map((supply) => supply.rawMaterialName || String(supply.rawMaterialId));
+  return insufficient.length > 0 ? Array.from(new Set(insufficient)).join(", ") : null;
+}
+
+/**
+ * What the materials a batch consumes are worth on the books right now — the price the
+ * raw-materials account carries them at, which is what the completion entry must move out
+ * of it. A material with no recorded cost falls back to the cost the recipe planned with.
+ */
+function consumedCost(states: Map<number, RawMaterialState>, supplies: ProductionBatchSupply[]): number {
+  return Math.round(
+    supplies.reduce((sum, supply) => {
+      const unitCost = states.get(supply.rawMaterialId)?.unitCost ?? supply.unitCost ?? 0;
+      return sum + supply.quantity * Math.max(0, unitCost);
+    }, 0),
+  );
 }
 
 export async function createProductionBatch(
@@ -272,6 +279,12 @@ export async function createProductionBatch(
   return batchRef.id;
 }
 
+/**
+ * Saves edits to a batch. The recipe side (product, quantities, materials, cost) can only
+ * change while the batch is still being planned — once it has started, its materials have
+ * left the shelf. The status is read inside the transaction, so a batch that was started in
+ * another tab a moment ago cannot have its materials rewritten from a stale screen.
+ */
 export async function updateProductionBatch(
   id: string,
   previous: ProductionBatch,
@@ -279,32 +292,35 @@ export async function updateProductionBatch(
 ): Promise<void> {
   const batchRef = doc(db, PRODUCTION_BATCHES_COLLECTION, id);
 
-  if (previous.status !== "planning") {
-    // Only allow editing of "soft" fields after planning
-    const batch = writeBatch(db);
-    batch.update(batchRef, {
+  await runTransaction(db, async (t) => {
+    const snap = await t.get(batchRef);
+    if (!snap.exists()) {
+      throw new Error("Batch not found");
+    }
+    const status = normalizeStatus((snap.data() as Record<string, unknown>).status);
+
+    if (status !== "planning") {
+      t.update(batchRef, {
+        expectedReadyAt: next.expectedReadyAt ?? null,
+        readyAt: next.readyAt ?? previous.readyAt ?? null,
+        notes: next.notes ?? "",
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    t.update(batchRef, {
+      productId: next.productId,
+      productName: next.productName,
+      plannedQuantity: next.plannedQuantity,
       expectedReadyAt: next.expectedReadyAt ?? null,
-      readyAt: next.readyAt ?? previous.readyAt ?? null,
+      plannedVariant: next.plannedVariant ?? null,
+      supplies: next.supplies,
+      totalCost: next.totalCost,
       notes: next.notes ?? "",
       updatedAt: serverTimestamp(),
     });
-    await batch.commit();
-    return;
-  }
-
-  const batch = writeBatch(db);
-  batch.update(batchRef, {
-    productId: next.productId,
-    productName: next.productName,
-    plannedQuantity: next.plannedQuantity,
-    expectedReadyAt: next.expectedReadyAt ?? null,
-    plannedVariant: next.plannedVariant ?? null,
-    supplies: next.supplies,
-    totalCost: next.totalCost,
-    notes: next.notes ?? "",
-    updatedAt: serverTimestamp(),
   });
-  await batch.commit();
 }
 
 export interface AdvancePatch {
@@ -316,6 +332,14 @@ export interface AdvancePatch {
   variantName?: string | null;
 }
 
+/**
+ * Moves a batch one step on: planning → curing takes its materials off the shelf, curing →
+ * ready puts the product on it and posts the cost into finished goods.
+ *
+ * Everything — the status check, the stock reads and every write — happens in one
+ * transaction. The check used to be a separate read, so a double click (or two people) could
+ * both pass it and take the materials, or add the batch's output, twice.
+ */
 export async function advanceProductionBatch(
   id: string,
   previous: ProductionBatch,
@@ -324,129 +348,147 @@ export async function advanceProductionBatch(
 ): Promise<void> {
   const batchRef = doc(db, PRODUCTION_BATCHES_COLLECTION, id);
 
-  // Stale check
-  const currentSnap = await getDoc(batchRef);
-  if (!currentSnap.exists()) {
-    throw new Error("Batch not found");
-  }
-  const currentStatus = normalizeStatus(
-    (currentSnap.data() as Record<string, unknown>).status,
-  );
-  if (currentStatus !== previous.status) {
-    throw new Error("Batch status has changed, please reload");
-  }
-
   if (previous.status === "planning" && targetStatus === "curing") {
     if (previous.supplies.length === 0) {
       throw new Error("No supplies defined");
     }
-    const patches = await loadRawMaterialPatches(previous.supplies);
-    applySuppliesToPatches(patches, previous.supplies, -1);
-    const insufficient = validateSufficientStock(patches, previous.supplies);
-    if (insufficient) {
-      throw new Error(`INSUFFICIENT:${insufficient}`);
-    }
 
-    const batch = writeBatch(db);
-    batch.update(batchRef, {
-      status: "curing",
-      startedAt: patch.startedAt ?? new Date().toISOString().slice(0, 10),
-      expectedReadyAt: patch.expectedReadyAt ?? previous.expectedReadyAt ?? null,
-      updatedAt: serverTimestamp(),
+    await runTransaction(db, async (t) => {
+      const snap = await t.get(batchRef);
+      if (!snap.exists()) {
+        throw new Error("Batch not found");
+      }
+      const current = snap.data() as Record<string, unknown>;
+      if (normalizeStatus(current.status) !== "planning") {
+        throw new Error("Batch status has changed, please reload");
+      }
+      // The stored recipe, not the screen's copy of it.
+      const supplies = deserializeSupplies(current.supplies);
+      if (supplies.length === 0) {
+        throw new Error("No supplies defined");
+      }
+
+      const materials = await loadRawMaterials(t, supplies);
+      const cost = consumedCost(materials, supplies);
+      applySupplies(materials, supplies, -1);
+      const insufficient = insufficientSupplies(materials, supplies);
+      if (insufficient) {
+        throw new Error(`INSUFFICIENT:${insufficient}`);
+      }
+
+      t.update(batchRef, {
+        status: "curing",
+        startedAt: patch.startedAt ?? new Date().toISOString().slice(0, 10),
+        expectedReadyAt: patch.expectedReadyAt ?? previous.expectedReadyAt ?? null,
+        // What the materials were actually worth when they left the shelf; the completion
+        // entry moves exactly this out of the raw-materials account. The planned figure is
+        // kept beside it.
+        plannedTotalCost: Number(current.totalCost ?? previous.totalCost ?? 0),
+        totalCost: cost,
+        updatedAt: serverTimestamp(),
+      });
+      writeRawMaterials(t, materials);
     });
-    writeRawMaterialPatches(batch, patches);
-    await batch.commit();
     return;
   }
 
   if (previous.status === "curing" && targetStatus === "ready") {
     const actualQuantity = patch.actualQuantity ?? 0;
-    if (actualQuantity <= 0) {
+    if (!(actualQuantity > 0)) {
       throw new Error("Actual quantity required");
     }
 
-    const ref = productRef(previous.productId);
-    const productSnap = await getDoc(ref);
-    if (!productSnap.exists()) {
-      throw new Error("Product not found");
-    }
+    // Reserved before the transaction opens (it runs its own), and always: the cost that
+    // decides whether an entry is posted is read inside the transaction. A batch whose cost
+    // turns out to be zero simply leaves the number unused.
+    const entryNumber = await generateJournalEntryNumber();
 
-    const productData = productSnap.data() as Record<string, unknown>;
-    const state = readProductStockState(previous.productId, productData);
-    const hasVariants = state.variants !== null && state.variants.length > 0;
-
-    // Variant products: produced units must be assigned to a specific variant. Falls back
-    // to the variant the batch was planned for.
-    let variantName: string | null = null;
-    if (hasVariants) {
-      variantName = patch.variantName ?? previous.plannedVariant;
-      if (!variantName) {
-        throw new Error("VARIANT_REQUIRED");
+    await runTransaction(db, async (t) => {
+      const snap = await t.get(batchRef);
+      if (!snap.exists()) {
+        throw new Error("Batch not found");
       }
-      if (!state.variants!.some((v) => v.name === variantName)) {
-        throw new Error("VARIANT_NOT_FOUND");
+      const current = snap.data() as Record<string, unknown>;
+      if (normalizeStatus(current.status) !== "curing") {
+        throw new Error("Batch status has changed, please reload");
       }
-    }
 
-    // What was on the shelf before this batch landed, and what it was worth — the basis for
-    // the weighted average below.
-    const stockBefore = Math.max(0, availableStock(state, variantName));
-    const costBefore = state.costPrice;
+      const productId = Number(current.productId ?? previous.productId);
+      const ref = productRef(productId);
+      const productSnap = await t.get(ref);
+      if (!productSnap.exists()) {
+        throw new Error("Product not found");
+      }
 
-    applyProductionIntake(state, variantName, actualQuantity);
+      const state = readProductStockState(productId, productSnap.data() as Record<string, unknown>);
+      const hasVariants = state.variants !== null && state.variants.length > 0;
 
-    // The batch's material cost becomes the unit cost of what it produced, which is what
-    // every COGS line downstream is priced from. Without this the products keep a cost of
-    // zero and every sale looks like pure margin.
-    //
-    // Blended with the stock already held rather than replacing it: a batch made from
-    // dearer oil used to reprice every bar still sitting on the shelf, restating the margin
-    // on goods that cost something else entirely.
-    const batchUnitCost = previous.totalCost / actualQuantity;
-    const unitCost =
-      costBefore > 0 && stockBefore > 0
-        ? Math.round((stockBefore * costBefore + previous.totalCost) / (stockBefore + actualQuantity))
-        : Math.round(batchUnitCost);
-    const producedCost = Math.round(previous.totalCost);
+      // Variant products: produced units must be assigned to a specific variant. Falls back
+      // to the variant the batch was planned for.
+      let variantName: string | null = null;
+      if (hasVariants) {
+        variantName = patch.variantName ?? previous.plannedVariant;
+        if (!variantName) {
+          throw new Error("VARIANT_REQUIRED");
+        }
+        if (!state.variants!.some((v) => v.name === variantName)) {
+          throw new Error("VARIANT_NOT_FOUND");
+        }
+      }
 
-    const entryNumber = producedCost > 0 ? await generateJournalEntryNumber() : null;
+      // What was on the shelf before this batch landed, and what it was worth — the basis
+      // for the weighted average below.
+      const stockBefore = Math.max(0, availableStock(state, variantName));
+      const costBefore = state.costPrice;
+      const producedCost = Math.round(Number(current.totalCost ?? previous.totalCost ?? 0));
 
-    const batch = writeBatch(db);
-    let journalEntryId: string | null = null;
+      applyProductionIntake(state, variantName, actualQuantity);
 
-    if (entryNumber) {
-      // The materials the batch consumed turn into finished goods: cost moves from the
-      // raw-materials account into inventory, which is the debit COGS later credits back.
-      const entryRef = postJournalEntry(
-        batch,
-        entryNumber,
-        buildProductionCompletedEntry({ producedCost }),
-        {
-          sourceType: "productionBatch",
-          sourceId: previous.id,
-          sourceNumber: previous.batchCode,
-          description: `Үйлдвэрлэл дууслаа: ${previous.batchCode} — ${previous.productName}`,
-          createdBy: previous.createdByUid,
-        },
-      );
-      journalEntryId = entryRef.id;
-    }
+      // The batch's material cost becomes the unit cost of what it produced, blended with
+      // the stock already held rather than replacing it: a batch made from dearer oil used to
+      // reprice every bar still sitting on the shelf.
+      const unitCost =
+        costBefore > 0 && stockBefore > 0
+          ? Math.round((stockBefore * costBefore + producedCost) / (stockBefore + actualQuantity))
+          : Math.round(producedCost / actualQuantity);
 
-    batch.update(batchRef, {
-      status: "ready",
-      actualQuantity,
-      producedVariant: variantName,
-      readyAt: patch.readyAt ?? new Date().toISOString().slice(0, 10),
-      journalEntryId,
-      updatedAt: serverTimestamp(),
+      let journalEntryId: string | null = null;
+      if (entryNumber && producedCost > 0) {
+        // The materials the batch consumed turn into finished goods: cost moves from the
+        // raw-materials account into inventory, which is the debit COGS later credits back.
+        const entryRef = postJournalEntry(
+          t,
+          entryNumber,
+          buildProductionCompletedEntry({ producedCost }),
+          {
+            sourceType: "productionBatch",
+            sourceId: previous.id,
+            sourceNumber: previous.batchCode,
+            description: `Үйлдвэрлэл дууслаа: ${previous.batchCode} — ${previous.productName}`,
+            createdBy: currentActorUid(previous.createdByUid),
+          },
+        );
+        journalEntryId = entryRef.id;
+      }
+
+      t.update(batchRef, {
+        status: "ready",
+        actualQuantity,
+        producedVariant: variantName,
+        readyAt: patch.readyAt ?? new Date().toISOString().slice(0, 10),
+        journalEntryId,
+        // The product's unit cost before and after this batch, so deleting the batch can put
+        // the cost back if nothing has repriced the product since.
+        costPriceBefore: costBefore,
+        costPriceAfter: unitCost > 0 ? unitCost : costBefore,
+        updatedAt: serverTimestamp(),
+      });
+
+      writeProductStock(t, state);
+      if (unitCost > 0) {
+        t.update(ref, { costPrice: unitCost });
+      }
     });
-
-    writeProductStock(batch, state);
-    if (unitCost > 0) {
-      batch.update(ref, { costPrice: unitCost });
-    }
-
-    await batch.commit();
     return;
   }
 
@@ -455,73 +497,95 @@ export async function advanceProductionBatch(
   );
 }
 
+/**
+ * Deletes a batch and undoes whatever it did at its current stage: nothing for a plan,
+ * the materials back to the shelf once it has started, and for a completed batch also its
+ * output off the shelf, its completion entry reversed and — if nothing has repriced the
+ * product since — the product's unit cost put back to what it was before.
+ */
 export async function deleteProductionBatch(
   previous: ProductionBatch,
 ): Promise<void> {
   const batchRef = doc(db, PRODUCTION_BATCHES_COLLECTION, previous.id);
 
-  if (previous.status === "planning") {
-    const batch = writeBatch(db);
-    batch.delete(batchRef);
-    await batch.commit();
-    return;
-  }
+  // A reversal number is only needed for a completed batch that posted an entry; reserved up
+  // front because it runs its own transaction.
+  const reversalNumber =
+    previous.status === "ready" && previous.journalEntryId ? await generateJournalEntryNumber() : null;
 
-  if (previous.status === "curing") {
-    const patches = await loadRawMaterialPatches(previous.supplies);
-    applySuppliesToPatches(patches, previous.supplies, 1);
-    const batch = writeBatch(db);
-    batch.delete(batchRef);
-    writeRawMaterialPatches(batch, patches);
-    await batch.commit();
-    return;
-  }
-
-  // ready
-  const actualQuantity = previous.actualQuantity ?? 0;
-  const ref = productRef(previous.productId);
-  const productSnap = await getDoc(ref);
-
-  // The inventory entry the batch posted has to come back out with it, otherwise deleting
-  // a completed batch would leave its cost sitting in the inventory account forever.
-  let reversalLines: Parameters<typeof buildReversalEntry>[0] | null = null;
-  let reversalNumber: string | null = null;
-  if (previous.journalEntryId) {
-    const entrySnap = await getDoc(doc(db, JOURNAL_ENTRIES_COLLECTION, previous.journalEntryId));
-    if (entrySnap.exists()) {
-      reversalLines = (entrySnap.data() as { lines?: Parameters<typeof buildReversalEntry>[0] }).lines ?? [];
-      reversalNumber = await generateJournalEntryNumber();
+  await runTransaction(db, async (t) => {
+    const snap = await t.get(batchRef);
+    if (!snap.exists()) {
+      return;
     }
-  }
+    const current = snap.data() as Record<string, unknown>;
+    const status = normalizeStatus(current.status);
+    if (status !== previous.status) {
+      throw new Error("Batch status has changed, please reload");
+    }
 
-  // The reversal moves the batch's cost back from finished goods into raw materials, so the
-  // materials themselves have to come back to the shelf with it. Undoing only the ledger
-  // half left the raw-material account claiming stock the warehouse did not have.
-  const patches = await loadRawMaterialPatches(previous.supplies);
-  applySuppliesToPatches(patches, previous.supplies, 1);
+    if (status === "planning") {
+      t.delete(batchRef);
+      return;
+    }
 
-  const batch = writeBatch(db);
-  batch.delete(batchRef);
-  writeRawMaterialPatches(batch, patches);
+    const supplies = deserializeSupplies(current.supplies);
+    const materials = await loadRawMaterials(t, supplies);
 
-  if (productSnap.exists() && actualQuantity > 0) {
-    const state = readProductStockState(previous.productId, productSnap.data() as Record<string, unknown>);
-    applyProductionIntake(state, previous.producedVariant, -actualQuantity);
-    writeProductStock(batch, state);
-  }
+    if (status === "curing") {
+      applySupplies(materials, supplies, 1);
+      t.delete(batchRef);
+      writeRawMaterials(t, materials);
+      return;
+    }
 
-  if (reversalLines && reversalNumber) {
-    postJournalEntry(batch, reversalNumber, buildReversalEntry(reversalLines), {
-      sourceType: "productionBatch",
-      sourceId: previous.id,
-      sourceNumber: previous.batchCode,
-      description: `Үйлдвэрлэлийн багц устгасан — бичилтийг цуцаллаа: ${previous.batchCode}`,
-      reversalOf: previous.journalEntryId,
-      createdBy: previous.createdByUid,
-    });
-  }
+    // ready
+    const actualQuantity = Number(current.actualQuantity ?? previous.actualQuantity ?? 0);
+    const productId = Number(current.productId ?? previous.productId);
+    const ref = productRef(productId);
+    const productSnap = await t.get(ref);
+    const journalEntryId = typeof current.journalEntryId === "string" ? current.journalEntryId : null;
+    const reversalLines = journalEntryId && reversalNumber ? await readJournalEntryLines(t, journalEntryId) : null;
 
-  await batch.commit();
+    // The reversal moves the batch's cost back from finished goods into raw materials, so the
+    // materials themselves have to come back to the shelf with it.
+    applySupplies(materials, supplies, 1);
+    t.delete(batchRef);
+    writeRawMaterials(t, materials);
+
+    if (productSnap.exists() && actualQuantity > 0) {
+      const productData = productSnap.data() as Record<string, unknown>;
+      const state = readProductStockState(productId, productData);
+      const producedVariant =
+        typeof current.producedVariant === "string" ? current.producedVariant : previous.producedVariant;
+      applyProductionIntake(state, producedVariant, -actualQuantity);
+      writeProductStock(t, state);
+
+      // Only when the cost is still exactly what this batch left it at — a later batch or an
+      // admin edit has since said something newer, and that stands.
+      const costAfter = Number(current.costPriceAfter);
+      const costBefore = Number(current.costPriceBefore);
+      if (
+        Number.isFinite(costAfter) &&
+        Number.isFinite(costBefore) &&
+        Number(productData.costPrice ?? 0) === costAfter &&
+        costAfter !== costBefore
+      ) {
+        t.update(ref, { costPrice: costBefore });
+      }
+    }
+
+    if (journalEntryId && reversalLines && reversalNumber) {
+      postJournalEntry(t, reversalNumber, buildReversalEntry(reversalLines), {
+        sourceType: "productionBatch",
+        sourceId: previous.id,
+        sourceNumber: previous.batchCode,
+        description: `Үйлдвэрлэлийн багц устгасан — бичилтийг цуцаллаа: ${previous.batchCode}`,
+        reversalOf: journalEntryId,
+        createdBy: currentActorUid(previous.createdByUid),
+      });
+    }
+  });
 }
 
 export function subscribeToProductionBatches({

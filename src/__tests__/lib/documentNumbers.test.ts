@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // One shared counter document per series, exactly like Firestore holds them.
 const counters: Record<string, { lastNumber: number; year: number }> = {};
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 vi.mock("firebase/firestore", () => ({
   doc: vi.fn((_db: unknown, _collection: string, counterId: string) => ({ counterId })),
   runTransaction: vi.fn(async (_db: unknown, fn: (t: unknown) => Promise<unknown>) => {

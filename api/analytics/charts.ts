@@ -1,11 +1,13 @@
 // GET /api/analytics/charts
-// Public endpoint — a small set of GA4 breakdowns (daily trend, device split,
+// Admin-only — a small set of GA4 breakdowns (daily trend, device split,
 // traffic channel, top pages) for the last 30 days, powering the admin
-// Analytics dashboard's charts. No PII, safe to expose without auth.
+// Analytics dashboard's charts. No PII, but it is the shop's own traffic data
+// and every uncached call spends GA4 quota, so it answers admins only.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { isGa4Configured, runBatchReport } from './_gaClient.js';
+import { requirePrivilegedCaller } from '../chat/_lib/auth.js';
 
 interface ChartData {
   trend: Array<{ date: string; sessions: number }>;
@@ -118,6 +120,12 @@ async function fetchFreshChartData(): Promise<ChartData> {
 export default async function handler(req: any, res: any): Promise<void> {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const authorization = await requirePrivilegedCaller(req);
+  if (!authorization.ok) {
+    res.status(authorization.status).json({ error: authorization.error });
     return;
   }
 

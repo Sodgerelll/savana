@@ -5,6 +5,8 @@
  * once instead of twice.
  */
 
+import { calculateVat, type VatMode } from "./vat";
+
 export interface RetailReturnItem {
   productId: number;
   variant: string | null;
@@ -52,6 +54,106 @@ export function hasReturnableQuantity(
 ): boolean {
   const returned = returnedQuantities(returns);
   return items.some((item) => item.quantity > (returned.get(returnLineKey(item.productId, item.variant)) ?? 0));
+}
+
+/** The money side of one retail return. */
+export interface RetailReturnMoney {
+  /** Value net of НӨАТ — debited to Sales Returns. */
+  net: number;
+  /** НӨАТ carried by the returned goods — debited back out of VAT payable. */
+  vat: number;
+  /** What the buyer gets back: net + vat. */
+  gross: number;
+}
+
+/**
+ * What a return of some lines of a sale/order is worth, in the terms the buyer was charged.
+ *
+ * Three things the naive `unitPrice × quantity` got wrong:
+ * - A whole-sale discount (the Sales module's хөнгөлөлт) lowers what every line was actually
+ *   sold for, so the lines are scaled by the share of the list value the buyer really paid.
+ * - In `added` mode the stored prices are net and НӨАТ was charged on top, so the buyer gets
+ *   the tax back too. Carving the tax out of the net price returned less than was paid.
+ * - Rounding across partial returns must never give back more than was charged, so the
+ *   return that brings the last units home takes exactly what is left.
+ */
+export function retailReturnMoney(params: {
+  /** Σ unitPrice × quantity of the lines coming back now. */
+  linesValue: number;
+  /** Σ unitPrice × quantity of every line on the sale/order. */
+  allLinesValue: number;
+  /** Goods value the buyer was charged, after discounts, before any НӨАТ added on top. */
+  chargedGoodsValue: number;
+  /** НӨАТ recorded on the sale/order. */
+  chargedVat: number;
+  vatMode: VatMode;
+  /** Returns already booked against the same sale/order. */
+  priorReturns: RetailReturnRecord[];
+  /** True when this return brings back every unit still outstanding. */
+  completesReturn: boolean;
+}): RetailReturnMoney {
+  const chargedGoods = Math.max(0, Math.round(params.chargedGoodsValue));
+  const chargedVat = params.vatMode === "none" ? 0 : Math.max(0, Math.round(params.chargedVat));
+  // Gross goods value the buyer paid: `added` put the tax on top, the other modes carry it inside.
+  const chargedGross = params.vatMode === "added" ? chargedGoods + chargedVat : chargedGoods;
+
+  const priorGross = params.priorReturns.reduce((sum, record) => sum + Math.max(0, record.totalAmount), 0);
+  const priorVat = params.priorReturns.reduce((sum, record) => sum + Math.max(0, record.vatAmount), 0);
+  const grossLeft = Math.max(0, chargedGross - priorGross);
+  const vatLeft = Math.max(0, chargedVat - priorVat);
+
+  if (params.completesReturn) {
+    const vat = Math.min(vatLeft, grossLeft);
+    return { net: grossLeft - vat, vat, gross: grossLeft };
+  }
+
+  const ratio =
+    params.allLinesValue > 0 ? Math.min(1, Math.max(0, chargedGoods / params.allLinesValue)) : 1;
+  const goods = Math.round(Math.max(0, params.linesValue) * ratio);
+
+  let net: number;
+  let vat: number;
+  if (params.vatMode === "added") {
+    net = goods;
+    vat = calculateVat(net, "added");
+  } else if (params.vatMode === "included") {
+    vat = calculateVat(goods, "included");
+    net = goods - vat;
+  } else {
+    net = goods;
+    vat = 0;
+  }
+
+  // Never more than what is still outstanding.
+  vat = Math.min(vat, vatLeft);
+  const gross = Math.min(net + vat, grossLeft);
+  vat = Math.min(vat, gross);
+  return { net: gross - vat, vat, gross };
+}
+
+/**
+ * True when returning `request` would bring back every unit of every line still outstanding
+ * on the sale/order.
+ */
+export function completesReturn(
+  items: Array<{ productId: number; variant: string | null; quantity: number }>,
+  priorReturns: RetailReturnRecord[],
+  request: Array<{ productId: number; variant: string | null; quantity: number }>,
+): boolean {
+  const returned = returnedQuantities(priorReturns);
+  for (const item of request) {
+    const key = returnLineKey(item.productId, item.variant);
+    returned.set(key, (returned.get(key) ?? 0) + item.quantity);
+  }
+  const shipped = new Map<string, number>();
+  for (const item of items) {
+    const key = returnLineKey(item.productId, item.variant);
+    shipped.set(key, (shipped.get(key) ?? 0) + item.quantity);
+  }
+  for (const [key, quantity] of shipped) {
+    if ((returned.get(key) ?? 0) < quantity) return false;
+  }
+  return true;
 }
 
 function parseTimestamp(value: unknown): string | null {

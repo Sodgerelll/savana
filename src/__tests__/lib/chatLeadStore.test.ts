@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   serverTimestampToken: Symbol("serverTimestamp"),
 }));
 
-vi.mock("../../lib/firebase", () => ({ db: {} }));
+vi.mock("../../lib/firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 vi.mock("firebase/firestore", () => ({
   collection: () => ({ __ref: "chat_leads" }),

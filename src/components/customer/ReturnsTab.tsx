@@ -6,7 +6,7 @@ import { ReturnDialog } from "../shared/ReturnDialog";
 import { MoneyFormat } from "../shared/MoneyFormat";
 import { DateFormat } from "../shared/DateFormat";
 import { toast } from "../shared/Toast";
-import type { ReturnItem } from "../../services/transferService";
+import { isReturnableTransfer, type ReturnItem } from "../../services/transferService";
 
 interface Props {
   transfers: Transfer[];
@@ -17,7 +17,7 @@ export function ReturnsTab({ transfers }: Props) {
   const [showDialog, setShowDialog] = useState(false);
 
   const returnTransfers = transfers.filter((t) => t.type === "RETURN");
-  const deliveredTransfers = transfers.filter((t) => t.status === "DELIVERED");
+  const deliveredTransfers = transfers.filter(isReturnableTransfer);
 
   async function handleReturn(
     originalTransferId: string,

@@ -21,7 +21,7 @@ export default function CartDrawer() {
   // Cart items store the list price; active discounts are applied at display
   // time (the same way Checkout prices the order).
   const effectiveUnitPrice = (item: { product: { id: number }; unitPrice: number }) => {
-    const discount = getActiveDiscount(discounts, item.product.id);
+    const discount = getActiveDiscount(discounts, item.product.id, item.unitPrice);
     return discount ? applyDiscount(item.unitPrice, discount) : item.unitPrice;
   };
   const discountSavings = items.reduce(
@@ -82,7 +82,7 @@ export default function CartDrawer() {
                     <h4>{item.product.name}</h4>
                     {item.variant && <p className="cart-item-variant">{item.variant}</p>}
                     {(() => {
-                      const discount = getActiveDiscount(discounts, item.product.id);
+                      const discount = getActiveDiscount(discounts, item.product.id, item.unitPrice);
                       const effective = effectiveUnitPrice(item);
                       if (!discount || effective >= item.unitPrice) {
                         return <p className="cart-item-price">{formatStorePrice(item.unitPrice)}</p>;
