@@ -225,6 +225,7 @@ import FinancePage from "./admin/FinancePage";
 import FinancePaymentsPage from "./admin/FinancePaymentsPage";
 import FinanceReconciliationPage from "./admin/FinanceReconciliationPage";
 import FinanceReportsPage from "./admin/FinanceReportsPage";
+import FixedAssetsPage from "./admin/FixedAssetsPage";
 import AdminModals from "./admin/AdminModals";
 import DiscountsPage from "./admin/DiscountsPage";
 import {
@@ -288,6 +289,7 @@ type AdminSection =
   | "financePayments"
   | "financeReconciliation"
   | "financeReports"
+  | "financeFixedAssets"
   | "factoryOverview"
   | "factoryProduction"
   | "factoryRecipes"
@@ -646,7 +648,7 @@ const VALID_SECTIONS = new Set<string>([
   "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
   "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions",
   "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
-  "financeOverview", "financePayments", "financeReconciliation", "financeReports",
+  "financeOverview", "financePayments", "financeReconciliation", "financeReports", "financeFixedAssets",
   "factoryOverview", "factoryProduction", "factoryRecipes", "rawMaterials", "factoryInventory",
 ]);
 
@@ -1108,6 +1110,7 @@ export default function Account() {
     "financePayments",
     "financeReconciliation",
     "financeReports",
+    "financeFixedAssets",
   ]);
   const adminMenuGroups: AdminMenuGroup[] =
     language === "MN"
@@ -1431,6 +1434,14 @@ export default function Account() {
                 label: "Санхүүгийн тайлан",
                 description: "Захирлын самбар: P&L, мөнгөн урсгал, журнал, дансны үлдэгдэл.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "financeFixedAssets",
+                label: "Үндсэн хөрөнгө",
+                description: "Үндсэн хөрөнгийн бүртгэл, элэгдэл, данснаас хасалт, тайлан.",
+                icon: <Building2 size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -1822,6 +1833,14 @@ export default function Account() {
                 label: "Financial reports",
                 description: "Director dashboard: P&L, cashflow, journal, and trial balance.",
                 icon: <LayoutDashboard size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "financeFixedAssets",
+                label: "Fixed assets",
+                description: "Asset register, depreciation, disposals, and reports.",
+                icon: <Building2 size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -4412,6 +4431,8 @@ export default function Account() {
             <FinanceReconciliationPage ctx={adminCtx} />
           ) : activeSection === "financeReports" ? (
             <FinanceReportsPage ctx={adminCtx} />
+          ) : activeSection === "financeFixedAssets" ? (
+            <FixedAssetsPage ctx={adminCtx} />
           ) : (
             <ProductsPage ctx={adminCtx} />
           )}

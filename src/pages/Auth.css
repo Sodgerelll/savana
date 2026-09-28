@@ -5082,3 +5082,132 @@ select.admin-search-input {
   margin-top: 0.35rem;
   font-size: 0.75rem;
 }
+
+/* ── Finance: fixed assets ── */
+
+.fa-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(143, 51, 33, 0.1);
+  color: #8f3321;
+  font-size: 0.72rem;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.fa-pill-muted {
+  background: rgba(183, 185, 167, 0.3);
+  color: #5b5a4e;
+}
+
+.fa-pill-warn {
+  background: rgba(196, 168, 61, 0.22);
+  color: #7a6214;
+}
+
+.fa-notice {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+}
+
+.fa-notice p {
+  margin: 0;
+  flex: 1 1 240px;
+}
+
+.fa-row-disposed td {
+  opacity: 0.6;
+}
+
+.fa-row-done td {
+  background: rgba(52, 115, 76, 0.06);
+}
+
+.fa-detail-row > td {
+  background: #fdfcf9;
+}
+
+.fa-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.6rem 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.fa-detail-grid dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7a766c;
+}
+
+.fa-detail-grid dd {
+  margin: 0.15rem 0 0;
+}
+
+.fa-group-row td {
+  background: rgba(183, 185, 167, 0.14);
+}
+
+.fa-th-group {
+  text-align: center;
+}
+
+.fa-inner-table {
+  margin: 0;
+}
+
+.fa-projected {
+  font-style: italic;
+  color: #8a867c;
+}
+
+.fa-schedule-table td,
+.fa-schedule-table th {
+  white-space: nowrap;
+}
+
+.fa-actions-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.fa-report-header {
+  margin-top: 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fa-import-table input,
+.fa-import-table select {
+  width: 100%;
+  min-width: 90px;
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.fa-import-table input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+}
+
+.fa-input-warn {
+  border-color: #c4a83d !important;
+  background: rgba(247, 227, 154, 0.35) !important;
+}
+
+@media (max-width: 900px) {
+  .fa-report-header {
+    grid-template-columns: 1fr;
+  }
+}
