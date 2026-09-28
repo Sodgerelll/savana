@@ -804,3 +804,15 @@
   width: 5.2rem;
   text-align: center;
 }
+
+/* Chat-request customer: the Messenger / Instagram name with its channel icon. */
+.chat-lead-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chat-lead-name svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}

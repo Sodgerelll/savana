@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Download,
@@ -9,6 +9,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { fetchConversationNames } from "../../lib/chat/conversationStore";
 import { downloadCsv } from "../../lib/chat/exportCsv";
 import {
   convertLeadToSale,
@@ -16,7 +17,7 @@ import {
   setChatLeadStatus,
   deleteChatLead,
 } from "../../lib/chat/leadStore";
-import type { ChatChannel, ChatLeadRecord, ChatLeadStatus } from "../../lib/chat/types";
+import type { ChatChannel, ChatConversationRecord, ChatLeadRecord, ChatLeadStatus } from "../../lib/chat/types";
 import type { AdminCtx } from "./adminShellTypes";
 import "./ChatAdmin.css";
 
@@ -29,6 +30,8 @@ const COPY = {
     all: "Бүгд",
     empty: "Одоогоор хүсэлт алга.",
     customer: "Харилцагч",
+    chatName: "Чатын нэр",
+    orderName: "Захиалгын нэр",
     items: "Бараа",
     channel: "Суваг",
     status: "Төлөв",
@@ -70,6 +73,8 @@ const COPY = {
     all: "All",
     empty: "No requests yet.",
     customer: "Customer",
+    chatName: "Chat name",
+    orderName: "Order name",
     items: "Items",
     channel: "Channel",
     status: "Status",
@@ -125,9 +130,49 @@ function formatDate(iso: string | null, language: "MN" | "EN"): string {
 }
 
 export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
-  const { language, chatLeads, chatLeadsError, products, user, profile, settings } = ctx;
+  const { language, chatLeads, chatLeadsError, chatConversations, products, user, profile, settings } = ctx;
   const copy = COPY[(language as "MN" | "EN") ?? "MN"] ?? COPY.MN;
   const leads = useMemo(() => (chatLeads ?? []) as ChatLeadRecord[], [chatLeads]);
+
+  // The Messenger / Instagram name lives on the thread, not the lead: a lead
+  // only has the name the customer typed into the order, often nothing at all.
+  // The live list covers recent threads; older ones are read one by one.
+  const liveNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const conversation of (chatConversations ?? []) as ChatConversationRecord[]) {
+      const name = conversation.customerName?.trim();
+      if (name) names[conversation.id] = name;
+    }
+    return names;
+  }, [chatConversations]);
+  const [fetchedNames, setFetchedNames] = useState<Record<string, string>>({});
+  const [triedIds] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    const missing = leads
+      .map((lead) => lead.conversationId)
+      .filter((id) => id && !liveNames[id] && !triedIds.has(id));
+    if (missing.length === 0) return;
+    // Remembered before the read, so a thread with no name is asked for once.
+    missing.forEach((id) => triedIds.add(id));
+
+    let cancelled = false;
+    void fetchConversationNames(missing).then((names) => {
+      if (!cancelled && Object.keys(names).length > 0) {
+        setFetchedNames((current) => ({ ...current, ...names }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [leads, liveNames, triedIds]);
+
+  const chatNameFor = (lead: ChatLeadRecord): string =>
+    liveNames[lead.conversationId] ?? fetchedNames[lead.conversationId] ?? "";
+
+  /** The lead as a sale should see it: the chat name stands in for a name never typed. */
+  const withChatName = (lead: ChatLeadRecord): ChatLeadRecord =>
+    lead.customerName.trim() ? lead : { ...lead, customerName: chatNameFor(lead) };
 
   const [newOnly, setNewOnly] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -154,7 +199,8 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
       "chat-leads",
       [
         copy.received,
-        copy.customer,
+        copy.chatName,
+        copy.orderName,
         copy.phone,
         copy.address,
         copy.items,
@@ -164,6 +210,7 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
       ],
       visible.map((lead) => [
         formatDate(lead.createdAt, language as "MN" | "EN"),
+        chatNameFor(lead),
         lead.customerName,
         lead.customerPhone,
         lead.address,
@@ -181,7 +228,7 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
     setNotice("");
     try {
       const result = await convertLeadToSale(
-        lead,
+        withChatName(lead),
         products ?? [],
         {
           uid: user?.uid ?? "",
@@ -292,8 +339,10 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
                 </tr>
               ) : (
                 visible.map((lead) => {
+                  const chatName = chatNameFor(lead);
+                  const orderName = lead.customerName.trim();
                   const contactReady =
-                    lead.customerName.trim().length > 0 && lead.customerPhone.trim().length > 0;
+                    withChatName(lead).customerName.trim().length > 0 && lead.customerPhone.trim().length > 0;
                   const busy = busyId === lead.id;
 
                   return (
@@ -306,7 +355,17 @@ export default function ChatLeadsPage({ ctx }: { ctx: AdminCtx }) {
                       </td>
                       <td>
                         <div className="admin-table-primary">
-                          <strong>{lead.customerName || "—"}</strong>
+                          <strong className="chat-lead-name">
+                            {chatName && CHANNEL_ICONS[lead.channel]}
+                            {chatName || orderName || "—"}
+                          </strong>
+                          {/* The name typed into the order, when it says something
+                              the chat name does not — often a relative's. */}
+                          {chatName && orderName && orderName !== chatName && (
+                            <small>
+                              {copy.orderName}: {orderName}
+                            </small>
+                          )}
                           <small>
                             {lead.customerPhone || (
                               <span style={{ color: "var(--color-sale, #d72c0d)" }}>

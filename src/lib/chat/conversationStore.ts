@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -82,6 +83,30 @@ function deserializeConversation(
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
+}
+
+/**
+ * Customer names for the given threads, read one document at a time.
+ *
+ * For screens that point at threads older than the live list's newest
+ * {@link CONVERSATION_PAGE_SIZE} — a chat request from last month still needs
+ * the Messenger name of the person who sent it. Threads without a name, and
+ * reads that fail, are simply left out.
+ */
+export async function fetchConversationNames(ids: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const entries = await Promise.all(
+    unique.map(async (id) => {
+      try {
+        const snapshot = await getDoc(doc(conversationsRef, id));
+        const name = snapshot.exists() ? snapshot.data()?.customerName : null;
+        return typeof name === "string" && name.trim() ? ([id, name.trim()] as const) : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null));
 }
 
 function deserializeMessage(snapshot: QueryDocumentSnapshot<DocumentData>): ChatMessageRecord {
