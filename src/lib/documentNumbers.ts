@@ -32,6 +32,7 @@ export const NUMBER_SERIES = {
   crmContact: { counterId: "crmContacts", prefix: "HAR", yearScoped: false, padding: 4 },
   transfer: { counterId: "transfers", prefix: "TRF", yearScoped: true, padding: 5 },
   journalEntry: { counterId: "journalEntries", prefix: "JE", yearScoped: true, padding: 6 },
+  fixedAsset: { counterId: "fixedAssets", prefix: "FA", yearScoped: false, padding: 4 },
 } as const satisfies Record<string, NumberSeries>;
 
 export type NumberSeriesName = keyof typeof NUMBER_SERIES;

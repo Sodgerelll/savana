@@ -482,6 +482,19 @@ service cloud.firestore {
       allow create, update, delete: if hasPrivilegedProfileRole();
     }
 
+    // Finance: Fixed-asset register and its monthly depreciation runs. Every change to
+    // either also posts to journalEntries in the same write, so they are admin-only too.
+    match /fixedAssets/{assetId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, update, delete: if hasPrivilegedProfileRole();
+    }
+
+    match /fixedAssetDepreciationRuns/{period} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create, delete: if hasPrivilegedProfileRole();
+      allow update: if false;
+    }
+
     // CRM: Transfers
     match /transfers/{transferId} {
       allow read, list: if hasPrivilegedProfileRole();
@@ -530,7 +543,8 @@ service cloud.firestore {
           "customerTransactions",
           "productionBatches",
           "customers",
-          "crmContacts"
+          "crmContacts",
+          "fixedAssets"
         ];
       // The factory floor numbers its batches and the ledger entries its work posts. Staff
       // could not do either before, so every batch a worker created, and every completion

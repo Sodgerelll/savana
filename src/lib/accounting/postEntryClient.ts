@@ -25,7 +25,10 @@ export type SourceType =
   | "packagingPurchase"
   | "packagingUsage"
   | "financeEntry"
-  | "stockAdjustment";
+  | "stockAdjustment"
+  | "fixedAsset"
+  | "fixedAssetDepreciation"
+  | "fixedAssetDisposal";
 
 export interface PostJournalEntryMeta {
   sourceType: SourceType;

@@ -19,7 +19,7 @@ import { Fragment, useMemo, useState } from "react";
 import type { AdminCtx } from "./adminShellTypes";
 import type { FinanceEntryRecord } from "../../lib/financeEntries";
 import type { FinanceWeeklyKpiRecord } from "../../lib/financeKpis";
-import { ACCOUNT_CODES, seedChartOfAccounts } from "../../lib/accounting/chartOfAccounts";
+import { ACCOUNT_CODES, missingAccountCodes, seedChartOfAccounts } from "../../lib/accounting/chartOfAccounts";
 import { deriveAutoFinanceEntries } from "../../lib/accounting/autoFinanceEntries";
 import { computeDiscountStats } from "../../lib/discountStats";
 
@@ -39,9 +39,23 @@ const SOURCE_LABELS: Record<string, { mn: string; en: string }> = {
   payment: { mn: "Төлбөр", en: "Payment" },
   directSale: { mn: "Шууд борлуулалт", en: "Direct sale" },
   customerTransaction: { mn: "Харилцагчийн гүйлгээ", en: "Customer transaction" },
+  fixedAsset: { mn: "Үндсэн хөрөнгө", en: "Fixed asset" },
+  fixedAssetDepreciation: { mn: "Элэгдэл", en: "Depreciation" },
+  fixedAssetDisposal: { mn: "Үндсэн хөрөнгө хассан", en: "Asset disposal" },
 };
 
 const MONEY_CODES: string[] = [ACCOUNT_CODES.CASH, ACCOUNT_CODES.BANK, ACCOUNT_CODES.CLEARING];
+
+/** Fixed-asset cost accounts plus their contra, accumulated depreciation — together the net book value. */
+const FIXED_ASSET_CODES: string[] = [
+  ACCOUNT_CODES.FA_BUILDINGS,
+  ACCOUNT_CODES.FA_MACHINERY,
+  ACCOUNT_CODES.FA_VEHICLES,
+  ACCOUNT_CODES.FA_FURNITURE,
+  ACCOUNT_CODES.FA_COMPUTERS,
+  ACCOUNT_CODES.FA_OTHER,
+  ACCOUNT_CODES.ACCUMULATED_DEPRECIATION,
+];
 
 interface MonthlyRow {
   monthIndex: number;
@@ -49,6 +63,9 @@ interface MonthlyRow {
   expense: number;
   profit: number;
   margin: number | null;
+  /** Depreciation and asset disposal gain/loss — in profit, but no money moved. */
+  nonCashIncome: number;
+  nonCashExpense: number;
   hasData: boolean;
 }
 
@@ -126,6 +143,8 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
       expense: 0,
       profit: 0,
       margin: null,
+      nonCashIncome: 0,
+      nonCashExpense: 0,
       hasData: false,
     }));
     for (const entry of yearEntries) {
@@ -134,6 +153,10 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
       const row = rows[monthIndex];
       if (entry.type === "income") row.income += entry.amount;
       else row.expense += entry.amount;
+      if ("nonCash" in entry && entry.nonCash) {
+        if (entry.type === "income") row.nonCashIncome += entry.amount;
+        else row.nonCashExpense += entry.amount;
+      }
       row.hasData = true;
     }
     for (const row of rows) {
@@ -151,11 +174,16 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
   const monthlyAverage = activeRows.length > 0 ? totalProfit / activeRows.length : 0;
 
   // ── Cashflow rows with cumulative balance ──
+  // Depreciation and asset disposal gains/losses are profit-and-loss only; no money moved,
+  // so they are taken back out here.
   const cashflowRows = useMemo(() => {
     let cumulative = 0;
     return activeRows.map((row) => {
-      cumulative += row.profit;
-      return { ...row, cumulative };
+      const income = row.income - row.nonCashIncome;
+      const expense = row.expense - row.nonCashExpense;
+      const profit = income - expense;
+      cumulative += profit;
+      return { ...row, income, expense, profit, cumulative };
     });
   }, [activeRows]);
 
@@ -265,6 +293,10 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
 
   const cashBalance = useMemo(() => sumLines(ledgerEntries, (code) => MONEY_CODES.includes(code)), [ledgerEntries]);
   const arBalance = useMemo(() => sumLines(ledgerEntries, (code) => code === ACCOUNT_CODES.AR), [ledgerEntries]);
+  const fixedAssetNetBalance = useMemo(
+    () => sumLines(ledgerEntries, (code) => FIXED_ASSET_CODES.includes(code)),
+    [ledgerEntries],
+  );
   const vatPayable = useMemo(
     () => -sumLines(ledgerEntries, (code) => code === ACCOUNT_CODES.VAT_PAYABLE),
     [ledgerEntries],
@@ -317,6 +349,10 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
   const totalCredit = trialBalance.reduce((s, r) => s + r.credit, 0);
 
   const isSeeded = (chartOfAccounts as any[]).length > 0;
+  const missingAccounts = useMemo(
+    () => missingAccountCodes((chartOfAccounts as any[]).map((account) => String(account.code))),
+    [chartOfAccounts],
+  );
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
 
@@ -372,6 +408,20 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
         </div>
       </div>
 
+      {isSeeded && missingAccounts.length > 0 && (
+        <div className="admin-data-card" style={{ padding: "1rem 1.25rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <AlertCircle size={18} style={{ flexShrink: 0 }} />
+          <p style={{ margin: 0, flex: "1 1 240px" }}>
+            {mn
+              ? `Дансны заавар шинэчлэгдсэн — ${missingAccounts.length} шинэ данс (${missingAccounts.join(", ")}) нэмэгдэнэ.`
+              : `The chart of accounts has ${missingAccounts.length} new accounts (${missingAccounts.join(", ")}) to add.`}
+          </p>
+          <button type="button" className="btn btn-primary" onClick={handleSeed} disabled={seeding}>
+            <DatabaseZap size={16} />
+            {seeding ? (mn ? "Шинэчилж байна..." : "Updating...") : (mn ? "Дансны заавар шинэчлэх" : "Update chart of accounts")}
+          </button>
+        </div>
+      )}
       {!isSeeded && (
         <div className="admin-data-card" style={{ padding: "1rem 1.25rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <AlertCircle size={18} style={{ flexShrink: 0 }} />
@@ -859,6 +909,10 @@ export default function FinanceReportsPage({ ctx }: { ctx: AdminCtx }) {
             <div className="admin-summary-card">
               <span>{mn ? "НӨАТ-ын өглөг" : "VAT payable"}</span>
               <strong>{formatStorePrice(vatPayable)}</strong>
+            </div>
+            <div className="admin-summary-card">
+              <span>{mn ? "Үндсэн хөрөнгө (цэвэр дүн)" : "Fixed assets (net book value)"}</span>
+              <strong>{formatStorePrice(fixedAssetNetBalance)}</strong>
             </div>
             <div className="admin-summary-card">
               <span>{mn ? "Өнөөдрийн орлого" : "Today's revenue"}</span>

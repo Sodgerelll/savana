@@ -444,3 +444,93 @@ export function buildCustomerTransactionSettlementEntry(params: {
   ].filter((l): l is JournalLine => l !== null);
   return assertBalanced(lines);
 }
+
+// ─── Fixed assets (Үндсэн хөрөнгө) ─────────────────────────────────────────────
+
+/**
+ * A movement on one account given as a signed amount: positive lands on the debit side,
+ * negative on the credit side. Used where an adjustment can go either way.
+ */
+function signedLine(accountCode: AccountCode, amount: number): JournalLine | null {
+  return amount >= 0 ? line(accountCode, amount, 0) : line(accountCode, 0, -amount);
+}
+
+/**
+ * Putting a fixed asset on the books.
+ *
+ * - `funding: "cash" | "bank"` — bought now: the asset account grows, the money account it
+ *   was paid from shrinks.
+ * - `funding: "opening"` — an asset the company already owned before it was entered here
+ *   (the opening register). No money moves today, so the balancing side is owner's equity,
+ *   and whatever depreciation it had already accumulated by the cut-over is charged to
+ *   retained earnings — those were costs of the earlier years' profit.
+ */
+export function buildFixedAssetAcquisitionEntry(params: {
+  assetAccount: AccountCode;
+  cost: number;
+  funding: "cash" | "bank" | "opening";
+  openingAccumulatedDepreciation?: number;
+}): BuiltEntry {
+  const cost = Math.max(0, round(params.cost));
+  if (params.funding === "opening") {
+    const accumulated = Math.max(0, Math.min(round(params.openingAccumulatedDepreciation ?? 0), cost));
+    const lines = [
+      line(params.assetAccount, cost, 0),
+      line(ACCOUNT_CODES.EQUITY, 0, cost),
+      line(ACCOUNT_CODES.RETAINED_EARNINGS, accumulated, 0),
+      line(ACCOUNT_CODES.ACCUMULATED_DEPRECIATION, 0, accumulated),
+    ].filter((l): l is JournalLine => l !== null);
+    return assertBalanced(lines);
+  }
+  const moneyAccount = mapPaymentMethodToAccount(params.funding);
+  const lines = [line(params.assetAccount, cost, 0), line(moneyAccount, 0, cost)].filter(
+    (l): l is JournalLine => l !== null,
+  );
+  return assertBalanced(lines);
+}
+
+/** One month's depreciation run for every asset together: an expense with no cash leaving. */
+export function buildDepreciationEntry(params: { amount: number }): BuiltEntry {
+  const lines = [
+    line(ACCOUNT_CODES.DEPRECIATION_EXPENSE, params.amount, 0),
+    line(ACCOUNT_CODES.ACCUMULATED_DEPRECIATION, 0, params.amount),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
+
+/**
+ * A fixed asset leaving the books — sold, scrapped or written off.
+ *
+ * `postedAccumulated` is the depreciation already sitting in 1590 for this asset and
+ * `accumulatedAtDisposal` what it should have reached by the month before disposal. The
+ * difference (normally the months a run has not covered yet) is charged first, so the asset
+ * leaves at its true carrying amount. Then cost and accumulated depreciation are both taken
+ * off, any proceeds land in the money account, and what is left over is a gain or a loss.
+ */
+export function buildFixedAssetDisposalEntry(params: {
+  assetAccount: AccountCode;
+  cost: number;
+  postedAccumulated: number;
+  accumulatedAtDisposal: number;
+  proceeds: number;
+  paymentMethod?: string | null;
+}): BuiltEntry {
+  const cost = Math.max(0, round(params.cost));
+  const posted = round(params.postedAccumulated);
+  const accumulated = Math.max(0, Math.min(round(params.accumulatedAtDisposal), cost));
+  const catchUp = accumulated - posted;
+  const proceeds = Math.max(0, round(params.proceeds));
+  const gain = proceeds - (cost - accumulated);
+  const moneyAccount = mapPaymentMethodToAccount(params.paymentMethod);
+
+  const lines = [
+    signedLine(ACCOUNT_CODES.DEPRECIATION_EXPENSE, catchUp),
+    signedLine(ACCOUNT_CODES.ACCUMULATED_DEPRECIATION, -catchUp),
+    line(ACCOUNT_CODES.ACCUMULATED_DEPRECIATION, accumulated, 0),
+    line(moneyAccount, proceeds, 0),
+    gain < 0 ? line(ACCOUNT_CODES.LOSS_ON_ASSET_DISPOSAL, -gain, 0) : null,
+    gain > 0 ? line(ACCOUNT_CODES.GAIN_ON_ASSET_DISPOSAL, 0, gain) : null,
+    line(params.assetAccount, 0, cost),
+  ].filter((l): l is JournalLine => l !== null);
+  return assertBalanced(lines);
+}
