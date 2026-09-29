@@ -733,6 +733,20 @@ async function replyToEvent(
 }
 
 /**
+ * Appends the "name, phone, address" question to the last outcome that wants
+ * it. Two products named in one message add two lines to the order and need
+ * the details asked once, which is how a person would answer.
+ */
+function askForOrderDetailsOnce(
+  entries: Array<{ outcome: { text?: string; needsOrderDetails?: boolean } }>,
+): void {
+  const last = entries.filter((entry) => entry.outcome.needsOrderDetails).pop();
+  if (last) {
+    last.outcome.text = `${last.outcome.text ?? ''}\n\n${ORDER_DETAILS_ASK}`.trim();
+  }
+}
+
+/**
  * The customer's name: their profile first, then the page's inbox, where
  * Messenger lists the name even when the profile endpoint is refused.
  */
@@ -747,20 +761,6 @@ async function resolveCustomerName(
     return fromProfile;
   }
   return getParticipantName(token, pageId, senderId);
-}
-
-/**
- * Appends the "name, phone, address" question to the last outcome that wants
- * it. Two products named in one message add two lines to the order and need
- * the details asked once, which is how a person would answer.
- */
-function askForOrderDetailsOnce(
-  entries: Array<{ outcome: { text?: string; needsOrderDetails?: boolean } }>,
-): void {
-  const last = entries.filter((entry) => entry.outcome.needsOrderDetails).pop();
-  if (last) {
-    last.outcome.text = `${last.outcome.text ?? ''}\n\n${ORDER_DETAILS_ASK}`.trim();
-  }
 }
 
 /**

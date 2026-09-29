@@ -234,11 +234,14 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    // Independent writes: one records the message, the other reads a name or a
-    // phone number out of it.
+    // Independent writes: one records the message, the others read a name or a
+    // phone number out of it or out of the shopper's account.
     await Promise.all([
       appendMessage(db, conversation.id, { role: 'user', content: message }),
       captureContactDetails(db, conversation.id, message),
+      userId && !conversation.customerName
+        ? fillContactFromAccount(db, conversation.id, userId)
+        : Promise.resolve(),
     ]);
 
     if (botShouldStaySilent(conversation)) {
@@ -511,6 +514,27 @@ function matchCards(
       imageUrl: card.imageUrl || `/api/chat/productImage?id=${product.id}`,
       inStock: product.inStock,
     }));
+}
+
+/**
+ * A signed-in shopper gave a name and phone when they registered, so their
+ * thread need not wait for an order to stop being «Нэргүй харилцагч». Never
+ * fails the turn: a missing profile only means the thread stays unnamed.
+ */
+async function fillContactFromAccount(db: any, conversationId: string, uid: string): Promise<void> {
+  try {
+    const snapshot = await db.collection('users').doc(uid).get();
+    if (!snapshot.exists) {
+      return;
+    }
+    const profile = snapshot.data() ?? {};
+    await fillConversationContact(db, conversationId, {
+      customerName: typeof profile.displayName === 'string' ? profile.displayName : null,
+      customerPhone: typeof profile.phoneNumber === 'string' ? profile.phoneNumber : null,
+    });
+  } catch (error) {
+    console.warn('[chat/widget] account name lookup failed:', (error as Error).message);
+  }
 }
 
 async function captureContactDetails(db: any, conversationId: string, text: string): Promise<void> {
