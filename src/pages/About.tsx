@@ -1,4 +1,8 @@
-import { Eye, Target, Award, ShieldCheck, HeartHandshake } from "lucide-react";
+import { Eye, Target, Award, ShieldCheck, HeartHandshake, Leaf, FlaskConical, Truck, ArrowRight } from "lucide-react";
+import processStep1 from "../assets/process/step-1.jpg";
+import processStep2 from "../assets/process/step-2.jpg";
+import processStep3 from "../assets/process/step-3.jpg";
+import processStep4 from "../assets/process/step-4.jpg";
 import aboutSavanaSoapImage from "../assets/about-savana-soap.jpg";
 import womenOwnedLogo from "../assets/women-owned.png";
 import { useLanguage } from "../context/LanguageContext";
@@ -13,7 +17,7 @@ const aboutSectionCopy = {
     missionHeading: "Mission Statement",
     coreValuesHeading: "Our Values",
     processHeading: "Our Process",
-    processSubtext: "From ingredient to finished product, every step is done with care.",
+    processSubtext: "To bring you natural, high-quality products, we follow these 4 steps.",
     sustainability: {
       title: "Sustainable",
       body:
@@ -39,24 +43,20 @@ const aboutSectionCopy = {
     ],
     steps: [
       {
-        title: "Source",
-        body:
-          "We carefully select natural ingredients from trusted suppliers, prioritizing local and organic sources.",
+        title: "Ingredient selection",
+        body: "We choose high-quality natural raw materials and carefully check each product's ingredients and intended use.",
       },
       {
-        title: "Craft",
-        body:
-          "Each batch is handcrafted using time-tested recipes and traditional cold-process methods.",
+        title: "Crafting",
+        body: "Knowing the value of natural ingredients, we develop know-how-driven formulas and make high-quality products.",
       },
       {
-        title: "Cure",
-        body:
-          "Our soaps are cured for 4–6 weeks, allowing them to develop their optimal hardness and mildness.",
+        title: "Quality assurance",
+        body: "We follow technology suited to every product, keep to the schedule, and guarantee quality.",
       },
       {
-        title: "Share",
-        body:
-          "Each product is packaged with care and shipped to you, ready to bring natural goodness to your routine.",
+        title: "Packaging & delivery",
+        body: "Once ready, each product is packed with care to preserve its quality, and every step to the customer gets our full attention.",
       },
     ],
   },
@@ -66,7 +66,7 @@ const aboutSectionCopy = {
     missionHeading: "Эрхэм зорилго",
     coreValuesHeading: "Үнэт зүйл",
     processHeading: "Бидний үйл явц",
-    processSubtext: "Түүхий эдээс эхлээд бэлэн бүтээгдэхүүн болтол алхам бүрийг анхааралтай хийдэг.",
+    processSubtext: "Байгалийн гаралтай, чанартай бүтээгдэхүүн таны гарт хүрэхийн тулд бид дараах 4 үе шатыг баримталдаг.",
     sustainability: {
       title: "Тогтвортой хандлага",
       body:
@@ -92,28 +92,27 @@ const aboutSectionCopy = {
     ],
     steps: [
       {
-        title: "Сонголт",
-        body:
-          "Бид итгэлтэй нийлүүлэгчдээс байгалийн гаралтай түүхий эдийг нягт нямбай сонгож, боломжтой үедээ нутгийн болон органик эх үүсвэрийг давуу үздэг.",
+        title: "Түүхий эдийн сонголт",
+        body: "Гарал үүсэл нь тодорхой, чанартай түүхий эдийг сонгон авч, бүтээгдэхүүний найрлага, зориулалттай нийцэх эсэхийг нямбай шалгадаг.",
       },
       {
-        title: "Урлал",
-        body:
-          "Багц бүрийг туршигдсан жор, уламжлалт cold-process аргаар гараар урладаг.",
+        title: "Бүтээл",
+        body: "Байгалийн үнэ цэнийг хадгалсан орц найрлагыг өөрсдийн мэдлэг, ноу-хаутай хослуулан чанартай бүтээгдэхүүн болгон урладаг.",
       },
       {
-        title: "Боловсруулалт",
-        body:
-          "Манай савангууд 4–6 долоо хоног амарч, илүү хатуу, зөөлөн, хэрэглэхэд таатай чанартай болдог.",
+        title: "Чанаржуулалт",
+        body: "Бүтээгдэхүүн бүрийг зохих технологи, хугацааны дагуу боловсруулж, чанарыг нь баталгаажуулдаг.",
       },
       {
-        title: "Хүргэлт",
-        body:
-          "Бүтээгдэхүүн бүрийг анхааралтай савлаж, таны өдөр тутмын хэрэглээнд байгалийн сайн сайхныг хүргэхээр илгээдэг.",
+        title: "Савлагаа ба хүргэлт",
+        body: "Бэлэн болсон бүтээгдэхүүн бүрийг чанарыг нь хадгалахуйц байдлаар савлаж, хэрэглэгчдэд хүрэх хүртэл үйл явц бүрд анхаарал хандуулдаг.",
       },
     ],
   },
 } as const;
+
+const processImages = [processStep1, processStep2, processStep3, processStep4];
+const processIcons = [Leaf, FlaskConical, ShieldCheck, Truck];
 
 export default function About() {
   const { language, t } = useLanguage();
@@ -212,13 +211,25 @@ export default function About() {
             <p>{copy.processSubtext}</p>
           </div>
           <div className="process-steps">
-            {copy.steps.map((step, index) => (
-              <div key={step.title} className="process-step">
-                <span className="step-number">{String(index + 1).padStart(2, "0")}</span>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
-              </div>
-            ))}
+            {copy.steps.map((step, index) => {
+              const Icon = processIcons[index];
+              return (
+                <div key={step.title} className="process-step">
+                  <div className="process-photo-wrap">
+                    <img src={processImages[index]} alt="" className="process-photo" loading="lazy" />
+                    <span className="step-number">{String(index + 1).padStart(2, "0")}</span>
+                  </div>
+                  {index < copy.steps.length - 1 && (
+                    <ArrowRight className="process-arrow" size={28} strokeWidth={1.2} aria-hidden="true" />
+                  )}
+                  <span className="process-icon">
+                    <Icon size={26} strokeWidth={1.2} />
+                  </span>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
