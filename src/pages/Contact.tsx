@@ -5,6 +5,7 @@ import { useStorefront } from "../context/StorefrontContext";
 import { createContactMessage } from "../lib/contactMessages";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Contact.css";
+import { useDocumentMeta } from "../lib/seo";
 
 const initialFormState = { name: "", email: "", subject: "", message: "" };
 
@@ -16,6 +17,7 @@ export default function Contact() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const visibleSettings = getRenderableSettings(settings);
+  useDocumentMeta({ title: t.contactHeading, description: t.contactSub, path: "/contact" });
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, "/contact");
   const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);

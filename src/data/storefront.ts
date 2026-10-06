@@ -203,59 +203,71 @@ const defaultNavigationItems: SiteNavigationItem[] = [
 const defaultJournalEntries: JournalEntry[] = [
   {
     id: 1,
-    titleEn: "Why we build routines around fewer, better essentials",
-    titleMn: "Яагаад бид өдөр тутмын арчилгааг цөөн атлаа чанартай хэрэгцээнд төвлөрүүлдэг вэ",
+    titleEn: "How to make a handmade soap bar last longer",
+    titleMn: "Гар аргын саваныг удаан хэрэглэх 5 зөвлөгөө",
     excerptEn:
-      "A SAVANA shelf is meant to feel calm and practical. We care more about what earns a place in the routine than about adding noise.",
+      "Natural soap has no hardeners or synthetic fillers, so how you keep it decides how long it lasts.\n\nLet it dry between uses: a slotted or wooden soap dish that drains water keeps the bar firm. Keep it out of the direct stream of the shower, and cut a large bar in half so only one piece is wet at a time.\n\nStore spare bars somewhere dry and airy, away from sunlight. A well-kept bar lasts noticeably longer and keeps its scent to the end.",
     excerptMn:
-      "SAVANA-ийн бүтээгдэхүүний тавиур тайван, хэрэглээнд ойр мэдрэмж өгөх ёстой. Бид олон зүйл нэмэхээс илүү үнэхээр хэрэгтэй зүйл дээр төвлөрдөг.",
-    categoryEn: "Routine",
-    categoryMn: "Дадал",
-    author: "SAVANA Studio",
+      "Байгалийн саванд хатууруулагч, синтетик дүүргэгч ордоггүй тул хэрхэн хадгалахаас нь хэрэглэх хугацаа шууд хамаарна.\n\nХэрэглэсэн бүрийн дараа хатаах: ус сайн шүүрүүлдэг сараалжтай эсвэл модон саванны тавиур саваныг хатуу байлгана. Шүршүүрийн усны шууд урсгалаас хол байрлуулж, том саваныг хоёр хувааж нэгийг нь л нойтон хэрэглээрэй.\n\nНөөц саваныг нарны гэрлээс хол, хуурай, агаар сэлгэлттэй газар хадгална. Зөв хадгалсан саван илт удаан хэрэглэгдэж, үнэр нь эцсээ хүртэл хадгалагдана.",
+    categoryEn: "Care tips",
+    categoryMn: "Зөвлөгөө",
+    author: "SAVANA",
     publishedAt: "2026-03-10",
     image: "",
     status: "active",
   },
   {
     id: 2,
-    titleEn: "Ingredient clarity matters more than trend language",
-    titleMn: "Найрлагын тодорхой байдал нь тренд үгнээс илүү чухал",
+    titleEn: "Sea buckthorn, juniper, thyme: what our Mongolian botanicals do",
+    titleMn: "Чацаргана, арц, ганга — Монгол ургамал арьсанд юугаараа тустай вэ",
     excerptEn:
-      "Our journal tracks how we think about ingredients, textures, and everyday use so customers can understand what each product is trying to do.",
+      "Every SAVANA product starts with ingredients grown on Mongolian soil.\n\nSea buckthorn oil is rich in vitamins and fatty acids that help dry, tired skin recover its softness. Juniper has long been used in Mongolian tradition for cleansing and freshness, and thyme (ganga) is known for its soothing, purifying character.\n\nWe pair these with purified tallow, honey and Shuden mountain rock salt so that each bar cleanses without stripping the skin. You will find the full ingredient list on every product page.",
     excerptMn:
-      "Бүтээгдэхүүн бүр юу хийхээр бүтээгдсэн, ямар мэдрэмж өгөх ёстойг ойлгомжтой болгохын тулд бид найрлага, бүтэц, хэрэглээний талаар тэмдэглэл хөтөлдөг.",
+      "SAVANA-ийн бүтээгдэхүүн бүр Монгол орны хөрсөнд ургасан түүхий эдээс эхэлдэг.\n\nЧацарганын тос нь витамин, тосны хүчлээр баялаг тул хуурай, ядарсан арьсны зөөлөн байдлыг сэргээхэд тусалдаг. Арцыг Монголчууд эрт дээр үеэс ариусгал, сэргээшийн зориулалтаар хэрэглэж ирсэн бол ганга нь тайвшруулах, цэвэршүүлэх чанараараа алдартай.\n\nБид эдгээрийг цэвэршүүлсэн сүүлэн тос, зөгийн бал, шүдэн уулын жамц давстай хослуулж, арьсыг хуурайшуулалгүй цэвэрлэх бүтээгдэхүүн хийдэг. Бүтээгдэхүүн бүрийн хуудсанд найрлагын бүрэн жагсаалт бий.",
     categoryEn: "Ingredients",
     categoryMn: "Найрлага",
-    author: "SAVANA Studio",
+    author: "SAVANA",
     publishedAt: "2026-03-05",
     image: "",
     status: "active",
   },
   {
     id: 3,
-    titleEn: "Designing a storefront that feels tactile and slow",
-    titleMn: "Мэдрэмжтэй, тайван хэмнэлтэй storefront хэрхэн бүрддэг вэ",
+    titleEn: "A relaxing bath with mountain rock salt",
+    titleMn: "Жамц давсаар алжаал тайлах ванн хийх заавар",
     excerptEn:
-      "Warm neutrals, quiet typography, and practical merchandising choices shape the tone of the brand as much as the formulas do.",
+      "A warm salt bath is one of the simplest ways to unwind after a long day.\n\nDissolve two or three handfuls of bath salt in water at around 37–39°C and soak for 15–20 minutes. Rinse with clean water afterwards and follow with a moisturiser while the skin is still slightly damp.\n\nOnce or twice a week is plenty. If you have broken skin, high blood pressure or are pregnant, check with your doctor first.",
     excerptMn:
-      "Дулаан нейтрал өнгө, нам тайван бичгийн хэв, хэрэглээнд суурилсан merchandising шийдлүүд нь найрлагын адил брэндийн өнгө аясыг бүрдүүлдэг.",
-    categoryEn: "Studio",
-    categoryMn: "Студи",
-    author: "SAVANA Studio",
+      "Бүлээн давстай ванн бол урт өдрийн дараа алжаал тайлах хамгийн энгийн арга.\n\nОйролцоогоор 37–39°C устай ваннд 2–3 атга ванны давс уусгаж, 15–20 минут хэвтээрэй. Дараа нь цэвэр усаар зайлж, арьс бага зэрэг чийгтэй байхад тос, лосьоноор чийгшүүлнэ.\n\nДолоо хоногт 1–2 удаа хангалттай. Арьс шархалсан, даралт ихсэлттэй эсвэл жирэмсэн бол эмчтэйгээ зөвлөлдсөний дараа хэрэглээрэй.",
+    categoryEn: "Rituals",
+    categoryMn: "Дадал",
+    author: "SAVANA",
     publishedAt: "2026-02-26",
     image: "",
     status: "active",
   },
 ];
 
+/**
+ * Titles of the placeholder notes the store launched with ("how a storefront is
+ * designed", "merchandising choices"). They were written for the team, not for
+ * shoppers, and were saved into the live settings, so they are swapped for the
+ * matching real article wherever they are still stored unchanged.
+ */
+const LEGACY_PLACEHOLDER_JOURNAL_REPLACEMENTS = new Map<string, JournalEntry>([
+  ["Why we build routines around fewer, better essentials", defaultJournalEntries[0]],
+  ["Ingredient clarity matters more than trend language", defaultJournalEntries[1]],
+  ["Designing a storefront that feels tactile and slow", defaultJournalEntries[2]],
+]);
+
 const defaultSettings: ShopSettings = {
   status: "active",
   brandName: "SAVANA",
   brandDescription:
-    "Байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. Since 2019.",
+    "Байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. 2019 оноос хойш.",
   heroHeading: "SAVANA",
   heroSubtext:
-    "Байгалийн гаралтай органик саван, шампунь, ванны бүтээгдэхүүн. Back to nature.",
+    "Байгалийн гаралтай органик саван, шампунь, ванны бүтээгдэхүүн. Байгальдаа эргэн очицгооё.",
   aboutIntroTitle: "Савана органика ХХК",
   aboutIntroBody:
     "Савана органика ХХК нь байгальд ээлтэй, хог хаягдалгүй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан эрүүл мэндийг дэмжих, ОУ-ын стандартад нийцсэн чанартай бүтээгдэхүүнийг 7 жилийн турш хэрэглэгчиддээ үйлдвэрлэн хүргэсээр байна.\n\nБид Монгол орны хөрсөнд ургасан арц, ганга, халгай, чацаргана жимсний охь тос, шүдэн уулын жамц давс, байгалийн цэвэр хужир, зөгийн бал, Монгол бэлчээрийн малын цэвэршүүлсэн сүүлэн тос, өөхөн тос, шар тосыг ашиглан бүтээгдэхүүн нэг бүрийг гар аргаар сэтгэлээ шингээн үйлдвэрлэдэг.",
@@ -456,6 +468,16 @@ function normalizeJournalEntries(value: unknown) {
       }
 
       const rawEntry = entry as Record<string, unknown>;
+
+      const replacement = LEGACY_PLACEHOLDER_JOURNAL_REPLACEMENTS.get(String(rawEntry.titleEn ?? "").trim());
+      if (replacement) {
+        return {
+          ...replacement,
+          id: Number.isFinite(rawEntry.id) ? Number(rawEntry.id) : replacement.id,
+          image: String(rawEntry.image ?? "") || replacement.image,
+          status: parseStatus(rawEntry.status),
+        } satisfies JournalEntry;
+      }
 
       return {
         id: Number.isFinite(rawEntry.id) ? Number(rawEntry.id) : index + 1,

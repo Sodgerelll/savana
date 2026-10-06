@@ -8,22 +8,85 @@ import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import ProductCard from "../components/ProductCard";
-import { applyDiscount, formatStorePrice, getActiveDiscount, getActiveProducts, getCategoryGradient } from "../lib/storefrontHelpers";
+import ProductReviews, { StarRating } from "../components/ProductReviews";
+import RestockNotify from "../components/RestockNotify";
+import { subscribeToApprovedReviews, type ProductReview } from "../lib/productReviews";
+import { SITE_URL, toPlainDescription, useDocumentMeta } from "../lib/seo";
+import {
+  applyDiscount,
+  formatStorePrice,
+  getActiveDiscount,
+  getActiveProducts,
+  getCategoryGradient,
+  isProductSoldOut,
+} from "../lib/storefrontHelpers";
 import "./ProductDetail.css";
 
 export default function ProductDetail() {
   const { id } = useParams();
   const { addItem, items } = useCart();
   const { language, t } = useLanguage();
-  const { products, collections, discounts } = useStorefront();
+  const { products, collections, discounts, loading } = useStorefront();
   const visibleProducts = getActiveProducts(products, collections);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<string | undefined>();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const productId = Number(id);
+
+  useEffect(() => {
+    if (!Number.isFinite(productId)) return undefined;
+    // Reviews are a nice-to-have; a failed read just leaves the list empty.
+    return subscribeToApprovedReviews(productId, setReviews, () => setReviews([]));
+  }, [productId]);
 
   const product = visibleProducts.find((p) => p.id === Number(id));
 
   const allImages = product?.images.filter(Boolean) ?? [];
+
+  const metaPrice = product
+    ? product.variants?.length
+      ? Math.min(...product.variants.map((v) => v.price))
+      : product.price
+    : 0;
+  const metaImages = allImages.filter((image) => /^https?:\/\//.test(image));
+  const metaReviewAverage = reviews.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  useDocumentMeta({
+    title: product?.name ?? t.productNotFound,
+    description: product ? toPlainDescription(product.description || product.ingredients || product.name) : undefined,
+    image: metaImages[0],
+    path: product ? `/product/${product.id}` : undefined,
+    type: product ? "product" : "website",
+    // Only a settled miss is a real 404; while the catalogue loads, stay indexable.
+    noindex: !product && !loading,
+    jsonLd: product
+      ? {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: product.name,
+          description: toPlainDescription(product.description || product.name, 500),
+          sku: String(product.id),
+          brand: { "@type": "Brand", name: "SAVANA" },
+          ...(metaImages.length ? { image: metaImages } : {}),
+          offers: {
+            "@type": "Offer",
+            url: `${SITE_URL}/product/${product.id}`,
+            priceCurrency: "MNT",
+            price: metaPrice,
+            availability: isProductSoldOut(product) ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+          },
+          ...(reviews.length
+            ? {
+                aggregateRating: {
+                  "@type": "AggregateRating",
+                  ratingValue: Number(metaReviewAverage.toFixed(1)),
+                  reviewCount: reviews.length,
+                },
+              }
+            : {}),
+        }
+      : null,
+  });
 
   useEffect(() => {
     if (allImages.length <= 1) return undefined;
@@ -70,6 +133,9 @@ export default function ProductDetail() {
   const needsVariantSelection = hasVariants && !selectedVariant;
   const addDisabled = needsVariantSelection || addableMax <= 0;
 
+  const productSoldOut = isProductSoldOut(product);
+  const showRestockNotify = productSoldOut || (!needsVariantSelection && selectedRemaining <= 0);
+  const reviewAverage = reviews.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
   const gradient = getCategoryGradient(collections, product.category);
   const activeImage = allImages[activeImageIndex] || allImages[0] || "";
 
@@ -77,7 +143,7 @@ export default function ProductDetail() {
     <div className="product-detail">
       <div className="container">
         <div className="breadcrumb pd-breadcrumb">
-          <Link to="/">Home</Link> / <Link to="/collections">{t.shop}</Link> /{" "}
+          <Link to="/">{t.home}</Link> / <Link to="/collections">{t.shop}</Link> /{" "}
           <span>{product.name}</span>
         </div>
 
@@ -136,21 +202,27 @@ export default function ProductDetail() {
             ) : (
               <p className="pd-price">{formatStorePrice(currentPrice)}</p>
             )}
-            {(() => {
-              const stock = product.variants?.length
-                ? product.variants.reduce((s, v) => s + (v.quantity || 0), 0)
-                : (product.totalStock ?? 0);
-              const sold = product.soldCount ?? 0;
-              const remaining = stock - sold;
-              // How many are left is the shop's business; a shopper is only told
-              // when there are none.
-              if (stock <= 0 || remaining > 0) return null;
-              return (
-                <p className="pd-stock pd-stock-out">
-                  {language === "MN" ? "Дууссан" : "Out of stock"}
-                </p>
-              );
-            })()}
+            {reviews.length > 0 && (
+              <button
+                type="button"
+                className="pd-rating-summary"
+                onClick={() =>
+                  document.getElementById("product-reviews")?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+              >
+                <StarRating value={reviewAverage} size={15} />
+                <span>
+                  {reviewAverage.toFixed(1)} · {reviews.length} {language === "MN" ? "сэтгэгдэл" : "reviews"}
+                </span>
+              </button>
+            )}
+            {/* How many are left is the shop's business; a shopper is only told
+                when there are none. */}
+            {productSoldOut && (
+              <p className="pd-stock pd-stock-out">
+                {language === "MN" ? "Дууссан" : "Out of stock"}
+              </p>
+            )}
 
             <div className="pd-description">
               <p>{product.description}</p>
@@ -158,7 +230,7 @@ export default function ProductDetail() {
 
             {product.variants && product.variants.length > 0 ? (
               <div className="pd-variants">
-                <label className="pd-label">Option</label>
+                <label className="pd-label">{t.option}</label>
                 <div className="variant-buttons">
                   {product.variants.map((variant) => {
                     const remaining = variant.quantity - (variant.soldCount ?? 0);
@@ -224,6 +296,14 @@ export default function ProductDetail() {
                   : t.addToCart}
             </button>
 
+            {showRestockNotify && (
+              <RestockNotify
+                key={`${product.id}-${selectedVariant ?? ""}`}
+                productName={product.name}
+                variant={productSoldOut ? undefined : selectedVariant}
+              />
+            )}
+
           
 
             <div className="pd-accordion">
@@ -275,6 +355,13 @@ export default function ProductDetail() {
             </div>
           </div>
         </div>
+
+        <section className="pd-reviews-section" id="product-reviews">
+          <h2>
+            {language === "MN" ? "Сэтгэгдэл" : "Reviews"} ({reviews.length})
+          </h2>
+          <ProductReviews productId={product.id} productName={product.name} reviews={reviews} />
+        </section>
 
         {relatedProducts.length > 0 && (
           <div className="related-products section">

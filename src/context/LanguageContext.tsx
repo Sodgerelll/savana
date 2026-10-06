@@ -64,6 +64,9 @@ export interface Translations {
   footerCopyright: string;
   footerShippingReturns: string;
   footerWholesale: string;
+  footerTerms: string;
+  home: string;
+  option: string;
   // Cart
   cartTitle: string;
   cartSubtotal: string;
@@ -214,6 +217,9 @@ const en: Translations = {
   footerCopyright: "SAVANA. All rights reserved.",
   footerShippingReturns: "Shipping",
   footerWholesale: "Wholesale",
+  footerTerms: "Terms",
+  home: "Home",
+  option: "Option",
   cartTitle: "Cart",
   cartSubtotal: "Subtotal",
   checkout: "Checkout",
@@ -346,7 +352,7 @@ const mn: Translations = {
   newsletterPlaceholder: "Таны и-мэйл хаяг",
   subscribe: "Бүртгүүлэх",
   footerBrandDesc:
-    "Байгальд ээлтэй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. Since 2019.",
+    "Байгальд ээлтэй органик гоо сайхан, ахуйн цэвэрлэгээний болон уламжлалт анагаах ухаанд суурилсан бүтээгдэхүүн. 2019 оноос хойш.",
   footerShop: "Дэлгүүр",
   footerInfo: "Мэдээлэл",
   footerContact: "Холбоо барих",
@@ -356,6 +362,9 @@ const mn: Translations = {
   footerCopyright: "SAVANA. Бүх эрх хуулиар хамгаалагдсан.",
   footerShippingReturns: "Хүргэлт",
   footerWholesale: "Бөөний худалдаа",
+  footerTerms: "Үйлчилгээний нөхцөл",
+  home: "Нүүр",
+  option: "Сонголт",
   cartTitle: "Сагс",
   cartSubtotal: "Нийт үнэ",
   checkout: "Захиалга хийх",
@@ -465,6 +474,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+      document.documentElement.lang = language === "EN" ? "en" : "mn";
     }
   }, [language]);
 

@@ -4,6 +4,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Partnerships.css";
+import { useDocumentMeta } from "../lib/seo";
 
 export default function Partnerships() {
   const { language } = useLanguage();
@@ -12,6 +13,11 @@ export default function Partnerships() {
   const pageBanner = getPageBannerNavigationItem(visibleSettings.navigationItems, "/partnerships");
   const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
+  useDocumentMeta({
+    title: language === "MN" ? "Хамтрал" : "Partnerships",
+    description: visibleSettings.wholesaleText,
+    path: "/partnerships",
+  });
 
   const copy =
     language === "MN"
@@ -19,7 +25,7 @@ export default function Partnerships() {
           heroTitle: "Хамтрал",
           heroBody:
             "Байгууллага, хувь хүн, арга хэмжээ, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
-          introKicker: "Custom Brand Service",
+          introKicker: "Захиалгат брэнд үйлчилгээ",
           introTitle: "Таны брэндэд нийцсэн бүтээгдэхүүн",
           introBody:
             "SAVANA нь өөрийн шошго, өнгө, нэршилтэйгээр саван, арчилгааны бүтээгдэхүүн, бэлгийн багц хөгжүүлэх хамтрал дээр ажиллана. Жижиг багцаас эхлээд байгууллагын захиалга хүртэл уян хатан шийдэл санал болгоно.",
@@ -29,19 +35,19 @@ export default function Partnerships() {
           featureOneTitle: "Лого ба нэршил",
           featureOneBody: "Шошго, хайрцаг, бэлгийн карт дээр өөрийн брэндийн нэр болон логог байршуулна.",
           featureTwoTitle: "Өнгө ба төрх",
-          featureTwoBody: "Брэндийн өнгө аяст нийцсэн palette, материал, presentation direction-ийг тааруулна.",
+          featureTwoBody: "Брэндийн өнгө аяст нийцсэн өнгө, материал, савлагааны шийдлийг тааруулна.",
           featureThreeTitle: "Бүтээгдэхүүний сонголт",
-          featureThreeBody: "Бэлгийн багц, байгууллагын тараах багц, private label цуврал зэргийг хамт боловсруулна.",
-          audienceOne: "Компани, байгууллагын бэлэг ба event kit",
-          audienceTwo: "Кафе, буудал, студи, boutique-ийн private label захиалга",
-          audienceThree: "Хувийн брэнд, жижиг бизнесийн capsule collection",
-          stepOneTitle: "1. Brief",
+          featureThreeBody: "Бэлгийн багц, байгууллагын тараах багц, өөрийн брэндийн цуврал зэргийг хамт боловсруулна.",
+          audienceOne: "Компани, байгууллагын бэлэг, арга хэмжээний багц",
+          audienceTwo: "Кафе, зочид буудал, студи, бутикийн өөрийн брэндийн захиалга",
+          audienceThree: "Хувийн брэнд, жижиг бизнесийн тусгай цуглуулга",
+          stepOneTitle: "1. Хүсэлт",
           stepOneBody: "Брэндийн зорилго, хэмжээ, хүссэн бүтээгдэхүүн, өнгө төрхөө илгээнэ.",
-          stepTwoTitle: "2. Direction",
+          stepTwoTitle: "2. Санал",
           stepTwoBody: "Бид формат, савлагаа, визуал чиглэл болон үнийн санал боловсруулна.",
-          stepThreeTitle: "3. Sample",
-          stepThreeBody: "Шаардлагатай бол sample эсвэл жижиг batch-аар баталгаажуулна.",
-          stepFourTitle: "4. Production",
+          stepThreeTitle: "3. Дээж",
+          stepThreeBody: "Шаардлагатай бол дээж эсвэл цөөн тооны туршилтын багцаар баталгаажуулна.",
+          stepFourTitle: "4. Үйлдвэрлэл",
           stepFourBody: "Батлагдсан хувилбараар үйлдвэрлэл, савлагаа, нийлүүлэлтийг зохион байгуулна.",
           ctaTitle: visibleSettings.wholesaleHeading.trim() || "Хамтрал эхлүүлэх",
           ctaBody:

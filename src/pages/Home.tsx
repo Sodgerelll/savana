@@ -29,6 +29,7 @@ import type { Collection, Discount, Product } from "../data/products";
 import type { JournalEntry } from "../data/storefront";
 import {
   applyDiscount,
+  formatStoreDate,
   formatStorePrice,
   getActiveDiscount,
   getActiveHeroBanners,
@@ -40,10 +41,14 @@ import {
   getCollectionsWithProducts,
   getProductPrimaryImage,
   getRenderableSettings,
+  isProductSoldOut,
   SYSTEM_COLLECTION_SLUG,
 } from "../lib/storefrontHelpers";
+import { StarRating } from "../components/ProductReviews";
 import brandStorySoapImage from "../assets/brand-story-soap.jpg";
 import womenOwnedLogo from "../assets/women-owned.png";
+import { subscribeToApprovedReviews, type ProductReview } from "../lib/productReviews";
+import { SITE_URL, useDocumentMeta } from "../lib/seo";
 import "./Home.css";
 import "./Journal.css";
 
@@ -69,10 +74,12 @@ function ProductCardHome({ product, gradient, discount }: { product: Product; gr
     ? Math.min(...product.variants.map((v) => v.price))
     : product.price;
   const discountedPrice = discount ? applyDiscount(basePrice, discount) : null;
+  const soldOut = isProductSoldOut(product);
+  const needsOption = (product.variants?.length ?? 0) > 0;
 
   return (
     <div
-      className={`home-product-card ${hovered ? "hovered" : ""}`}
+      className={`home-product-card ${hovered ? "hovered" : ""}${soldOut ? " sold-out" : ""}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -93,7 +100,11 @@ function ProductCardHome({ product, gradient, discount }: { product: Product; gr
             <img src={coverImage} alt={product.name} className="home-product-photo home-product-photo-cover" loading="lazy" />
           )}
         </div>
-        {product.badge && <span className="home-product-badge">{product.badge}</span>}
+        {soldOut ? (
+          <span className="home-product-badge home-product-badge-soldout">{t.outOfStock}</span>
+        ) : (
+          product.badge && <span className="home-product-badge">{product.badge}</span>
+        )}
         {discount && (
           <span className="home-product-discount-badge">
             {discount.type === "percent" ? `-${discount.value}%` : `-${formatStorePrice(discount.value)}`}
@@ -111,15 +122,22 @@ function ProductCardHome({ product, gradient, discount }: { product: Product; gr
         </p>
         <div className="home-product-overlay">
           <h3 className="home-product-title">{product.name}</h3>
-          <button
-            className="home-quick-add"
-            onClick={(event) => {
-              event.preventDefault();
-              addItem(product);
-            }}
-          >
-            {t.addToCart}
-          </button>
+          {soldOut ? (
+            <span className="home-quick-add home-quick-add-disabled">{t.outOfStock}</span>
+          ) : needsOption ? (
+            // A variant has to be picked on the product page; the link takes them there.
+            <span className="home-quick-add">{t.option}</span>
+          ) : (
+            <button
+              className="home-quick-add"
+              onClick={(event) => {
+                event.preventDefault();
+                addItem(product);
+              }}
+            >
+              {t.addToCart}
+            </button>
+          )}
         </div>
       </Link>
     </div>
@@ -337,8 +355,30 @@ export default function Home() {
   const [heroHovered, setHeroHovered] = useState(false);
   const [heroProductHovered, setHeroProductHovered] = useState(false);
   const [selectedJournalEntry, setSelectedJournalEntry] = useState<JournalEntry | null>(null);
+  const [approvedReviews, setApprovedReviews] = useState<ProductReview[]>([]);
+
+  useEffect(
+    () => subscribeToApprovedReviews(null, setApprovedReviews, () => setApprovedReviews([])),
+    [],
+  );
 
   const visibleSettings = getRenderableSettings(settings);
+  useDocumentMeta({
+    description: visibleSettings.heroSubtext || undefined,
+    path: "/",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "SAVANA",
+      legalName: "Савана органика ХХК",
+      url: SITE_URL,
+      logo: `${SITE_URL}/pwa-512.png`,
+      sameAs: [visibleSettings.facebookUrl, visibleSettings.instagramUrl].filter(Boolean),
+      ...(visibleSettings.contactPhone
+        ? { contactPoint: { "@type": "ContactPoint", telephone: visibleSettings.contactPhone, contactType: "customer service" } }
+        : {}),
+    },
+  });
   const latestJournalEntries = getActiveJournalEntries(visibleSettings.journalEntries).slice(0, 3);
   const activeCollections = getCollectionsWithProducts(collections, products);
 
@@ -364,7 +404,26 @@ export default function Home() {
   }
   const activeProducts = getActiveProducts(products, collections);
   const activeHeroBanners = getActiveHeroBanners(heroBanners, collections);
-  const activeTestimonials = getActiveTestimonials(testimonials);
+  // Real, moderated product reviews come first. The hand-entered testimonials in
+  // the content hub are only a fallback for a shop that has none approved yet.
+  const testimonialCards =
+    approvedReviews.length > 0
+      ? approvedReviews.slice(0, 9).map((review) => ({
+          key: review.id,
+          text: review.text,
+          author: review.authorName,
+          meta: review.productName,
+          productId: review.productId as number | null,
+          rating: review.rating,
+        }))
+      : getActiveTestimonials(testimonials).map((testimonial) => ({
+          key: `testimonial-${testimonial.id}`,
+          text: testimonial.text,
+          author: testimonial.author,
+          meta: testimonial.location,
+          productId: null as number | null,
+          rating: null as number | null,
+        }));
   const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
   const featuredCollections = activeCollections.filter((collection) => collection.slug !== SYSTEM_COLLECTION_SLUG);
   // Anyone who asked for reduced motion keeps the plain wrapping grid — every category still
@@ -375,7 +434,11 @@ export default function Home() {
   const categoriesScroll = featuredCollections.length > 4 && !reduceMotion;
   // The collections slider already scrolls by hand; past four it also drifts on its own.
   const collectionsAutoScroll = activeCollections.length > 4 && !reduceMotion;
-  const bestSellerProducts = activeProducts.filter((product) => product.bestSeller).slice(0, 4);
+  // A sold-out bar leads the shopper to a page they cannot buy from, so the
+  // home page only features best sellers that are actually in stock.
+  const bestSellerProducts = activeProducts
+    .filter((product) => product.bestSeller && !isProductSoldOut(product))
+    .slice(0, 4);
   const collectionBySlug = new Map(activeCollections.map((collection) => [collection.slug, collection]));
 
   useAutoDriftScroll(categoriesTrackRef, categoriesScroll);
@@ -488,16 +551,16 @@ export default function Home() {
   const partnershipCopy =
     language === "MN"
       ? {
-          kicker: "Brand Collaboration",
+          kicker: "Брэнд хамтрал",
           title: "Хамтрал",
           body:
             "Байгууллага, хувь хүн, event, бэлгийн цуглуулгад зориулж өөрийн нэр, лого, өнгө төрхөөр шийдсэн бүтээгдэхүүн захиалах боломжтой.",
-          pointOneTitle: "Private label",
+          pointOneTitle: "Өөрийн брэндээр",
           pointOneBody: "Өөрийн брэндийн нэр, лого, шошготой бүтээгдэхүүн.",
-          pointTwoTitle: "Visual direction",
-          pointTwoBody: "Өнгө, савлагаа, бэлгийн presentation-ийг брэндэд тань нийцүүлнэ.",
-          pointThreeTitle: "Flexible volume",
-          pointThreeBody: "Жижиг batch-аас байгууллагын захиалга хүртэл уян хатан ажиллана.",
+          pointTwoTitle: "Савлагаа, дизайн",
+          pointTwoBody: "Өнгө, савлагаа, бэлгийн хайрцаглалтыг брэндэд тань нийцүүлнэ.",
+          pointThreeTitle: "Уян хатан тоо хэмжээ",
+          pointThreeBody: "Цөөн ширхэгээс эхлээд байгууллагын том захиалга хүртэл уян хатан ажиллана.",
           primaryCta: "Хамтралын дэлгэрэнгүй",
           secondaryCta: "Холбоо барих",
         }
@@ -803,10 +866,7 @@ export default function Home() {
                 const title = language === "MN" ? entry.titleMn || entry.titleEn : entry.titleEn || entry.titleMn;
                 const category = language === "MN" ? entry.categoryMn || entry.categoryEn : entry.categoryEn || entry.categoryMn;
                 const excerpt = language === "MN" ? entry.excerptMn || entry.excerptEn : entry.excerptEn || entry.excerptMn;
-                const date = new Date(entry.publishedAt);
-                const formattedDate = Number.isNaN(date.getTime())
-                  ? entry.publishedAt
-                  : date.toLocaleDateString(language === "MN" ? "mn-MN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
+                const formattedDate = formatStoreDate(entry.publishedAt, language);
 
                 return (
                   <button
@@ -882,10 +942,7 @@ export default function Home() {
         const modalTitle = language === "MN" ? selectedJournalEntry.titleMn || selectedJournalEntry.titleEn : selectedJournalEntry.titleEn || selectedJournalEntry.titleMn;
         const modalCategory = language === "MN" ? selectedJournalEntry.categoryMn || selectedJournalEntry.categoryEn : selectedJournalEntry.categoryEn || selectedJournalEntry.categoryMn;
         const modalExcerpt = language === "MN" ? selectedJournalEntry.excerptMn || selectedJournalEntry.excerptEn : selectedJournalEntry.excerptEn || selectedJournalEntry.excerptMn;
-        const modalDate = new Date(selectedJournalEntry.publishedAt);
-        const modalFormattedDate = Number.isNaN(modalDate.getTime())
-          ? selectedJournalEntry.publishedAt
-          : modalDate.toLocaleDateString(language === "MN" ? "mn-MN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
+        const modalFormattedDate = formatStoreDate(selectedJournalEntry.publishedAt, language);
         const paragraphs = modalExcerpt.split(/\n\s*\n/g).map((p) => p.trim()).filter(Boolean);
 
         return (
@@ -930,7 +987,7 @@ export default function Home() {
         );
       })()}
 
-      {activeTestimonials.length > 0 && (
+      {testimonialCards.length > 0 && (
         <section className="testimonials-section section">
           <div className="container">
             <div className="collections-slider-header">
@@ -941,7 +998,7 @@ export default function Home() {
                   className="collections-slider-btn"
                   aria-label="Previous"
                   disabled={testimonialSlide === 0}
-                  onClick={() => goToTestimonialSlide(testimonialSlide - 1, activeTestimonials.length)}
+                  onClick={() => goToTestimonialSlide(testimonialSlide - 1, testimonialCards.length)}
                 >
                   <ChevronLeft size={18} />
                 </button>
@@ -949,21 +1006,29 @@ export default function Home() {
                   type="button"
                   className="collections-slider-btn"
                   aria-label="Next"
-                  disabled={testimonialSlide >= activeTestimonials.length - 1}
-                  onClick={() => goToTestimonialSlide(testimonialSlide + 1, activeTestimonials.length)}
+                  disabled={testimonialSlide >= testimonialCards.length - 1}
+                  onClick={() => goToTestimonialSlide(testimonialSlide + 1, testimonialCards.length)}
                 >
                   <ChevronRight size={18} />
                 </button>
               </div>
             </div>
             <div className="testimonials-slider-viewport" ref={testimonialsViewportRef}>
-              {activeTestimonials.map((testimonial, index) => (
-                <div key={index} className="testimonial-card">
-                  <div className="testimonial-stars">♥♥♥♥♥</div>
-                  <p className="testimonial-text">"{testimonial.text}"</p>
+              {testimonialCards.map((card) => (
+                <div key={card.key} className="testimonial-card">
+                  {card.rating !== null ? (
+                    <StarRating value={card.rating} size={15} />
+                  ) : (
+                    <div className="testimonial-stars">♥♥♥♥♥</div>
+                  )}
+                  <p className="testimonial-text">"{card.text}"</p>
                   <div className="testimonial-author">
-                    <strong>{testimonial.author}</strong>
-                    <span>{testimonial.location}</span>
+                    <strong>{card.author}</strong>
+                    {card.productId !== null ? (
+                      <Link to={`/product/${card.productId}`}>{card.meta}</Link>
+                    ) : (
+                      <span>{card.meta}</span>
+                    )}
                   </div>
                 </div>
               ))}

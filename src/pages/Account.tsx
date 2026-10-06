@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Settings2,
   ShoppingBag,
+  Star,
   Store,
   Trash2,
   UserCircle2,
@@ -215,6 +216,7 @@ import FactoryInventoryPage from "./admin/FactoryInventoryPage";
 import RawMaterialsPage from "./admin/RawMaterialsPage";
 import ProductsPage from "./admin/ProductsPage";
 import MessagesPage from "./admin/MessagesPage";
+import ReviewsPage from "./admin/ReviewsPage";
 import ChatOverviewPage from "./admin/ChatOverviewPage";
 import ChatKnowledgePage from "./admin/ChatKnowledgePage";
 import ChatConversationsPage from "./admin/ChatConversationsPage";
@@ -273,6 +275,7 @@ type AdminSection =
   | "discounts"
   | "directSales"
   | "messages"
+  | "reviews"
   | "orders"
   | "sales"
   | "users"
@@ -646,7 +649,7 @@ interface AdminMenuGroup {
 }
 
 const VALID_SECTIONS = new Set<string>([
-  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "orders", "sales", "users",
+  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "reviews", "orders", "sales", "users",
   "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions",
   "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports", "financeFixedAssets",
@@ -659,7 +662,7 @@ const VALID_SECTIONS = new Set<string>([
  * real gate, this only keeps the UI honest.
  */
 const PRIVILEGED_SECTIONS = new Set<string>([
-  "users", "orders", "sales", "messages",
+  "users", "orders", "sales", "messages", "reviews",
   "crmContacts", "crmCustomers", "crmCustomerTransactions",
   "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
 ]);
@@ -1090,6 +1093,7 @@ export default function Account() {
     "discounts",
     "directSales",
     "messages",
+    "reviews",
     "orders",
     "sales",
     "users",
@@ -1237,6 +1241,14 @@ export default function Account() {
                 label: copy.messagesMenu,
                 description: "Contact form-оор ирсэн хэрэглэгчийн мессежүүд.",
                 icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "reviews",
+                label: "Сэтгэгдэл",
+                description: "Хэрэглэгчдийн бүтээгдэхүүний сэтгэгдлийг батлах, татгалзах.",
+                icon: <Star size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -1636,6 +1648,14 @@ export default function Account() {
                 label: copy.messagesMenu,
                 description: "Customer messages submitted from the contact form.",
                 icon: <MessageSquareQuote size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "reviews",
+                label: "Reviews",
+                description: "Approve or reject shopper product reviews.",
+                icon: <Star size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -4380,6 +4400,8 @@ export default function Account() {
             <AnalyticsPage ctx={adminCtx} />
           ) : activeSection === "messages" ? (
             <MessagesPage ctx={adminCtx} />
+          ) : activeSection === "reviews" ? (
+            <ReviewsPage ctx={adminCtx} />
           ) : activeSection === "chatOverview" ? (
             <ChatOverviewPage ctx={adminCtx} />
           ) : activeSection === "chatKnowledge" ? (

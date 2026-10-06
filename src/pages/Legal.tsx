@@ -2,6 +2,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Legal.css";
+import { useDocumentMeta } from "../lib/seo";
 
 export type LegalDocument = "privacy" | "terms";
 
@@ -400,6 +401,8 @@ export default function Legal({ document }: { document: LegalDocument }) {
       : isMn
         ? "Манай онлайн дэлгүүрийг ашиглах нөхцөл."
         : "The terms that apply to using our online shop.";
+
+  useDocumentMeta({ title, description: intro, path: document === "privacy" ? "/privacy" : "/terms" });
 
   const sections = buildSections(document, isMn ? "MN" : "EN", shop);
 

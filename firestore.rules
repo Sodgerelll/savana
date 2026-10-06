@@ -215,6 +215,52 @@ service cloud.firestore {
       }
     }
 
+    // Shopper reviews. One per account per product (the id is "<productId>_<uid>"), always
+    // created as pending; only an admin can approve, reject or remove one. The public sees
+    // approved reviews only, and a shopper can always read back their own.
+    function isValidNewProductReview(reviewId) {
+      return isRegisteredUser()
+        && request.resource.data.keys().hasOnly([
+          "schemaVersion",
+          "productId",
+          "productName",
+          "uid",
+          "authorName",
+          "rating",
+          "text",
+          "status",
+          "createdAt",
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.productId is int
+        && reviewId == string(request.resource.data.productId) + "_" + request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() <= 200
+        && request.resource.data.authorName is string
+        && request.resource.data.authorName.size() > 0
+        && request.resource.data.authorName.size() <= 80
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.status == "pending"
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /productReviews/{reviewId} {
+      allow read: if resource.data.status == "approved"
+        || (isSignedIn() && resource.data.uid == request.auth.uid)
+        || hasPrivilegedProfileRole();
+      allow create: if isValidNewProductReview(reviewId);
+      allow update: if hasPrivilegedProfileRole()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+        && request.resource.data.status in ["pending", "approved", "rejected"];
+      allow delete: if hasPrivilegedProfileRole();
+    }
+
     // The catalogue. Readable by anyone (the storefront needs it), but writable only by
     // people who work here — it used to be writable by any signed-in shopper, which put
     // price, cost and stock in reach of every registered customer.

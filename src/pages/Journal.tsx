@@ -4,12 +4,14 @@ import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import type { JournalEntry } from "../data/storefront";
 import {
+  formatStoreDate,
   getActiveJournalEntries,
   getPageBannerNavigationItem,
   getPageBannerStyle,
   getRenderableSettings,
 } from "../lib/storefrontHelpers";
 import "./Journal.css";
+import { useDocumentMeta } from "../lib/seo";
 
 function getLocalizedText(language: "EN" | "MN", english: string, mongolian: string) {
   const primary = language === "MN" ? mongolian : english;
@@ -18,17 +20,7 @@ function getLocalizedText(language: "EN" | "MN", english: string, mongolian: str
 }
 
 function formatJournalDate(value: string, language: "EN" | "MN") {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value || "-";
-  }
-
-  return date.toLocaleDateString(language === "MN" ? "mn-MN" : "en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatStoreDate(value, language) || "-";
 }
 
 function getJournalParagraphs(value: string) {
@@ -88,6 +80,8 @@ export default function Journal() {
     : "";
   const selectedEntryParagraphs = getJournalParagraphs(selectedEntryExcerpt);
 
+  useDocumentMeta({ title: pageHeading, description: pageSubtext, path: "/journal" });
+
   return (
     <div className="journal-page">
       <section
@@ -136,8 +130,8 @@ export default function Journal() {
               <h3>{language === "MN" ? "Нийтлэл алга байна" : "No journal entries yet"}</h3>
               <p>
                 {language === "MN"
-                  ? "Website settings дотор journal entry нэмэхэд энд шууд харагдана."
-                  : "Add journal entries from Website settings to populate this page."}
+                  ? "Удахгүй шинэ нийтлэл нэмэгдэнэ. Түр хүлээгээрэй."
+                  : "New articles are on their way. Check back soon."}
               </p>
             </div>
           ) : (

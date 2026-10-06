@@ -9,6 +9,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./About.css";
+import { useDocumentMeta } from "../lib/seo";
 
 const aboutSectionCopy = {
   EN: {
@@ -122,6 +123,8 @@ export default function About() {
   const hasPageBanner = Boolean(pageBanner?.pageBannerImage.trim());
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
   const copy = aboutSectionCopy[language];
+
+  useDocumentMeta({ title: t.aboutHeroHeading, description: visibleSettings.aboutIntroBody, path: "/about" });
 
   return (
     <div className="about-page">

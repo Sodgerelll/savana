@@ -117,6 +117,46 @@ export function formatStorePrice(amount: number) {
   }).format(amount)}₮`;
 }
 
+/**
+ * Units a shopper can still buy. Mirrors what the product page lets into the
+ * cart: a variant product sums what is left of each variant, anything else is
+ * its stock less what has sold. Never negative.
+ */
+export function getRemainingStock(product: Product) {
+  if (product.variants?.length) {
+    return product.variants.reduce(
+      (sum, variant) => sum + Math.max(0, Number(variant.quantity ?? 0) - Number(variant.soldCount ?? 0)),
+      0,
+    );
+  }
+  return Math.max(0, Number(product.totalStock ?? 0) - Number(product.soldCount ?? 0));
+}
+
+export function isProductSoldOut(product: Product) {
+  return getRemainingStock(product) <= 0;
+}
+
+const MN_MONTH_NAMES = [
+  "1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар",
+  "7-р сар", "8-р сар", "9-р сар", "10-р сар", "11-р сар", "12-р сар",
+];
+
+/**
+ * Long-form date for the storefront. Browsers without Mongolian locale data
+ * quietly fall back to English for "mn-MN", which put "March 10, 2026" on a
+ * Mongolian page, so the Mongolian form is spelled out here instead.
+ */
+export function formatStoreDate(value: string | Date, language: "EN" | "MN") {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === "string" ? value : "";
+  }
+  if (language === "MN") {
+    return `${date.getFullYear()} оны ${MN_MONTH_NAMES[date.getMonth()]}ын ${date.getDate()}`;
+  }
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+}
+
 export function isActiveStatus(status?: EntityStatus | null) {
   return status !== "inactive";
 }

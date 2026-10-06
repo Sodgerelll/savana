@@ -1371,9 +1371,15 @@
   font-family: var(--font-heading);
 }
 
-.testimonial-author span {
+.testimonial-author span,
+.testimonial-author a {
   font-size: var(--fs-sm);
   color: var(--color-text);
+}
+
+.testimonial-author a:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
 }
 
 /* ========================
@@ -1692,4 +1698,23 @@
   .collections-grid-card {
     flex: 0 0 calc(75% - 0.94rem);
   }
+}
+
+.home-product-badge-soldout {
+  background-color: #6b6259;
+}
+
+.home-product-card.sold-out .home-product-photo {
+  filter: grayscale(0.45);
+  opacity: 0.8;
+}
+
+.home-quick-add-disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+span.home-quick-add {
+  display: block;
+  text-align: center;
 }

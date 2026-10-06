@@ -4,7 +4,13 @@ import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import type { Product } from "../data/products";
-import { applyDiscount, formatStorePrice, getActiveDiscount, getCategoryGradient } from "../lib/storefrontHelpers";
+import {
+  applyDiscount,
+  formatStorePrice,
+  getActiveDiscount,
+  getCategoryGradient,
+  isProductSoldOut,
+} from "../lib/storefrontHelpers";
 import "./ProductCard.css";
 
 const IMAGE_ROTATION_INTERVAL = 3000;
@@ -26,6 +32,9 @@ export default function ProductCard({ product }: ProductCardProps) {
   const activeDiscount = getActiveDiscount(discounts, product.id, basePrice);
   const discountedPrice = activeDiscount ? applyDiscount(basePrice, activeDiscount) : null;
 
+  const soldOut = isProductSoldOut(product);
+  const needsOption = (product.variants?.length ?? 0) > 0;
+
   const gradient = getCategoryGradient(collections, product.category);
   const allImages = product.images.filter(Boolean);
   const hasMultiple = allImages.length > 1;
@@ -42,7 +51,7 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   return (
     <div
-      className={`product-card ${hovered ? "hovered" : ""}`}
+      className={`product-card ${hovered ? "hovered" : ""}${soldOut ? " sold-out" : ""}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -60,7 +69,11 @@ export default function ProductCard({ product }: ProductCardProps) {
             </div>
           )}
         </div>
-        {product.badge && <span className="product-badge">{product.badge}</span>}
+        {soldOut ? (
+          <span className="product-badge product-badge-soldout">{t.outOfStock}</span>
+        ) : (
+          product.badge && <span className="product-badge">{product.badge}</span>
+        )}
         {activeDiscount && (
           <span className="product-discount-badge">
             {activeDiscount.type === "percent" ? `-${activeDiscount.value}%` : `-${formatStorePrice(activeDiscount.value)}`}
@@ -78,15 +91,22 @@ export default function ProductCard({ product }: ProductCardProps) {
         </p>
         <div className="product-card-overlay">
           <h3 className="product-card-title">{product.name}</h3>
-          <button
-            className="quick-add-btn"
-            onClick={(e) => {
-              e.preventDefault();
-              addItem(product);
-            }}
-          >
-            {t.addToCart}
-          </button>
+          {soldOut ? (
+            <span className="quick-add-btn quick-add-btn-disabled">{t.outOfStock}</span>
+          ) : needsOption ? (
+            // A variant has to be picked on the product page; the link takes them there.
+            <span className="quick-add-btn">{t.option}</span>
+          ) : (
+            <button
+              className="quick-add-btn"
+              onClick={(e) => {
+                e.preventDefault();
+                addItem(product);
+              }}
+            >
+              {t.addToCart}
+            </button>
+          )}
         </div>
       </Link>
     </div>

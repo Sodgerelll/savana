@@ -150,3 +150,22 @@
     display: none;
   }
 }
+
+.product-badge-soldout {
+  background-color: #6b6259;
+}
+
+.product-card.sold-out .product-card-photo {
+  filter: grayscale(0.45);
+  opacity: 0.8;
+}
+
+.quick-add-btn-disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+span.quick-add-btn {
+  display: block;
+  text-align: center;
+}
