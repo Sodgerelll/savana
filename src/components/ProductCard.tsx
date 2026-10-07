@@ -79,18 +79,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             {activeDiscount.type === "percent" ? `-${activeDiscount.value}%` : `-${formatStorePrice(activeDiscount.value)}`}
           </span>
         )}
-        <p className="product-card-price-badge">
-          {discountedPrice !== null ? (
-            <>
-              <span className="product-price-original">{formatStorePrice(basePrice)}</span>
-              {formatStorePrice(discountedPrice)}
-            </>
-          ) : (
-            formatStorePrice(basePrice)
-          )}
-        </p>
         <div className="product-card-overlay">
-          <h3 className="product-card-title">{product.name}</h3>
           {soldOut ? (
             <span className="quick-add-btn quick-add-btn-disabled">{t.outOfStock}</span>
           ) : needsOption ? (
@@ -108,6 +97,20 @@ export default function ProductCard({ product }: ProductCardProps) {
             </button>
           )}
         </div>
+      </Link>
+      {/* Name and price stay visible under the photo, not only on hover. */}
+      <Link to={`/product/${product.id}`} className="product-card-info">
+        <h3 className="product-card-title">{product.name}</h3>
+        <p className="product-card-price">
+          {discountedPrice !== null ? (
+            <>
+              <span className="product-price-original">{formatStorePrice(basePrice)}</span>
+              <span className="product-price-sale">{formatStorePrice(discountedPrice)}</span>
+            </>
+          ) : (
+            formatStorePrice(basePrice)
+          )}
+        </p>
       </Link>
     </div>
   );

@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -110,18 +110,7 @@ function ProductCardHome({ product, gradient, discount }: { product: Product; gr
             {discount.type === "percent" ? `-${discount.value}%` : `-${formatStorePrice(discount.value)}`}
           </span>
         )}
-        <p className="home-product-price-bar">
-          {discountedPrice !== null ? (
-            <>
-              <span className="home-price-original">{formatStorePrice(basePrice)}</span>
-              {formatStorePrice(discountedPrice)}
-            </>
-          ) : (
-            formatStorePrice(basePrice)
-          )}
-        </p>
         <div className="home-product-overlay">
-          <h3 className="home-product-title">{product.name}</h3>
           {soldOut ? (
             <span className="home-quick-add home-quick-add-disabled">{t.outOfStock}</span>
           ) : needsOption ? (
@@ -139,6 +128,20 @@ function ProductCardHome({ product, gradient, discount }: { product: Product; gr
             </button>
           )}
         </div>
+      </Link>
+      {/* Name and price stay visible under the photo, not only on hover. */}
+      <Link to={`/product/${product.id}`} className="home-product-info">
+        <h3 className="home-product-title">{product.name}</h3>
+        <p className="home-product-price">
+          {discountedPrice !== null ? (
+            <>
+              <span className="home-price-original">{formatStorePrice(basePrice)}</span>
+              <span className="home-price-sale">{formatStorePrice(discountedPrice)}</span>
+            </>
+          ) : (
+            formatStorePrice(basePrice)
+          )}
+        </p>
       </Link>
     </div>
   );
@@ -294,14 +297,22 @@ function getIngredientVisual(ingredient: string): { icon: LucideIcon; tone: stri
 }
 
 /** Slowly drifts a horizontal scroll container back and forth so the items past the first
- *  few still get seen. Pauses while the pointer is on it; the caller decides when it runs. */
+ *  few still get seen. Pauses while the pointer is on it; the caller decides when it runs.
+ *  Returns `holdFor(ms)`: prev/next buttons call it so their smooth scroll isn't
+ *  overwritten by the drift on the very next frame. */
 function useAutoDriftScroll(ref: RefObject<HTMLDivElement | null>, enabled: boolean) {
+  const holdRef = useRef<(ms: number) => void>(() => {});
+
   useEffect(() => {
     const track = ref.current;
     if (!track || !enabled) return;
 
     let raf = 0;
     let paused = false;
+    let holdUntil = 0;
+    holdRef.current = (ms) => {
+      holdUntil = performance.now() + ms;
+    };
     let direction = 1;
     // Kept as a float because browsers round `scrollLeft`, so a sub-pixel step would
     // otherwise be swallowed every frame and the strip would sit still.
@@ -311,8 +322,8 @@ function useAutoDriftScroll(ref: RefObject<HTMLDivElement | null>, enabled: bool
     const step = () => {
       const max = track.scrollWidth - track.clientWidth;
       if (max > 1) {
-        if (paused) {
-          pos = track.scrollLeft; // stay in sync if the visitor drags it
+        if (paused || performance.now() < holdUntil) {
+          pos = track.scrollLeft; // stay in sync if the visitor drags it or a button scrolls it
         } else {
           pos += SPEED * direction;
           if (pos >= max) {
@@ -344,9 +355,15 @@ function useAutoDriftScroll(ref: RefObject<HTMLDivElement | null>, enabled: bool
       track.removeEventListener("pointerdown", pause);
       track.removeEventListener("touchstart", pause);
       track.removeEventListener("touchend", resume);
+      holdRef.current = () => {};
     };
   }, [ref, enabled]);
+
+  return useCallback((ms: number) => holdRef.current(ms), []);
 }
+
+/** How long a prev/next press keeps the drift from moving the strip again. */
+const SLIDER_BUTTON_HOLD_MS = 4000;
 
 export default function Home() {
   const { language, t } = useLanguage();
@@ -384,13 +401,32 @@ export default function Home() {
 
   const collectionsViewportRef = useRef<HTMLDivElement>(null);
   const [collectionSlide, setCollectionSlide] = useState(0);
-  const categoriesTrackRef = useRef<HTMLDivElement>(null);
 
   function goToCollectionSlide(index: number) {
     const clamped = Math.max(0, Math.min(index, activeCollections.length - 1));
     setCollectionSlide(clamped);
     const card = collectionsViewportRef.current?.children[clamped] as HTMLElement | undefined;
+    holdCollectionsDrift(SLIDER_BUTTON_HOLD_MS);
     card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  }
+
+  const categoriesTrackRef = useRef<HTMLDivElement>(null);
+
+  /** Moves the category strip one tile; past either end it wraps to the other. */
+  function stepCategories(direction: 1 | -1) {
+    const track = categoriesTrackRef.current;
+    const tile = track?.firstElementChild as HTMLElement | null | undefined;
+    if (!track || !tile) return;
+    const max = track.scrollWidth - track.clientWidth;
+    const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+    holdCategoriesDrift(SLIDER_BUTTON_HOLD_MS);
+    if (direction === 1 && track.scrollLeft >= max - 2) {
+      track.scrollTo({ left: 0, behavior: "smooth" });
+    } else if (direction === -1 && track.scrollLeft <= 2) {
+      track.scrollTo({ left: max, behavior: "smooth" });
+    } else {
+      track.scrollBy({ left: direction * (tile.offsetWidth + gap), behavior: "smooth" });
+    }
   }
 
   const testimonialsViewportRef = useRef<HTMLDivElement>(null);
@@ -426,12 +462,10 @@ export default function Home() {
         }));
   const bestSellersVisible = activeCollections.some((collection) => collection.slug === SYSTEM_COLLECTION_SLUG);
   const featuredCollections = activeCollections.filter((collection) => collection.slug !== SYSTEM_COLLECTION_SLUG);
-  // Anyone who asked for reduced motion keeps the plain wrapping grid — every category still
-  // shows, it just doesn't drift.
+  // Anyone who asked for reduced motion keeps the sliders still; the buttons still work.
   const [reduceMotion] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const categoriesScroll = featuredCollections.length > 4 && !reduceMotion;
   // The collections slider already scrolls by hand; past four it also drifts on its own.
   const collectionsAutoScroll = activeCollections.length > 4 && !reduceMotion;
   // A sold-out bar leads the shopper to a page they cannot buy from, so the
@@ -441,8 +475,8 @@ export default function Home() {
     .slice(0, 4);
   const collectionBySlug = new Map(activeCollections.map((collection) => [collection.slug, collection]));
 
-  useAutoDriftScroll(categoriesTrackRef, categoriesScroll);
-  useAutoDriftScroll(collectionsViewportRef, collectionsAutoScroll);
+  const holdCollectionsDrift = useAutoDriftScroll(collectionsViewportRef, collectionsAutoScroll);
+  const holdCategoriesDrift = useAutoDriftScroll(categoriesTrackRef, !reduceMotion);
 
   const heroSlides = (() => {
     const slides = activeHeroBanners
@@ -686,13 +720,28 @@ export default function Home() {
 
       {!loading && <section className="categories-section section">
         <div className="container">
-          <div className="section-header">
+          <div className="collections-slider-header">
             <h2>{t.categoriesHeading}</h2>
+            <div className="collections-slider-nav">
+              <button
+                type="button"
+                className="collections-slider-btn"
+                aria-label="Previous"
+                onClick={() => stepCategories(-1)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="collections-slider-btn"
+                aria-label="Next"
+                onClick={() => stepCategories(1)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
-          <div
-            className={`categories-row${categoriesScroll ? " categories-row-scroll" : ""}`}
-            ref={categoriesTrackRef}
-          >
+          <div className={`categories-row${reduceMotion ? "" : " categories-row-auto"}`} ref={categoriesTrackRef}>
             {featuredCollections.map((collection) => {
               const collectionProducts = activeProducts.filter((p) => p.category === collection.slug);
               const featuredProduct =

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { Minus, Plus } from "lucide-react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Minus, Plus } from "lucide-react";
 import {
   DrawLeafIcon, DrawHandmadeIcon, DrawFlowerIcon, DrawBoxIcon, DrawAlertIcon, DrawShelfLifeIcon, DrawStorageIcon,
 } from "../components/NatureIcons";
@@ -24,6 +24,7 @@ import "./ProductDetail.css";
 
 export default function ProductDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { addItem, items } = useCart();
   const { language, t } = useLanguage();
   const { products, collections, discounts, loading } = useStorefront();
@@ -142,9 +143,20 @@ export default function ProductDetail() {
   return (
     <div className="product-detail">
       <div className="container">
-        <div className="breadcrumb pd-breadcrumb">
-          <Link to="/">{t.home}</Link> / <Link to="/collections">{t.shop}</Link> /{" "}
-          <span>{product.name}</span>
+        <div className="pd-topbar">
+          <button
+            type="button"
+            className="pd-back-btn"
+            // A shopper who landed here straight from a link has no page to go back to.
+            onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/collections"))}
+          >
+            <ArrowLeft size={16} />
+            {language === "MN" ? "Буцах" : "Back"}
+          </button>
+          <div className="breadcrumb pd-breadcrumb">
+            <Link to="/">{t.home}</Link> / <Link to="/collections">{t.shop}</Link> /{" "}
+            <span>{product.name}</span>
+          </div>
         </div>
 
         <div className="product-detail-grid">
@@ -230,7 +242,7 @@ export default function ProductDetail() {
 
             {product.variants && product.variants.length > 0 ? (
               <div className="pd-variants">
-                <label className="pd-label">{t.option}</label>
+                <label className="pd-label">{t.variantLabel}</label>
                 <div className="variant-buttons">
                   {product.variants.map((variant) => {
                     const remaining = variant.quantity - (variant.soldCount ?? 0);
@@ -288,7 +300,7 @@ export default function ProductDetail() {
               disabled={addDisabled}
             >
               {needsVariantSelection
-                ? (language === "MN" ? "Сонголтоо сонгоно уу" : "Select an option")
+                ? (language === "MN" ? "Худалдан авах" : "Buy now")
                 : addableMax <= 0
                   ? (selectedRemaining <= 0
                       ? (language === "MN" ? "Дууссан" : "Out of stock")

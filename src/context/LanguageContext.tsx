@@ -67,6 +67,7 @@ export interface Translations {
   footerTerms: string;
   home: string;
   option: string;
+  variantLabel: string;
   // Cart
   cartTitle: string;
   cartSubtotal: string;
@@ -219,7 +220,8 @@ const en: Translations = {
   footerWholesale: "Wholesale",
   footerTerms: "Terms",
   home: "Home",
-  option: "Option",
+  option: "Buy now",
+  variantLabel: "Size",
   cartTitle: "Cart",
   cartSubtotal: "Subtotal",
   checkout: "Checkout",
@@ -234,7 +236,7 @@ const en: Translations = {
   shelfLife: "Shelf Life",
   storageConditions: "Storage Conditions",
   shippingReturns: "Shipping",
-  youMayAlsoLike: "You May Also Like",
+  youMayAlsoLike: "Similar Products",
   productNotFound: "Product not found",
   backToShop: "Back to Shop",
   from: "From",
@@ -364,14 +366,15 @@ const mn: Translations = {
   footerWholesale: "Бөөний худалдаа",
   footerTerms: "Үйлчилгээний нөхцөл",
   home: "Нүүр",
-  option: "Сонголт",
+  option: "Худалдан авах",
+  variantLabel: "Хэмжээ",
   cartTitle: "Сагс",
   cartSubtotal: "Нийт үнэ",
   checkout: "Захиалга хийх",
   cartEmpty: "Сагс хоосон байна",
   continueShopping: "Дэлгүүрлүү буцах",
   cartNote: "Хүргэлтийн зардлыг захиалгын үед тооцно",
-  quantity: "Тоо хэмжээ",
+  quantity: "Тоо ширхэг",
   ingredients: "Найрлага",
   usage: "Үйлчилгээ",
   howToUse: "Хэрэглэх заавар",
@@ -379,7 +382,7 @@ const mn: Translations = {
   shelfLife: "Хадгалах хугацаа",
   storageConditions: "Хадгалах нөхцөл",
   shippingReturns: "Хүргэлт",
-  youMayAlsoLike: "Таньд таалагдаж болох",
+  youMayAlsoLike: "Төстэй бүтээгдэхүүн",
   productNotFound: "Бүтээгдэхүүн олдсонгүй",
   backToShop: "Дэлгүүр рүү буцах",
   from: "Эхлэн",

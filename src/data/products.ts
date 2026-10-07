@@ -45,6 +45,8 @@ export interface Collection {
   status: EntityStatus;
   level?: 1 | 2 | 3;
   parentId?: number;
+  /** Display position on the storefront; falls back to `id` (creation order). */
+  sortOrder?: number;
 }
 
 export interface Discount {

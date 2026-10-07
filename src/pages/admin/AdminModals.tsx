@@ -1245,6 +1245,19 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             <option value="inactive">{copy.inactive}</option>
           </select>
         </label>
+        <label className="admin-field">
+          <span>{copy.sortOrder}</span>
+          <input
+            type="number"
+            value={collectionModal.draft.sortOrder ?? collectionModal.draft.id}
+            onChange={(event: any)=>
+              setCollectionModal({
+                ...collectionModal,
+                draft: { ...collectionModal.draft, sortOrder: Number(event.target.value) || 0 },
+              })
+            }
+          />
+        </label>
         {(collectionModal.draft.level ?? 1) >= 2 && (() => {
           const parentCollection = collections.find((c: any) => c.id === collectionModal.draft.parentId);
           const levelLabel =

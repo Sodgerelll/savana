@@ -111,6 +111,7 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
               </div>
             </div>
           </td>
+          <td>{collection.sortOrder ?? collection.id}</td>
           <td>{productCountByCategory.get(collection.slug) ?? 0}</td>
           <td>
             <StatusBadge
@@ -215,6 +216,7 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
             <thead>
               <tr>
                 <th>{copy.name}</th>
+                <th>{copy.sortOrder}</th>
                 <th>{copy.linkedProducts}</th>
                 <th>{copy.status}</th>
                 <th>{copy.actions}</th>
@@ -223,7 +225,7 @@ export default function CategoriesPage({ ctx }: { ctx: AdminCtx }) {
             <tbody>
               {collections.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="admin-table-empty">
+                  <td colSpan={5} className="admin-table-empty">
                     {copy.emptyCategories}
                   </td>
                 </tr>

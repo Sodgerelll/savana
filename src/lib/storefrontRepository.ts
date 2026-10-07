@@ -315,7 +315,7 @@ function serializeCollection(collectionItem: Collection) {
   return {
     ...collectionItem,
     siteId: STOREFRONT_SITE_ID,
-    sortOrder: collectionItem.id,
+    sortOrder: collectionItem.sortOrder ?? collectionItem.id,
     level: collectionItem.level ?? null,
     parentId: collectionItem.parentId ?? null,
     updatedAt: serverTimestamp(),
@@ -386,6 +386,7 @@ function deserializeCollection(snapshot: QueryDocumentSnapshot<DocumentData>): C
     status: deserializeStatus(data.status),
     level: data.level ? (Number(data.level) as 1 | 2 | 3) : undefined,
     parentId: data.parentId ? Number(data.parentId) : undefined,
+    sortOrder: Number.isFinite(Number(data.sortOrder)) ? Number(data.sortOrder) : undefined,
   };
 }
 

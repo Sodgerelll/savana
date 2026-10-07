@@ -2,8 +2,36 @@
   min-height: 60vh;
 }
 
-.pd-breadcrumb {
+.pd-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
   padding: 1.5rem 0;
+}
+
+.pd-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  padding: 0.45rem 0.9rem 0.45rem 0.7rem;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-heading);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.pd-back-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.pd-breadcrumb {
+  min-width: 0;
   font-size: var(--fs-xs);
 }
 
