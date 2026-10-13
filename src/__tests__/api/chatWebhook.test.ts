@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   sendCarousel: vi.fn(),
   getUserName: vi.fn(),
   getParticipantName: vi.fn(),
+  getOwnAppId: vi.fn(),
   replyToComment: vi.fn(),
   sendPrivateReply: vi.fn(),
   fetchImageAsBase64: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("../../../api/chat/_lib/facebook.js", async () => {
     sendCarousel: mocks.sendCarousel,
     getUserName: mocks.getUserName,
     getParticipantName: mocks.getParticipantName,
+    getOwnAppId: mocks.getOwnAppId,
     replyToComment: mocks.replyToComment,
     sendPrivateReply: mocks.sendPrivateReply,
     fetchImageAsBase64: mocks.fetchImageAsBase64,
@@ -260,6 +262,8 @@ beforeEach(() => {
   mocks.getAdminFirestore.mockReturnValue(Promise.resolve(fake.db));
   mocks.getUserName.mockResolvedValue("Батбаяр");
   mocks.getParticipantName.mockResolvedValue(null);
+  // The id Meta stamps on what this app sends; the echo tests below use it.
+  mocks.getOwnAppId.mockResolvedValue("123456");
   mocks.callGeminiAgent.mockResolvedValue({ text: "Тийм ээ, байгаа.", functionCall: null, functionCalls: [] });
   mocks.callGemini.mockResolvedValue("Энэ бол манай хужирт саван.");
   mocks.fetchImageAsBase64.mockResolvedValue({ base64: "AAAA", mimeType: "image/jpeg" });
@@ -637,8 +641,7 @@ describe("text messages", () => {
   it("takes a reply typed in the Page inbox as a person stepping in", async () => {
     // It happened on a live thread: staff answered the customer inside Facebook,
     // this side never learned a human was handling it, and the bot was half an
-    // hour from talking over them. Meta marks its own API sends with an app id;
-    // a message a person typed carries none.
+    // hour from talking over them. A reply with no app id at all is a person's.
     const { res } = mockRes();
 
     await handler(
@@ -699,6 +702,92 @@ describe("text messages", () => {
     );
 
     expect(mocks.sendText).not.toHaveBeenCalled();
+  });
+
+  /** An echo of a message the page sent, as Meta delivers it. */
+  function echoEvent(text: string, appId?: number) {
+    return {
+      object: "page",
+      entry: [
+        {
+          id: PAGE_ID,
+          messaging: [
+            {
+              sender: { id: PAGE_ID },
+              recipient: { id: SENDER },
+              message: { mid: "m_e", text, is_echo: true, ...(appId ? { app_id: appId } : {}) },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function conversationRow() {
+    return fake.store.get("chat_conversations/fb_PAGE-1_PSID-1");
+  }
+
+  it("takes a reply typed in Meta's own inbox as a person, although it names an app", async () => {
+    // The assumption was that a person's reply carries no app id. On a live
+    // thread it carried Meta's: staff wrote a customer's whole order out by hand
+    // in Business Suite, the bot took the echo for itself, and kept answering
+    // over them — a second total and a second request for money.
+    const { res } = mockRes();
+
+    await handler(
+      { method: "POST", body: echoEvent("1. Угаалгын нунтаг - 1ш = 27,500₮\nХүргэлт - 8,000₮", 263902037430900) },
+      res,
+    );
+
+    expect(conversationRow()).toMatchObject({ status: "admin_active" });
+    const saved = [...fake.store.entries()]
+      .filter(([key]) => key.includes("/messages/"))
+      .map(([, data]) => data.content);
+    expect(saved).toContain("1. Угаалгын нунтаг - 1ш = 27,500₮\nХүргэлт - 8,000₮");
+  });
+
+  it("does not silence itself when it cannot tell which app it is", async () => {
+    // Being unsure for a minute is cheap. Taking every one of its own replies
+    // for a person's and going quiet on the customer is not.
+    mocks.getOwnAppId.mockResolvedValue(null);
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: echoEvent("Манайд байгаа", 999) }, res);
+
+    expect(conversationRow()?.status).not.toBe("admin_active");
+  });
+
+  it("does not take its own words coming back for a person", async () => {
+    // A second opinion behind the app id: whatever the ids say, text the bot
+    // itself wrote a moment ago is not a member of staff.
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", { status: "active", messageCount: 1 });
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1/messages/seed-1", {
+      role: "assistant",
+      content: "Хүргэлтийн төлбөр **8,000₮** байдаг.",
+      createdAt: new Date(),
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: echoEvent("Хүргэлтийн төлбөр 8,000₮ байдаг.") }, res);
+
+    expect(conversationRow()).toMatchObject({ status: "active" });
+    const saved = [...fake.store.keys()].filter((key) => key.includes("/messages/"));
+    expect(saved).toHaveLength(1);
+  });
+
+  it("does not mistake a member of staff's greeting for the bot's own", async () => {
+    // The bot opens with the same words, and a person is every bit as likely to.
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1", { status: "active", messageCount: 1 });
+    fake.store.set("chat_conversations/fb_PAGE-1_PSID-1/messages/seed-1", {
+      role: "assistant",
+      content: "Сайн байна уу? 🌿 Хүргэлтийн төлбөр 8,000₮ байдаг.",
+      createdAt: new Date(),
+    });
+    const { res } = mockRes();
+
+    await handler({ method: "POST", body: echoEvent("Сайн байна уу") }, res);
+
+    expect(conversationRow()).toMatchObject({ status: "admin_active" });
   });
 
   it("ignores a sticker or image with no text", async () => {

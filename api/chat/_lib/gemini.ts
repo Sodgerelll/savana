@@ -256,6 +256,21 @@ function clampMaxOutputTokens(value: unknown): number {
   return Math.min(Math.floor(value), MAX_OUTPUT_TOKENS_CEILING);
 }
 
+/**
+ * The same request with three times the room to answer in, or null once it is
+ * already as large as a request is allowed to be.
+ */
+function raiseOutputBudget(body: Record<string, unknown>): Record<string, unknown> | null {
+  const config = (body.generationConfig ?? {}) as Record<string, unknown>;
+  const current = Number(config.maxOutputTokens) || DEFAULT_MAX_OUTPUT_TOKENS;
+  const next = Math.min(MAX_OUTPUT_TOKENS_CEILING, current * 3);
+
+  if (next <= current) {
+    return null;
+  }
+  return { ...body, generationConfig: { ...config, maxOutputTokens: next } };
+}
+
 function buildRequestBody(options: GeminiCallOptions): Record<string, unknown> {
   const userParts: Array<Record<string, unknown>> = [];
   if (options.imageBase64 && options.imageMimeType) {
@@ -436,6 +451,9 @@ async function generateParts(
   // Cleared the first time the API refuses the handle, so the rest of the
   // chain — and the retry on this very model — carries the full prompt.
   let liveCache = options.cache;
+  // Grown the first time an answer is cut off and kept for the rest of the
+  // chain: running out of room belongs to the request, not to one model.
+  let requestBody = body;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   const chain = healthyChain(options.model, options.skipModels);
@@ -453,7 +471,7 @@ async function generateParts(
       const result = await postToModel(
         apiKey,
         model,
-        applyCache(body, model, liveCache),
+        applyCache(requestBody, model, liveCache),
         Math.min(isLast ? TIMEOUT_MS : LEADING_TIMEOUT_MS, remaining),
       );
 
@@ -490,6 +508,19 @@ async function generateParts(
           break;
         }
         if (finishReason === 'MAX_TOKENS') {
+          // Cut off before saying anything. The budget counts the model's
+          // thinking as well as its answer, so a request with several things in
+          // it — three products asked for at once — can spend all of it deciding
+          // what to do. A customer's first, longest message was lost to exactly
+          // that and answered with "shorten your question". Give it more room
+          // before concluding the answer is too long.
+          const roomier = raiseOutputBudget(requestBody);
+          if (roomier) {
+            console.warn(`[chat/gemini] ${model} ran out of room; retrying with a larger budget`);
+            requestBody = roomier;
+            lastError = new GeminiError('MAX_TOKENS');
+            continue;
+          }
           throw new GeminiError('MAX_TOKENS');
         }
 

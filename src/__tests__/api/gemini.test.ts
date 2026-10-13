@@ -406,11 +406,34 @@ describe("callGemini", () => {
     await expect(callGemini({ message: "hi" })).rejects.toMatchObject({ message: "BLOCKED" });
   });
 
-  it("surfaces a truncated answer as a terminal MAX_TOKENS error", async () => {
-    responders = [() => jsonResponse({ candidates: [{ finishReason: "MAX_TOKENS" }] })];
+  it("gives an answer that was cut off more room before giving up on it", async () => {
+    // The budget counts thinking as well as the answer. A customer who asked for
+    // three products at once spent all of it deciding, and was told to shorten a
+    // question that was already short.
+    responders = [
+      () => jsonResponse({ candidates: [{ finishReason: "MAX_TOKENS" }] }),
+      () => jsonResponse(textPayload("Манайд байгаа")),
+    ];
+
+    await expect(callGemini({ message: "hi" })).resolves.toBe("Манайд байгаа");
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].url).toBe(calls[0].url);
+    expect(requestBody(calls[0]).generationConfig.maxOutputTokens).toBe(800);
+    expect(requestBody(calls[1]).generationConfig.maxOutputTokens).toBe(2400);
+  });
+
+  it("surfaces MAX_TOKENS only once the budget cannot grow any further", async () => {
+    responders = Array.from(
+      { length: 3 },
+      () => () => jsonResponse({ candidates: [{ finishReason: "MAX_TOKENS" }] }),
+    );
 
     await expect(callGemini({ message: "hi" })).rejects.toMatchObject({ message: "MAX_TOKENS" });
-    expect(calls).toHaveLength(1);
+
+    expect(calls.map((call) => requestBody(call).generationConfig.maxOutputTokens)).toEqual([
+      800, 2400, 4000,
+    ]);
   });
 
   it("honours GEMINI_MODELS as the fallback chain override", async () => {

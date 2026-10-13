@@ -28,6 +28,7 @@ import {
 import {
   fetchImageAsBase64,
   firstImageAttachmentUrl,
+  getOwnAppId,
   getRecentPosts,
   getParticipantName,
   getUserName,
@@ -371,10 +372,10 @@ async function processMessagingEvent(
   // a human had stepped in, and the bot was half an hour from talking over
   // them. The reply was missing from the admin transcript as well.
   //
-  // Meta separates them: a message sent through the Send API carries the app
-  // that sent it, and one typed by a person in the inbox does not.
+  // Every echo names the app that sent it. Ours carries our own id; telling a
+  // person's apart from it is `sentByAPerson`'s job.
   if (event?.message?.is_echo) {
-    if (!event.message.app_id) {
+    if (await sentByAPerson(settings.facebook.pageAccessToken, event)) {
       await noteStaffReply(db, channel, pageId, event);
     }
     return;
@@ -1048,12 +1049,68 @@ async function lookupOrder(
 }
 
 /**
+ * Whether an echo is a person's reply rather than our own send coming back.
+ *
+ * This used to assume a person's reply carries no app id at all. It does: one
+ * typed in Meta Business Suite or the Page inbox is stamped with Meta's own
+ * app. On a live thread staff wrote a customer a whole order by hand, the bot
+ * took the echo for itself and went on answering over them — two totals and two
+ * requests for money, to one customer. Only an echo that is demonstrably ours is
+ * let go.
+ *
+ * If our own id cannot be learned, an echo that names an app is left alone: the
+ * bot silencing itself after every reply would be the worse mistake.
+ */
+async function sentByAPerson(token: string, event: any): Promise<boolean> {
+  const sentBy = event?.message?.app_id;
+  if (!sentBy) {
+    return true;
+  }
+
+  const ours = await getOwnAppId(token);
+  if (!ours || String(sentBy) === ours) {
+    return false;
+  }
+
+  console.log(`[chat/webhook] reply sent through another app (${sentBy}); taking it as a person`);
+  return true;
+}
+
+/** A piece of a longer reply is only recognised above this length. */
+const OWN_REPLY_PIECE_MIN_LENGTH = 80;
+
+/**
+ * Whether `text` is something the bot itself said in its last few turns — the
+ * whole of it, or a piece of a reply long enough to have been sent in parts.
+ *
+ * A second opinion, for the one mistake that must not stand: the bot taking its
+ * own words for a person's and going quiet on a customer. Short text has to
+ * match a reply exactly, so a member of staff opening with "Сайн байна уу" is
+ * not mistaken for the greeting the bot opened with.
+ */
+async function isBotsOwnWords(db: any, conversationId: string, text: string): Promise<boolean> {
+  const plain = (value: string) => value.replace(/[*_]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const wanted = plain(text);
+  if (!wanted) {
+    return false;
+  }
+
+  const recent = await readRecentMessages(db, conversationId, 8);
+  return recent.some((entry) => {
+    if (entry.role !== 'assistant') {
+      return false;
+    }
+    const said = plain(entry.content);
+    return said === wanted || (wanted.length >= OWN_REPLY_PIECE_MIN_LENGTH && said.includes(wanted));
+  });
+}
+
+/**
  * Records a reply a person typed in the Page inbox rather than in the admin.
  *
  * Two things follow from it. The transcript gets the message, so the thread
  * reads as one conversation instead of half of one; and the bot steps back for
- * the same three hours a reply through the admin buys, timed from this message
- * rather than from whenever it gave up.
+ * an hour, timed from this message rather than from whenever it gave up.
  */
 async function noteStaffReply(db: any, channel: ChatChannel, pageId: string, event: any): Promise<void> {
   // On an echo the page is the sender, so the customer is the recipient.
@@ -1069,6 +1126,11 @@ async function noteStaffReply(db: any, channel: ChatChannel, pageId: string, eve
       pageId,
       externalUserId: customerId,
     });
+
+    if (await isBotsOwnWords(db, conversation.id, text)) {
+      return;
+    }
+
     await appendMessage(db, conversation.id, { role: 'assistant', content: text });
     await setConversationStatus(db, conversation.id, 'admin_active');
   } catch (err) {

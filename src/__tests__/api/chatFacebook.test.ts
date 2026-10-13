@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   applyMessengerProfile,
+  forgetOwnAppId,
   forgetPostContext,
   forgetRecentPosts,
+  getOwnAppId,
   getPostContext,
   getRecentPosts,
   getParticipantName,
@@ -640,6 +642,71 @@ describe("getUserName", () => {
     await getUserName(TOKEN, "PSID-1");
 
     expect(calls[0].url).not.toContain(TOKEN);
+  });
+});
+
+describe("getOwnAppId", () => {
+  beforeEach(() => {
+    forgetOwnAppId();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns the id of the app the token was issued to", async () => {
+    responder = () => jsonResponse({ id: "1234567890" });
+
+    await expect(getOwnAppId(TOKEN)).resolves.toBe("1234567890");
+    expect(calls[0].url).toContain("/app");
+  });
+
+  it("asks Meta once and remembers the answer", async () => {
+    responder = () => jsonResponse({ id: "1234567890" });
+
+    await getOwnAppId(TOKEN);
+    await getOwnAppId(TOKEN);
+    await getOwnAppId(TOKEN);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps the token out of the URL", async () => {
+    responder = () => jsonResponse({ id: "1" });
+
+    await getOwnAppId(TOKEN);
+
+    expect(calls[0].url).not.toContain(TOKEN);
+  });
+
+  it("returns null rather than throwing when Meta will not say", async () => {
+    responder = () => jsonResponse({ error: { message: "unsupported" } }, 400);
+    await expect(getOwnAppId(TOKEN)).resolves.toBeNull();
+
+    forgetOwnAppId();
+    responder = () => {
+      throw new TypeError("network");
+    };
+    await expect(getOwnAppId(TOKEN)).resolves.toBeNull();
+  });
+
+  it("does not hammer Meta while it is unsure, but does try again after a minute", async () => {
+    responder = () => jsonResponse({}, 500);
+    await getOwnAppId(TOKEN);
+    await getOwnAppId(TOKEN);
+    expect(calls).toHaveLength(1);
+
+    responder = () => jsonResponse({ id: "42" });
+    vi.advanceTimersByTime(61_000);
+
+    await expect(getOwnAppId(TOKEN)).resolves.toBe("42");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("does not look anything up without a token", async () => {
+    await expect(getOwnAppId("")).resolves.toBeNull();
+    expect(calls).toHaveLength(0);
   });
 });
 

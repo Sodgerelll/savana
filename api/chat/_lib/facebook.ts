@@ -502,6 +502,56 @@ export async function getPageName(token: string): Promise<string | null> {
   }
 }
 
+/** How long to stay unsure of our own app id before asking Meta again. */
+const APP_ID_RETRY_MS = 60_000;
+let appIdCache: { token: string; id: string | null; at: number } | null = null;
+
+/**
+ * The id of the Meta app this token was issued to — what a message echo is
+ * stamped with when we are the ones who sent it.
+ *
+ * Asked of Meta rather than configured, so there is no second setting to fall
+ * out of step with the token. An answer is kept for as long as the process
+ * lives; a failure only for a minute, because being unsure that briefly is
+ * cheap and being wrong for good is not.
+ */
+export async function getOwnAppId(token: string): Promise<string | null> {
+  if (!token) return null;
+
+  if (appIdCache && appIdCache.token === token) {
+    if (appIdCache.id || Date.now() - appIdCache.at < APP_ID_RETRY_MS) {
+      return appIdCache.id;
+    }
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let id: string | null = null;
+
+  try {
+    const res = await fetch(`${GRAPH_URL}/app?fields=id`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      id = data?.id ? String(data.id) : null;
+    }
+  } catch {
+    id = null;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  appIdCache = { token, id, at: Date.now() };
+  return id;
+}
+
+/** Drops the remembered app id. For tests. */
+export function forgetOwnAppId(): void {
+  appIdCache = null;
+}
+
 /** Profile-lookup failures already logged by this instance, so one cause is one log line. */
 const loggedProfileFailures = new Set<string>();
 
