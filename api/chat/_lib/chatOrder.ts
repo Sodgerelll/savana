@@ -12,6 +12,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { bonumCallbackUrl, bonumPost } from '../../bonum/_client.js';
+import { notifyNewOrder } from '../../_lib/pushNotify.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
 import { findCatalogueProduct } from './catalogueMatch.js';
@@ -214,6 +215,8 @@ export async function createChatOrder(
     createdAt: now,
     updatedAt: now,
   });
+
+  await notifyNewOrder(db, ref.id);
 
   return { id: ref.id, orderNumber, subtotal, shippingFee, grandTotal, payUrl: invoice.followUpLink };
 }

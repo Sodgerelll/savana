@@ -17,6 +17,7 @@
 import { bonumCallbackUrl, bonumPost } from './_client.js';
 import { getAdminFirestore } from './_firebaseAdmin.js';
 import { identifyCaller } from '../_lib/callerIdentity.js';
+import { notifyNewOrder } from '../_lib/pushNotify.js';
 import {
   OrderPricingError,
   loadOrderPricingInputs,
@@ -125,9 +126,14 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     const { FieldValue } = await import('firebase-admin/firestore');
 
+    // Whether this call is the one that put the invoice on the order — the moment the order
+    // properly exists — as opposed to a repeat or a lost race. Only that call announces it.
+    let raisedHere = false;
+
     // Two tabs asking at once both reach Bonum; only the first invoice is kept on the
     // order and handed to both. The other simply expires unpaid.
     const result: InvoiceResult = await db.runTransaction(async (t: any) => {
+      raisedHere = false;
       const fresh = await t.get(orderRef);
       const freshData = (fresh.exists ? fresh.data() : {}) as Record<string, any>;
       const raced = existingInvoice(orderId, freshData);
@@ -162,6 +168,7 @@ export default async function handler(req: any, res: any): Promise<void> {
         updatedAt: FieldValue.serverTimestamp(),
       });
 
+      raisedHere = true;
       return {
         invoiceId: invoice.invoiceId,
         followUpLink: invoice.followUpLink,
@@ -170,6 +177,10 @@ export default async function handler(req: any, res: any): Promise<void> {
         totals: pricing.totals,
       };
     });
+
+    if (raisedHere) {
+      await notifyNewOrder(db, orderId);
+    }
 
     res.status(200).json(result);
   } catch (err) {

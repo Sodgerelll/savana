@@ -534,6 +534,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Order notifications: the push and notificationclick handlers live in
+        // public/push-sw.js so the generated worker can pull them in.
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: '/index.html',

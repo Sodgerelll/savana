@@ -222,6 +222,8 @@ import ChatKnowledgePage from "./admin/ChatKnowledgePage";
 import ChatConversationsPage from "./admin/ChatConversationsPage";
 import ChatLeadsPage from "./admin/ChatLeadsPage";
 import ChatSettingsPage from "./admin/ChatSettingsPage";
+import OrderPushToggle from "../components/OrderPushToggle";
+import { forgetPushOnServer } from "../lib/pushNotifications";
 import DirectSalesPage from "./admin/DirectSalesPage";
 import FinancePage from "./admin/FinancePage";
 import FinancePaymentsPage from "./admin/FinancePaymentsPage";
@@ -2676,6 +2678,8 @@ export default function Account() {
     setLoggingOut(true);
 
     try {
+      // Before the ID token goes: the server needs it to forget this device.
+      await forgetPushOnServer();
       await logout();
       navigate("/login", { replace: true });
     } finally {
@@ -4282,6 +4286,8 @@ export default function Account() {
                 </button>
               </div>
             </div>
+
+            {isPrivilegedUser ? <OrderPushToggle /> : null}
 
             <button type="button" className="btn btn-outline admin-logout-btn" onClick={handleLogout}>
               <LogOut size={16} />

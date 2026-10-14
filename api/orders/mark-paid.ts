@@ -14,6 +14,7 @@ import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { bonumGet } from '../bonum/_client.js';
 import { PaymentVerificationError, postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
+import { notifyOrderPaid } from '../_lib/pushNotify.js';
 
 interface BonumInvoiceBody {
   status?: string;
@@ -100,10 +101,15 @@ export default async function handler(req: any, res: any): Promise<void> {
     if (body?.terminalId != null) bonumFields.bonumTerminalId = String(body.terminalId);
     if (body?.amount != null) bonumFields.bonumAmount = Number(body.amount);
 
-    await postOrderPaidEntry(db, orderId, bonumFields, {
+    const postedEntryId = await postOrderPaidEntry(db, orderId, bonumFields, {
       invoiceId: body?.invoiceId ? String(body.invoiceId) : invoiceId,
       paidAmount: body?.amount != null ? Number(body.amount) : null,
     });
+
+    // Null means the webhook (or another check) settled it first and already announced it.
+    if (postedEntryId) {
+      await notifyOrderPaid(db, orderId);
+    }
 
     // The buyer joins the CRM directory, but never at the cost of the payment: a failure
     // here is logged and swallowed so the order is still reported as paid.

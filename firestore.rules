@@ -696,6 +696,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Admin devices that receive order push notifications. Each document holds a browser's
+    // push endpoint and keys — enough to send that device anything — so a client never
+    // reads or writes them; api/push/subscription.ts (Admin SDK) is the only way in.
+    match /pushSubscriptions/{subscriptionId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isSelf(userId) || hasPrivilegedProfileRole();
       allow create: if isSelf(userId)

@@ -12,6 +12,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAdminFirestore } from './_firebaseAdmin.js';
 import { PaymentVerificationError, postOrderPaidEntry } from '../_lib/postOrderPaidEntry.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
+import { notifyOrderPaid } from '../_lib/pushNotify.js';
 import { readRawBody } from '../_lib/rawBody.js';
 import { tellTheChatCustomer } from '../chat/_lib/orderPaid.js';
 
@@ -129,10 +130,15 @@ async function markOrderPaidViaAdmin(db: any, orderId: string, paymentBody: Webh
   if (paymentBody.terminalId != null) bonumFields['bonumTerminalId'] = String(paymentBody.terminalId);
   if (paymentBody.amount != null) bonumFields['bonumAmount'] = Number(paymentBody.amount);
 
-  await postOrderPaidEntry(db, orderId, bonumFields, {
+  const postedEntryId = await postOrderPaidEntry(db, orderId, bonumFields, {
     invoiceId: paymentBody.invoiceId ? String(paymentBody.invoiceId) : null,
     paidAmount: paymentBody.amount != null ? Number(paymentBody.amount) : null,
   });
+
+  // A repeat delivery of the same notice settles nothing (null) and must not ring again.
+  if (postedEntryId) {
+    await notifyOrderPaid(db, orderId);
+  }
 
   // The buyer joins the CRM directory, but never at the cost of the payment: a failure
   // here is logged and swallowed so the order still ends up marked paid.

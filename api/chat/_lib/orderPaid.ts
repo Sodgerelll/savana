@@ -9,6 +9,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { bonumGet } from '../../bonum/_client.js';
 import { postOrderPaidEntry } from '../../_lib/postOrderPaidEntry.js';
+import { notifyOrderPaid } from '../../_lib/pushNotify.js';
 import { appendMessage } from './conversation.js';
 import { sendText } from './facebook.js';
 import { loadChatSettings } from './settings.js';
@@ -116,7 +117,7 @@ export async function sweepPendingChatPayments(
 
       // Same evidence as the webhook and mark-paid: the invoice and the amount Bonum reports
       // are checked against the order before it is settled.
-      await postOrderPaidEntry(
+      const postedEntryId = await postOrderPaidEntry(
         db,
         doc.id,
         {
@@ -129,6 +130,9 @@ export async function sweepPendingChatPayments(
           paidAmount: status?.body?.amount != null ? Number(status.body.amount) : null,
         },
       );
+      if (postedEntryId) {
+        await notifyOrderPaid(db, doc.id);
+      }
       await tellTheChatCustomer(db, doc.id);
       result.settled += 1;
     } catch (err) {
