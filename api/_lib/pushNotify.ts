@@ -74,7 +74,7 @@ function vapidDetails(): { subject: string; publicKey: string; privateKey: strin
     return null;
   }
   // The push services want a contact for whoever is sending; a mailto: or the site's URL.
-  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:admin@savana.mn';
+  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:savanaorganica@gmail.com';
   return { subject, publicKey, privateKey };
 }
 
