@@ -2001,7 +2001,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
                 </div>
               ) : null
             )}
-            {productModal.draft.images.filter(Boolean).length < 3 && (
+            {productModal.draft.images.filter(Boolean).length < 6 && (
               <label className="admin-product-image-add">
                 <Plus size={20} />
                 <span>{copy.addImage}</span>

@@ -2510,7 +2510,7 @@ export default function Account() {
       return;
     }
 
-    if (imageIndex >= 3) {
+    if (imageIndex >= 6) {
       return;
     }
 
