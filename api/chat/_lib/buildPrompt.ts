@@ -1,3 +1,4 @@
+import { logError } from '../../_lib/errorLog.js';
 // Builds the SAVANA assistant's system prompt from live storefront data.
 //
 // Split in two on purpose: `loadStorefrontContext` does the Firestore reads,
@@ -657,7 +658,7 @@ async function loadFaqDocs(db: any): Promise<{ docs: any[] }> {
     );
     return { docs };
   } catch (err) {
-    console.error('[chat/buildPrompt] FAQ load failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/buildPrompt', message: 'FAQ load failed', error: err });
     return { docs: [] };
   }
 }
@@ -683,7 +684,7 @@ export async function loadStorefrontContext(db: any, now: Date): Promise<Storefr
     try {
       return await run();
     } catch (err) {
-      console.error('[chat/buildPrompt] load failed:', (err as Error).message);
+      await logError({ source: 'chat', action: 'chat/buildPrompt', message: 'load failed', error: err });
       return fallback;
     }
   };

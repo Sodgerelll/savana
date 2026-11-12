@@ -12,6 +12,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 
+import { logError } from '../_lib/errorLog.js';
 export const config = { maxDuration: 15 };
 
 const ID_PATTERN = /^\d{1,12}$/;
@@ -121,7 +122,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     res.setHeader('Content-Length', String(image.bytes.length));
     res.status(200).send(image.bytes);
   } catch (err) {
-    console.error('[chat/productImage] failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/productImage', message: 'failed', error: err });
     res.status(500).send('Error');
   }
 }

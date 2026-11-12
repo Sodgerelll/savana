@@ -20,6 +20,7 @@ import {
   vapidPublicKey,
 } from '../_lib/pushNotify.js';
 
+import { logError } from '../_lib/errorLog.js';
 export default async function handler(req: any, res: any): Promise<void> {
   if (req.method === 'GET') {
     const publicKey = vapidPublicKey();
@@ -88,7 +89,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
     res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('[push/subscription] failed:', err);
+    await logError({ source: 'notification', action: 'push/subscription', message: 'failed', error: err });
     res.status(500).json({ error: 'Мэдэгдлийн тохиргоо хадгалж чадсангүй.' });
   }
 }

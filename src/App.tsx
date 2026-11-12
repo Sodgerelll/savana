@@ -13,7 +13,6 @@ import Footer from "./components/Footer";
 import CartDrawer from "./components/CartDrawer";
 import PwaInstallPrompt from "./components/PwaInstallPrompt";
 import CustomCursor from "./components/CustomCursor";
-import SoapBubbles from "./components/SoapBubbles";
 import ChatWidget from "./components/chat/ChatWidget";
 import { getPageBannerNavigationItem, getRenderableSettings } from "./lib/storefrontHelpers";
 
@@ -60,7 +59,6 @@ function AppShell() {
   return (
     <>
       {!(isAdminPath && user) && <CustomCursor />}
-      <SoapBubbles />
       <ScrollToTop />
       {!hideHeader && <Header />}
       <main className={mainClasses}>

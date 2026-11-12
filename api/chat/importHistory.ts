@@ -23,6 +23,7 @@ import {
 } from './_lib/history.js';
 import { loadChatSettings } from './_lib/settings.js';
 
+import { logError } from '../_lib/errorLog.js';
 // Reading a year of conversations is many round trips to Graph plus one long
 // model call. Fluid compute allows up to 300s; this leaves headroom.
 export const config = { maxDuration: 240 };
@@ -154,7 +155,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     });
   } catch (err) {
     const detail = (err as Error).message;
-    console.error('[chat/importHistory] failed:', detail);
+    await logError({ source: 'chat', action: 'chat/importHistory', message: 'failed', error: detail });
     // A Graph refusal ("requires pages_read_engagement") is the one message an
     // admin can actually act on, so it is passed through rather than flattened
     // into the generic Gemini wording.

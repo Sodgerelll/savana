@@ -78,6 +78,7 @@ import {
   type ToolContext,
 } from './_lib/tools.js';
 
+import { logError } from '../_lib/errorLog.js';
 // Body parsing is off so the handler sees the bytes Meta actually sent: the
 // signature covers the raw payload, and re-serialising a parsed object would
 // not reproduce it.
@@ -188,7 +189,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   try {
     await processWebhookBody(body);
   } catch (err) {
-    console.error('[chat/webhook] processing failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'processing failed', error: err });
   }
 
   res.status(200).send('EVENT_RECEIVED');
@@ -211,7 +212,7 @@ function hasValidSignature(req: any, raw: string | null): boolean {
     // fabricated events, so there it fails closed. Elsewhere (local, preview) it stays open
     // and says so loudly, so a missing variable is noticed rather than silently fatal.
     if (process.env.VERCEL_ENV === 'production') {
-      console.error('[chat/webhook] FB_APP_SECRET is not set — refusing unverified deliveries');
+      void logError({ source: 'chat', action: 'chat/webhook', message: 'FB_APP_SECRET is not set — refusing unverified deliveries' });
       return false;
     }
     console.warn('[chat/webhook] FB_APP_SECRET is not set — deliveries are NOT verified');
@@ -219,7 +220,7 @@ function hasValidSignature(req: any, raw: string | null): boolean {
   }
 
   if (raw === null) {
-    console.error('[chat/webhook] request body was already consumed; cannot verify the signature');
+    void logError({ source: 'chat', action: 'chat/webhook', message: 'request body was already consumed; cannot verify the signature' });
     return false;
   }
 
@@ -231,12 +232,12 @@ function hasValidSignature(req: any, raw: string | null): boolean {
   // timingSafeEqual throws on a length mismatch, and a wrong length is already
   // a failure, so the comparison is only reached for same-shaped digests.
   if (received.length !== expected.length) {
-    console.warn('[chat/webhook] signature missing or malformed');
+    void logError({ source: 'chat', action: 'chat/webhook', message: 'signature missing or malformed', severity: 'warning' });
     return false;
   }
 
   if (!timingSafeEqual(received, expected)) {
-    console.warn('[chat/webhook] signature did not match');
+    void logError({ source: 'chat', action: 'chat/webhook', message: 'signature did not match', severity: 'warning' });
     return false;
   }
 
@@ -251,7 +252,7 @@ function handleVerify(req: any, res: any): void {
   const challenge = query['hub.challenge'];
 
   if (!expected) {
-    console.error('[chat/webhook] FB_VERIFY_TOKEN is not configured');
+    void logError({ source: 'chat', action: 'chat/webhook', message: 'FB_VERIFY_TOKEN is not configured' });
     res.status(503).send('Not configured');
     return;
   }
@@ -268,7 +269,7 @@ function handleVerify(req: any, res: any): void {
 async function processWebhookBody(body: any): Promise<void> {
   const dbPromise = getAdminFirestore();
   if (!dbPromise) {
-    console.error('[chat/webhook] FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'FIREBASE_SERVICE_ACCOUNT_JSON is not configured' });
     return;
   }
   const db = await dbPromise;
@@ -289,7 +290,7 @@ async function processWebhookBody(body: any): Promise<void> {
       try {
         await processMessagingEvent(db, settings, channel, pageId, event);
       } catch (err) {
-        console.error('[chat/webhook] messaging event failed:', (err as Error).message);
+        await logError({ source: 'chat', action: 'chat/webhook', message: 'messaging event failed', error: err });
       }
     }
 
@@ -299,7 +300,7 @@ async function processWebhookBody(body: any): Promise<void> {
         try {
           await processCommentChange(db, settings, channel, pageId, change);
         } catch (err) {
-          console.error('[chat/webhook] comment event failed:', (err as Error).message);
+          await logError({ source: 'chat', action: 'chat/webhook', message: 'comment event failed', error: err });
         }
       }
     }
@@ -311,7 +312,7 @@ async function processWebhookBody(body: any): Promise<void> {
   try {
     await sweepStaleLeads(db, { token: settings.facebook.pageAccessToken });
   } catch (err) {
-    console.warn('[chat/webhook] follow-up sweep failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'follow-up sweep failed', error: err, severity: 'warning' });
   }
 
   // Catches what the payment webhook drops. Internally throttled, so this is
@@ -320,7 +321,7 @@ async function processWebhookBody(body: any): Promise<void> {
   try {
     await sweepPendingChatPayments(db);
   } catch (err) {
-    console.warn('[chat/webhook] payment sweep failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'payment sweep failed', error: err, severity: 'warning' });
   }
 }
 
@@ -665,14 +666,14 @@ async function replyToEvent(
       } else {
         const text = result.text ?? '';
         if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
-          console.error('[chat/webhook] model echoed its own instructions; reply withheld');
+          await logError({ source: 'chat', action: 'chat/webhook', message: 'model echoed its own instructions; reply withheld', severity: 'warning' });
           outcomes.push({ outcome: { text: LEAKED_INSTRUCTION_REPLY }, toolName: null });
         } else {
           outcomes.push({ outcome: { text }, toolName: null });
         }
       }
     } catch (err) {
-      console.error('[chat/webhook] generation failed:', (err as Error).message);
+      await logError({ source: 'chat', action: 'chat/webhook', message: 'generation failed', error: err });
       await recordChatFailure(db, 'messenger', (err as Error).message, {
         channel,
         // Says whose fault it was, so nobody has to guess next time.
@@ -858,14 +859,14 @@ async function answerImage(
       temperature: params.settings.temperature,
     });
   } catch (err) {
-    console.error('[chat/webhook] image reply failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'image reply failed', error: err });
     reply = geminiErrorToUserMessage(err);
   }
 
   // The same net the text path has. A photo turn builds its own prompt and so
   // answered outside that net, which is exactly where a gap goes unnoticed.
   if (looksLikeOurOwnInstructions(reply, [systemPrompt])) {
-    console.error('[chat/webhook] model echoed its own instructions on a photo; reply withheld');
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'model echoed its own instructions on a photo; reply withheld', severity: 'warning' });
     reply = LEAKED_INSTRUCTION_REPLY;
   }
 
@@ -1043,7 +1044,7 @@ async function lookupOrder(
       grandTotal: Number(data.totals?.grandTotal ?? 0),
     };
   } catch (err) {
-    console.error('[chat/webhook] order lookup failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'order lookup failed', error: err });
     return null;
   }
 }
@@ -1134,6 +1135,6 @@ async function noteStaffReply(db: any, channel: ChatChannel, pageId: string, eve
     await appendMessage(db, conversation.id, { role: 'assistant', content: text });
     await setConversationStatus(db, conversation.id, 'admin_active');
   } catch (err) {
-    console.warn('[chat/webhook] staff reply not recorded:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/webhook', message: 'staff reply not recorded', error: err, severity: 'warning' });
   }
 }

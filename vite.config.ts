@@ -331,6 +331,37 @@ function analyticsDevPlugin(): Plugin {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The serverless routes in api/ only run on Vercel. Under `vite dev` a route no plugin
+ * above implements used to fall through to Vite, which answers with the TypeScript
+ * source of api/<route>.ts — so a fetch(...).json() died with "Unexpected token 'i',
+ * "import { g"... is not valid JSON". This answers those with a JSON error that says
+ * what is going on. Registered after the plugins that do implement a route.
+ */
+function apiUnavailableInDevPlugin(): Plugin {
+  return {
+    name: 'api-unavailable-in-dev',
+    configureServer(server) {
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const path = (req.url ?? '').split('?')[0]
+        if (!path.startsWith('/api/')) {
+          next()
+          return
+        }
+        res.statusCode = 501
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(
+          JSON.stringify({
+            error:
+              'Энэ API зөвхөн сайт deploy хийгдсэн үед ажиллана (локал dev дээр ажиллахгүй). ' +
+              'Туршихдаа www.savana.mn дээр туршина уу.',
+          }),
+        )
+      })
+    },
+  }
+}
+
 function bonumDevPlugin(): Plugin {
   const env = loadLocalEnv()
 
@@ -498,6 +529,7 @@ export default defineConfig({
     tailwindcss(),
     bonumDevPlugin(),
     analyticsDevPlugin(),
+    apiUnavailableInDevPlugin(),
     VitePWA({
       disable: !PROJECT_PATH_IS_SW_SAFE,
       registerType: 'autoUpdate',

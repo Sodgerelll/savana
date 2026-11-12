@@ -7,6 +7,7 @@ import { useStorefront } from "../../context/StorefrontContext";
 import { useCart } from "../../context/CartContext";
 import { formatStorePrice } from "../../lib/storefrontHelpers";
 import { CHAT_LIMITS } from "../../lib/chat/types";
+import { reportClientError } from "../../lib/errorLogs";
 import "./ChatWidget.css";
 
 interface WidgetProduct {
@@ -186,7 +187,8 @@ export default function ChatWidget() {
           content: typeof payload.reply === "string" ? payload.reply : "",
         },
       ]);
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "chat", action: "chat-widget/resume", error, message: "The chat widget could not reach the assistant" });
       setError(copy.failed);
     } finally {
       setPending(false);
@@ -258,7 +260,8 @@ export default function ChatWidget() {
           handedOver: payload.handedOver === true,
         },
       ]);
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "chat", action: "chat-widget/send", error, message: "The chat widget could not reach the assistant" });
       setError(copy.failed);
     } finally {
       clearTimeout(timer);

@@ -21,6 +21,7 @@ import { SHOP_HOURS, SHOP_MAP_EMBED_SRC, SHOP_MAP_LINK } from "../lib/shopLocati
 import { resolveFulfillment } from "../lib/fulfillment";
 import { useStorefront } from "../context/StorefrontContext";
 import { calculateVat } from "../lib/vat";
+import { reportClientError } from "../lib/errorLogs";
 import "./Checkout.css";
 
 interface CheckoutFormState {
@@ -313,6 +314,7 @@ export default function Checkout() {
         }
       })
       .catch((error) => {
+        reportClientError({ source: "auth", action: "checkout/guest-session", error, message: "Could not start a guest session" });
         if (active) {
           setGuestSessionError(error instanceof Error ? error.message : copy.guestSessionFailed);
           setGuestSessionPending(false);
@@ -513,6 +515,18 @@ export default function Checkout() {
           : copy.orderSaved,
       );
     } catch (error) {
+      reportClientError({
+        source: "order",
+        action: error instanceof OrderInvoiceError ? "checkout/invoice" : "checkout/create-order",
+        error,
+        message: error instanceof OrderInvoiceError ? "The order was saved but its invoice could not be raised" : "The order could not be placed",
+        context: {
+          orderId: error instanceof OrderInvoiceError ? error.orderId : undefined,
+          fulfillment: liveFulfillment,
+          lines: nextItems.length,
+          grandTotal: nextTotals.grandTotal,
+        },
+      });
       if (error instanceof OrderInvoiceError) {
         // The order is saved; only its invoice is missing. Keep it and let the shopper ask
         // for the invoice again from the payment step instead of placing a second order.
@@ -576,6 +590,13 @@ export default function Checkout() {
         );
         setPaymentFeedback(copy.orderSaved);
       } catch (error) {
+        reportClientError({
+          source: "order",
+          action: "checkout/invoice-retry",
+          error,
+          message: "The invoice could not be raised again",
+          context: { orderId: pendingOrder.id },
+        });
         setPaymentFeedback(error instanceof Error ? error.message : copy.paymentCheckFailed);
       } finally {
         setCheckingPayment(false);

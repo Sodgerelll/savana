@@ -19,6 +19,7 @@ import {
   type GeminiRole,
 } from './_lib/gemini.js';
 
+import { logError } from '../_lib/errorLog.js';
 // Gemini itself gives up at 25s; leave headroom for auth and cold start.
 export const config = { maxDuration: 60 };
 
@@ -110,7 +111,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       db = await dbPromise;
       systemPrompt = buildStorefrontPrompt(await loadStorefrontContext(db, new Date()), new Date());
     } catch (err) {
-      console.error('[chat/assistant] prompt build failed:', (err as Error).message);
+      await logError({ source: 'chat', action: 'chat/assistant', message: 'prompt build failed', error: err });
       res.status(503).json({ error: 'Каталогийг уншиж чадсангүй. Дахин оролдоно уу.' });
       return;
     }
@@ -142,7 +143,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   } catch (err) {
     // The provider message can carry request detail, so it is logged but never
     // returned; the caller gets a translated, provider-agnostic sentence.
-    console.error('[chat/assistant] generation failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/assistant', message: 'generation failed', error: err });
     res.status(502).json({ error: geminiErrorToUserMessage(err) });
   }
 }

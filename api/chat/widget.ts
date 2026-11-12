@@ -48,6 +48,7 @@ import {
   unhealthyModels,
 } from './_lib/diagnostics.js';
 
+import { logError } from '../_lib/errorLog.js';
 export const config = { maxDuration: 60 };
 
 const MAX_MESSAGE_LENGTH = 600;
@@ -394,12 +395,12 @@ export default async function handler(req: any, res: any): Promise<void> {
       if (result.functionCalls.length === 0) {
         text = result.text ?? '';
         if (looksLikeOurOwnInstructions(text, [cacheOptions.systemPrompt, JSON.stringify(CHAT_TOOLS)])) {
-          console.error('[chat/widget] model echoed its own instructions; reply withheld');
+          await logError({ source: 'chat', action: 'chat/widget', message: 'model echoed its own instructions; reply withheld', severity: 'warning' });
           text = LEAKED_INSTRUCTION_REPLY;
         }
       }
     } catch (err) {
-      console.error('[chat/widget] generation failed:', (err as Error).message);
+      await logError({ source: 'chat', action: 'chat/widget', message: 'generation failed', error: err });
       await recordChatFailure(db, 'widget', (err as Error).message, {
         // Says whose fault it was, so nobody has to guess next time.
         probe: await probeEveryModel(),
@@ -455,13 +456,13 @@ export default async function handler(req: any, res: any): Promise<void> {
     try {
       await sweepPendingChatPayments(db);
     } catch (err) {
-      console.warn('[chat/widget] payment sweep failed:', (err as Error).message);
+      await logError({ source: 'chat', action: 'chat/widget', message: 'payment sweep failed', error: err, severity: 'warning' });
     }
 
     res.setHeader('Server-Timing', timing.header());
     res.status(200).json({ reply: text, products, handedOver, payUrl });
   } catch (err) {
-    console.error('[chat/widget] failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/widget', message: 'chat request failed', error: err });
     res.status(500).json({ error: 'Хариу авч чадсангүй. Дахин оролдоно уу.' });
   }
 }
@@ -488,7 +489,7 @@ async function handleConfig(res: any): Promise<void> {
       welcomeMessage: settings.welcomeMessage,
     });
   } catch (err) {
-    console.error('[chat/widget] config failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/widget', message: 'config failed', error: err });
     res.status(200).json({ enabled: false });
   }
 }
@@ -628,7 +629,7 @@ async function lookupOrder(
       grandTotal: Number(data.totals?.grandTotal ?? 0),
     };
   } catch (err) {
-    console.error('[chat/widget] order lookup failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/widget', message: 'order lookup failed', error: err });
     return null;
   }
 }

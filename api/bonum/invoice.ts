@@ -27,6 +27,7 @@ import {
   type PricedOrderTotals,
 } from '../_lib/orderPricing.js';
 
+import { logError } from '../_lib/errorLog.js';
 const INVOICE_TTL_SECONDS = 3600;
 
 interface BonumInvoiceResponse {
@@ -193,7 +194,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       res.status(err.code === 'ALREADY_PAID' ? 409 : 400).json({ error: err.message, code: err.code });
       return;
     }
-    console.error('[bonum/invoice] failed:', err);
+    await logError({ source: 'payment', action: 'bonum/invoice', message: 'could not raise the Bonum invoice', error: err, context: { orderId } });
     res.status(500).json({ error: 'Нэхэмжлэх үүсгэж чадсангүй. Дахин оролдоно уу.' });
   }
 }

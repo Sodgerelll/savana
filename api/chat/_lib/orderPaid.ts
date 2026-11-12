@@ -15,6 +15,7 @@ import { sendText } from './facebook.js';
 import { loadChatSettings } from './settings.js';
 import { checkRateLimit } from './guards.js';
 
+import { logError } from '../../_lib/errorLog.js';
 /** Orders looked at per sweep. Each one costs a call to Bonum. */
 const MAX_PER_SWEEP = 10;
 /** Older than this and a pending invoice has expired anyway. */
@@ -137,7 +138,7 @@ export async function sweepPendingChatPayments(
       result.settled += 1;
     } catch (err) {
       // One unreachable invoice must not stop the rest being checked.
-      console.warn(`[chat/orderPaid] ${invoiceId} check failed:`, (err as Error).message);
+      await logError({ source: 'payment', action: 'chat/orderPaid', message: 'payment check failed', error: err, severity: 'warning', context: { invoiceId } });
     }
   }
 

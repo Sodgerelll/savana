@@ -13,6 +13,7 @@ import { requirePrivilegedCaller } from './_lib/auth.js';
 import { applyMessengerProfile, getPageName } from './_lib/facebook.js';
 import { facebookComesFromEnv, loadChatSettings, type ChatButton } from './_lib/settings.js';
 
+import { logError } from '../_lib/errorLog.js';
 export const config = { maxDuration: 30 };
 
 /**
@@ -85,7 +86,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     // The Graph error text is what tells an admin whether the token is expired
     // or the app is missing a permission, so it is worth surfacing here.
     const detail = (err as Error).message;
-    console.error('[chat/setup] failed:', detail);
+    await logError({ source: 'chat', action: 'chat/setup', message: 'failed', error: detail });
     res.status(502).json({ error: detail });
   }
 }

@@ -7,6 +7,7 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { isGa4Configured, runReport } from './_gaClient.js';
 
+import { logError } from '../_lib/errorLog.js';
 interface Summary {
   today: number;
   last7Days: number;
@@ -123,7 +124,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     res.status(200).json(value);
   } catch (err) {
-    console.error('[analytics/summary] failed:', err);
+    await logError({ source: 'system', action: 'analytics/summary', message: 'failed', error: err });
     // Serve a stale cached value rather than breaking the public footer, if we have one.
     if (_memoryCache) {
       res.status(200).json(_memoryCache.value);

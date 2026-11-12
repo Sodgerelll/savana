@@ -30,9 +30,26 @@ export function isInstalledApp(): boolean {
   );
 }
 
+/**
+ * This device's subscription, or null. Looks the registration up rather than awaiting
+ * `navigator.serviceWorker.ready`, which never settles when no worker is active — in
+ * development, where none is registered, or when the browser refuses one. Signing out
+ * waited on it and so never signed out.
+ */
 async function currentSubscription(): Promise<PushSubscription | null> {
-  const registration = await navigator.serviceWorker.ready;
-  return registration.pushManager.getSubscription();
+  const registration = await navigator.serviceWorker.getRegistration();
+  return registration ? registration.pushManager.getSubscription() : null;
+}
+
+/** Rejects after `ms`, so a step nobody needs to finish cannot hold up the one that matters. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -82,10 +99,15 @@ export async function enablePush(): Promise<PushState> {
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
 
   const keyResponse = await fetch(ENDPOINT);
-  if (!keyResponse.ok) {
-    throw new Error("Push мэдэгдэл серверт тохируулагдаагүй байна.");
+  // Anything that is not JSON — the page's own HTML, or a route's source code when no
+  // server is behind /api (local dev) — is "not set up", not a parse error to show.
+  const key = keyResponse.ok
+    ? ((await keyResponse.json().catch(() => null)) as { publicKey?: string } | null)
+    : null;
+  if (!key?.publicKey) {
+    throw new Error("Push мэдэгдэл энэ орчинд тохируулагдаагүй байна. Сайт дээр (www.savana.mn) асаана уу.");
   }
-  const { publicKey } = (await keyResponse.json()) as { publicKey: string };
+  const { publicKey } = key;
 
   const registration = await navigator.serviceWorker.ready;
   const subscription =
@@ -137,10 +159,16 @@ export async function syncPushRegistration(): Promise<void> {
 export async function forgetPushOnServer(): Promise<void> {
   try {
     if (!pushSupported()) return;
-    const subscription = await currentSubscription();
-    if (subscription) {
-      await send("DELETE", { endpoint: subscription.endpoint });
-    }
+    // Bounded: a slow network or a stuck worker must not keep someone signed in.
+    await withTimeout(
+      (async () => {
+        const subscription = await currentSubscription();
+        if (subscription) {
+          await send("DELETE", { endpoint: subscription.endpoint });
+        }
+      })(),
+      3000,
+    );
   } catch {
     // Signing out must never wait on, or fail because of, a notification setting.
   }

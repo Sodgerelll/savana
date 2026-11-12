@@ -9,6 +9,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminAuth, getAdminFirestore } from '../../bonum/_firebaseAdmin.js';
 
+import { logError } from '../../_lib/errorLog.js';
 /** Mirrors isPrivilegedRole() in src/lib/userProfiles.ts. */
 const PRIVILEGED_ROLES = ['admin', 'sysadmin'];
 
@@ -50,7 +51,7 @@ export async function requirePrivilegedCaller(req: any): Promise<AuthorizationRe
   if (!authPromise || !dbPromise) {
     // Without a service account the server cannot verify anything, and letting
     // the request through would be an open door — fail closed.
-    console.error('[chat/auth] FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+    await logError({ source: 'auth', action: 'chat/auth', message: 'FIREBASE_SERVICE_ACCOUNT_JSON is not configured' });
     return { ok: false, status: 503, error: 'Сервер тохируулагдаагүй байна.' };
   }
 
@@ -88,7 +89,7 @@ export async function requirePrivilegedCaller(req: any): Promise<AuthorizationRe
       },
     };
   } catch (err) {
-    console.error('[chat/auth] role lookup failed:', (err as Error).message);
+    await logError({ source: 'auth', action: 'chat/auth', message: 'role lookup failed', error: err });
     return { ok: false, status: 503, error: 'Эрх шалгах боломжгүй байна.' };
   }
 }

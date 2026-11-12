@@ -709,6 +709,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The system error log (api/_lib/errorLog.ts). Only the server writes a row — a shopper's
+    // browser reports through /api/logs/report — so nobody can plant or rewrite one. Admins
+    // read the log and may mark a row resolved or reopen it; they cannot edit what it says.
+    // Rows are deleted from the Лог page once handled.
+    match /errorLogs/{logId} {
+      allow read, list: if hasPrivilegedProfileRole();
+      allow create: if false;
+      allow update: if hasPrivilegedProfileRole()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["status", "resolvedAt", "resolvedBy"])
+        && request.resource.data.status in ["open", "resolved"];
+      allow delete: if hasPrivilegedProfileRole();
+    }
+
     match /users/{userId} {
       allow read: if isSelf(userId) || hasPrivilegedProfileRole();
       allow create: if isSelf(userId)

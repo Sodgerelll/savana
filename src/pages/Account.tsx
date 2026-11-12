@@ -1,5 +1,6 @@
 import {
   Activity,
+  ScrollText,
   BookOpen,
   Bot,
   Building2,
@@ -201,6 +202,7 @@ import logoBlack from "../assets/logoBlack.png";
 import DashboardPage from "./admin/DashboardPage";
 import AnalyticsPage from "./admin/AnalyticsPage";
 import WebsitePage from "./admin/WebsitePage";
+import LogsPage from "./admin/LogsPage";
 import CategoriesPage from "./admin/CategoriesPage";
 import OrdersPage from "./admin/OrdersPage";
 import SalesPage from "./admin/SalesPage";
@@ -266,6 +268,7 @@ import {
   describeStockError,
 } from "./admin/adminHelpers";
 import type { AdminCtx } from "./admin/adminShellTypes";
+import { reportClientError } from "../lib/errorLogs";
 import "./Auth.css";
 
 type AdminSection =
@@ -277,6 +280,7 @@ type AdminSection =
   | "discounts"
   | "directSales"
   | "messages"
+  | "logs"
   | "reviews"
   | "orders"
   | "sales"
@@ -651,7 +655,7 @@ interface AdminMenuGroup {
 }
 
 const VALID_SECTIONS = new Set<string>([
-  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "reviews", "orders", "sales", "users",
+  "dashboard", "website", "analytics", "categories", "products", "discounts", "messages", "logs", "reviews", "orders", "sales", "users",
   "crmOverview", "crmContacts", "crmCustomers", "crmCustomerTransactions",
   "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
   "financeOverview", "financePayments", "financeReconciliation", "financeReports", "financeFixedAssets",
@@ -664,7 +668,7 @@ const VALID_SECTIONS = new Set<string>([
  * real gate, this only keeps the UI honest.
  */
 const PRIVILEGED_SECTIONS = new Set<string>([
-  "users", "orders", "sales", "messages", "reviews",
+  "users", "orders", "sales", "messages", "logs", "reviews",
   "crmContacts", "crmCustomers", "crmCustomerTransactions",
   "chatOverview", "chatConversations", "chatKnowledge", "chatLeads", "chatSettings",
 ]);
@@ -1095,6 +1099,7 @@ export default function Account() {
     "discounts",
     "directSales",
     "messages",
+    "logs",
     "reviews",
     "orders",
     "sales",
@@ -1162,6 +1167,14 @@ export default function Account() {
                 label: "Хэрэглэгч ба эрх",
                 description: "Хэрэглэгч, role, access policy удирдлага.",
                 icon: <Users size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "logs",
+                label: "Лог",
+                description: "Чат, захиалга, төлбөр, бүртгэл зэрэг бүх үйлдлийн алдааны лог.",
+                icon: <ScrollText size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -1569,6 +1582,14 @@ export default function Account() {
                 label: "Users & roles",
                 description: "Identity, roles, and access policy control.",
                 icon: <Users size={18} />,
+                implemented: true,
+                requiresPrivilege: true,
+              },
+              {
+                id: "logs",
+                label: "System log",
+                description: "Errors from chat, orders, payments, accounts and every other action.",
+                icon: <ScrollText size={18} />,
                 implemented: true,
                 requiresPrivilege: true,
               },
@@ -2528,7 +2549,8 @@ export default function Account() {
           draft: { ...current.draft, images: nextImages },
         };
       });
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "admin", action: "admin/upload-product-image", error, message: "An image upload failed" });
       setProductImageUploadError(copy.bannerUploadFailed);
     } finally {
       setProductImageUploading(false);
@@ -2561,7 +2583,8 @@ export default function Account() {
           draft: { ...current.draft, image: uploadedImageUrl },
         };
       });
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "admin", action: "admin/upload-collection-image", error, message: "An image upload failed" });
       setCollectionImageUploadError(copy.bannerUploadFailed);
     } finally {
       setCollectionImageUploading(false);
@@ -2678,10 +2701,14 @@ export default function Account() {
     setLoggingOut(true);
 
     try {
-      // Before the ID token goes: the server needs it to forget this device.
+      // Before the ID token goes: the server needs it to forget this device. It never
+      // throws and gives up after a few seconds, so signing out always goes ahead.
       await forgetPushOnServer();
       await logout();
       navigate("/login", { replace: true });
+    } catch (error) {
+      console.error("[account] sign-out failed:", error);
+      reportClientError({ source: "auth", action: "admin/sign-out", error, message: "Signing out failed" });
     } finally {
       setLoggingOut(false);
     }
@@ -2964,7 +2991,8 @@ export default function Account() {
             }
           : current
       );
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "admin", action: "admin/upload-navigation-banner", error, message: "An image upload failed" });
       setNavigationBannerUploadError(copy.bannerUploadFailed);
     } finally {
       setNavigationBannerUploading(false);
@@ -3006,7 +3034,8 @@ export default function Account() {
             }
           : current
       );
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "admin", action: "admin/upload-banner", error, message: "An image upload failed" });
       setBannerUploadError(copy.bannerUploadFailed);
     } finally {
       setBannerUploading(false);
@@ -3047,7 +3076,8 @@ export default function Account() {
             }
           : current
       );
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "admin", action: "admin/upload-journal-image", error, message: "An image upload failed" });
       setJournalImageUploadError(copy.bannerUploadFailed);
     } finally {
       setJournalImageUploading(false);
@@ -3289,6 +3319,7 @@ export default function Account() {
       setSaleModal(null);
       setSaleModalError(null);
     } catch (error) {
+      reportClientError({ source: "admin", action: "admin/sale-save", error, message: "A sale could not be saved" });
       setSaleModalError(
         error instanceof Error
           ? describeStockError(error, language)
@@ -3387,6 +3418,7 @@ export default function Account() {
       setCrmContactModal(null);
       setCrmContactModalError(null);
     } catch (error) {
+      reportClientError({ source: "account", action: "admin/customer-save", error, message: "A customer record could not be saved" });
       setCrmContactModalError(
         error instanceof Error
           ? error.message
@@ -3460,6 +3492,7 @@ export default function Account() {
 
       setReturnModal(null);
     } catch (error) {
+      reportClientError({ source: "order", action: "admin/return-save", error, message: "A return could not be saved" });
       setReturnModalError(
         error instanceof Error
           ? error.message
@@ -3600,6 +3633,7 @@ export default function Account() {
       setOrderModal(null);
       setOrderModalError(null);
     } catch (error) {
+      reportClientError({ source: "order", action: "admin/order-update", error, message: "An order could not be updated", context: { orderId: orderModal?.draft.id } });
       setOrderModalError(error instanceof Error ? error.message : copy.orderUpdateFailed);
     } finally {
       setSavingOrderModal(false);
@@ -3626,6 +3660,7 @@ export default function Account() {
       setUserProfileModal(null);
       setUserProfileError(null);
     } catch (error) {
+      reportClientError({ source: "account", action: "admin/user-update", error, message: "A user profile could not be updated" });
       setUserProfileError(error instanceof Error ? error.message : copy.userUpdateFailed);
     } finally {
       setSavingUserProfile(false);
@@ -4406,6 +4441,8 @@ export default function Account() {
             <AnalyticsPage ctx={adminCtx} />
           ) : activeSection === "messages" ? (
             <MessagesPage ctx={adminCtx} />
+          ) : activeSection === "logs" ? (
+            <LogsPage ctx={adminCtx} />
           ) : activeSection === "reviews" ? (
             <ReviewsPage ctx={adminCtx} />
           ) : activeSection === "chatOverview" ? (

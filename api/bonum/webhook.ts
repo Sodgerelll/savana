@@ -16,6 +16,7 @@ import { notifyOrderPaid } from '../_lib/pushNotify.js';
 import { readRawBody } from '../_lib/rawBody.js';
 import { tellTheChatCustomer } from '../chat/_lib/orderPaid.js';
 
+import { logError } from '../_lib/errorLog.js';
 // The checksum is computed over the body exactly as Bonum sent it, so the platform must
 // not parse it first.
 export const config = { api: { bodyParser: false } };
@@ -74,7 +75,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   const signature = String(req.headers?.['x-checksum-v2'] ?? '');
   if (!isValidChecksum(raw, parsed, signature)) {
-    console.error('[bonum/webhook] Invalid checksum');
+    await logError({ source: 'payment', action: 'bonum/webhook', message: 'Invalid checksum' });
     res.status(401).json({ error: 'Invalid checksum' });
     return;
   }
@@ -91,7 +92,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   if (!dbPromise) {
     // Nothing can be recorded, so ask Bonum to try again later rather than acknowledging a
     // payment that went nowhere.
-    console.error('[bonum/webhook] FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+    await logError({ source: 'payment', action: 'bonum/webhook', message: 'FIREBASE_SERVICE_ACCOUNT_JSON is not configured' });
     res.status(503).json({ error: 'Not configured' });
     return;
   }
@@ -105,9 +106,21 @@ export default async function handler(req: any, res: any): Promise<void> {
     if (err instanceof PaymentVerificationError) {
       // Not something a retry can fix. The order stays unpaid and says why, where an admin
       // looking at it will see — money Bonum took for the wrong amount is theirs to settle.
-      console.error(`[bonum/webhook] ${orderId}: ${err.code} — ${err.message}`);
+      await logError({
+        source: 'payment',
+        action: 'bonum/webhook',
+        message: `payment not accepted (${err.code})`,
+        error: err,
+        context: { orderId, code: err.code },
+      });
       await recordPaymentIssue(db, orderId, err, body).catch((recordErr) =>
-        console.error('[bonum/webhook] could not record the payment issue:', recordErr),
+        logError({
+          source: 'payment',
+          action: 'bonum/webhook',
+          message: 'could not record the payment issue',
+          error: recordErr,
+          context: { orderId },
+        }),
       );
       res.status(200).json({ ok: true });
       return;
@@ -115,7 +128,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     // A transient failure (Firestore, a contended transaction): answer with an error so Bonum
     // delivers the notice again. Settling is idempotent, so a repeat is harmless.
-    console.error('[bonum/webhook] settling the order failed:', err);
+    await logError({ source: 'payment', action: 'bonum/webhook', message: 'settling the order failed', error: err, context: { orderId } });
     res.status(500).json({ error: 'Processing failed' });
     return;
   }
@@ -145,13 +158,13 @@ async function markOrderPaidViaAdmin(db: any, orderId: string, paymentBody: Webh
   try {
     await upsertOrderContact(db, orderId);
   } catch (err) {
-    console.error('[bonum/webhook] customer directory sync failed:', err);
+    await logError({ source: 'payment', action: 'bonum/webhook', message: 'customer directory sync failed', error: err, context: { orderId } });
   }
 
   try {
     await tellTheChatCustomer(db, orderId);
   } catch (err) {
-    console.error('[bonum/webhook] chat confirmation failed:', err);
+    await logError({ source: 'payment', action: 'bonum/webhook', message: 'chat confirmation failed', error: err, context: { orderId } });
   }
 }
 

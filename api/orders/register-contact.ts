@@ -15,6 +15,7 @@
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
 
+import { logError } from '../_lib/errorLog.js';
 export default async function handler(req: any, res: any): Promise<void> {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -40,7 +41,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     const contactId = await upsertOrderContact(db, orderId);
     res.status(200).json({ contactId });
   } catch (err) {
-    console.error('[orders/register-contact] failed:', err);
+    await logError({ source: 'account', action: 'orders/register-contact', message: 'could not add the buyer to the customer directory', error: err, context: { orderId } });
     const message = err instanceof Error ? err.message : 'Internal error';
     res.status(500).json({ error: message });
   }

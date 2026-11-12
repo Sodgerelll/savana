@@ -8,6 +8,7 @@ import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings 
 import "./Contact.css";
 import { useDocumentMeta } from "../lib/seo";
 
+import { reportClientError } from "../lib/errorLogs";
 const initialFormState = { name: "", email: "", subject: "", message: "" };
 
 export default function Contact() {
@@ -53,7 +54,8 @@ export default function Contact() {
       await createContactMessage(payload);
       setFormValues(initialFormState);
       setSubmitStatus("success");
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "storefront", action: "contact/send", error, message: "A contact message could not be sent" });
       setSubmitStatus("error");
       setSubmitError(t.messageSendFailed);
     }

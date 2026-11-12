@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { reportClientError } from "../lib/errorLogs";
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
     console.error("[ErrorBoundary]", error, info.componentStack);
+    reportClientError({
+      source: window.location.pathname.startsWith("/account") ? "admin" : "storefront",
+      action: "react/render",
+      error,
+      message: "A page crashed while rendering",
+      context: { componentStack: info.componentStack.trim().split(/\r?\n/).slice(0, 6).join(" | ") },
+    });
   }
 
   render() {

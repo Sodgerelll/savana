@@ -62,11 +62,12 @@ export default function WebsitePage({ ctx }: { ctx: AdminCtx }) {
           </button>
           <button
             type="button"
-            className="admin-icon-btn admin-icon-btn-neutral"
+            className="btn btn-outline"
             onClick={openSettingsModal}
-            aria-label={copy.editWebsite}
+            title={copy.editWebsite}
           >
             <Pencil size={16} />
+            {copy.settings}
           </button>
         </div>
       </div>

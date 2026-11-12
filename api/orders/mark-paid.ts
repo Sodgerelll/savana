@@ -16,6 +16,7 @@ import { PaymentVerificationError, postOrderPaidEntry } from '../_lib/postOrderP
 import { upsertOrderContact } from '../_lib/upsertOrderContact.js';
 import { notifyOrderPaid } from '../_lib/pushNotify.js';
 
+import { logError } from '../_lib/errorLog.js';
 interface BonumInvoiceBody {
   status?: string;
   invoiceStatus?: string;
@@ -116,18 +117,18 @@ export default async function handler(req: any, res: any): Promise<void> {
     try {
       await upsertOrderContact(db, orderId);
     } catch (err) {
-      console.error('[orders/mark-paid] customer directory sync failed:', err);
+      await logError({ source: 'order', action: 'orders/mark-paid', message: 'customer directory sync failed', error: err, context: { orderId } });
     }
 
     const updatedSnap = await orderRef.get();
     res.status(200).json({ payment: (updatedSnap.data() as Record<string, unknown>).payment });
   } catch (err) {
     if (err instanceof PaymentVerificationError) {
-      console.error(`[orders/mark-paid] ${orderId}: ${err.code}`);
+      await logError({ source: 'payment', action: 'orders/mark-paid', message: `payment not accepted (${err.code})`, error: err, severity: 'warning', context: { orderId, code: err.code } });
       res.status(400).json({ error: err.message });
       return;
     }
-    console.error('[orders/mark-paid] failed:', err);
+    await logError({ source: 'order', action: 'orders/mark-paid', message: 'checking the payment failed', error: err, context: { orderId } });
     res.status(500).json({ error: 'Төлбөр шалгах үед алдаа гарлаа. Дахин оролдоно уу.' });
   }
 }

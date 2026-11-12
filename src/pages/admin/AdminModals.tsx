@@ -25,6 +25,7 @@ import {
 import type { CustomerTransactionItem, CustomerTransactionPaymentMethod, CustomerTransactionRecord } from "../../lib/customerTransactions";
 import type { UserRole } from "../../lib/userProfiles";
 
+import { reportClientError } from "../../lib/errorLogs";
 /**
  * A seller sale/return is booked from a bare `<input type="date">` value, but the record
  * should still carry a real time of day (for sorting and for showing hour:minute in the
@@ -2302,6 +2303,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           });
           setPackagingPurchaseModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setPackagingPurchaseError(err instanceof Error ? err.message : String(err));
         } finally {
           setPackagingPurchaseSaving(false);
@@ -2458,6 +2460,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           });
           setPackagingUsageModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setPackagingUsageError(
             err instanceof Error && err.message === "INSUFFICIENT_STOCK"
               ? copy.rawMaterialUsageInsufficientStock
@@ -2550,6 +2553,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           await saveRawMaterial(rawMaterialModal.draft);
           setRawMaterialModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setRawMaterialError(err instanceof Error ? err.message : String(err));
         } finally {
           setRawMaterialSaving(false);
@@ -2676,6 +2680,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           });
           setRawMaterialPurchaseModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setRawMaterialPurchaseError(err instanceof Error ? err.message : String(err));
         } finally {
           setRawMaterialPurchaseSaving(false);
@@ -2832,6 +2837,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           });
           setRawMaterialUsageModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setRawMaterialUsageError(
             err instanceof Error && err.message === "INSUFFICIENT_STOCK"
               ? copy.rawMaterialUsageInsufficientStock
@@ -3003,6 +3009,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
           setProductionBatchModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setProductionBatchError(err instanceof Error ? err.message : String(err));
         } finally {
           setProductionBatchSaving(false);
@@ -3325,6 +3332,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           });
           setProductionAdvanceModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           const msg = err instanceof Error ? err.message : String(err);
           if (msg.startsWith("INSUFFICIENT:")) {
             setProductionAdvanceError(`${copy.productionAdvanceInsufficient} ${msg.slice("INSUFFICIENT:".length)}`);
@@ -3528,6 +3536,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
           setProductionRecipeModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setProductionRecipeError(err instanceof Error ? err.message : String(err));
         } finally {
           setProductionRecipeSaving(false);
@@ -3799,6 +3808,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
           }
           setCustomerModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setCustomerError(err instanceof Error ? err.message : String(err));
         } finally {
           setCustomerSavingState(false);
@@ -4233,6 +4243,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
 
           setTransactionModal(null);
         } catch (err) {
+          reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
           setTransactionError(err instanceof Error ? err.message : String(err));
         } finally {
           setTransactionSavingState(false);
@@ -5023,6 +5034,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             }
             setTxPaymentModal(null);
           } catch (err) {
+            reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
             setTxPaymentError(err instanceof Error ? err.message : String(err));
           } finally {
             setTxPaymentSaving(false);
@@ -5319,6 +5331,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             }
             setSellerSaleModal(null);
           } catch (err) {
+            reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
             setSellerSaleError(err instanceof Error ? err.message : String(err));
           } finally {
             setSellerSaleSaving(false);
@@ -5716,6 +5729,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
             });
             setSellerTxEditModal(null);
           } catch (err) {
+            reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
             setSellerTxEditError(err instanceof Error ? err.message : String(err));
           } finally {
             setSellerTxEditSaving(false);
@@ -5924,6 +5938,7 @@ export default function AdminModals({ ctx }: { ctx: AdminCtx }) {
               await confirmModal.onConfirm();
               setConfirmModal(null);
             } catch (err) {
+              reportClientError({ source: "admin", action: "admin/form-save", error: err, message: "An admin form could not be saved", severity: "warning" });
               setConfirmModalError(err instanceof Error ? err.message : (language === "MN" ? "Алдаа гарлаа. Дахин оролдоно уу." : "An error occurred. Please try again."));
             } finally {
               setConfirmModalLoading(false);

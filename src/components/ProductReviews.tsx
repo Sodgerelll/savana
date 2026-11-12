@@ -10,6 +10,7 @@ import {
   type ProductReview,
 } from "../lib/productReviews";
 import { formatStoreDate } from "../lib/storefrontHelpers";
+import { reportClientError } from "../lib/errorLogs";
 import "./ProductReviews.css";
 
 export function StarRating({ value, size = 16 }: { value: number; size?: number }) {
@@ -72,7 +73,8 @@ export default function ProductReviews({ productId, productName, reviews }: Prod
       await createProductReview({ productId, productName, uid: user.uid, authorName, rating, text });
       setStatus("sent");
       setOwnReviewState({ key: ownReviewKey, review: await getOwnReview(productId, user.uid) });
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "account", action: "review/submit", error, message: "A review could not be saved", context: { productId } });
       setStatus("error");
     }
   };

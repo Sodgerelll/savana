@@ -51,16 +51,18 @@ export default function MessagesPage({ ctx }: { ctx: AdminCtx }) {
             <thead>
               <tr>
                 <th>{copy.receivedAt}</th>
-                <th>{copy.senderName}</th>
-                <th>{copy.senderEmail}</th>
-                <th>{copy.messageSubject}</th>
-                <th>{copy.messageBody}</th>
+                <th>
+                  {copy.senderName} / {copy.senderEmail}
+                </th>
+                <th>
+                  {copy.messageSubject} / {copy.messageBody}
+                </th>
               </tr>
             </thead>
             <tbody>
               {contactMessages.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="admin-table-empty">
+                  <td colSpan={3} className="admin-table-empty">
                     {copy.emptyMessages}
                   </td>
                 </tr>
@@ -76,22 +78,16 @@ export default function MessagesPage({ ctx }: { ctx: AdminCtx }) {
                     <td>
                       <div className="admin-table-primary">
                         <strong>{contactMessage.name}</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary">
-                        <a className="admin-contact-email-link" href={`mailto:${contactMessage.email}`}>
-                          {contactMessage.email}
-                        </a>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="admin-table-primary admin-table-cell-wrap">
-                        <strong>{contactMessage.subject}</strong>
+                        <small>
+                          <a className="admin-contact-email-link" href={`mailto:${contactMessage.email}`}>
+                            {contactMessage.email}
+                          </a>
+                        </small>
                       </div>
                     </td>
                     <td>
                       <div className="admin-table-primary admin-table-cell-wrap admin-contact-message-cell">
+                        <strong>{contactMessage.subject}</strong>
                         <p className="admin-contact-message-text">{contactMessage.message}</p>
                       </div>
                     </td>

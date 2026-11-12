@@ -25,6 +25,7 @@ import {
   type UserRole,
 } from "../lib/userProfiles";
 
+import { reportClientError } from "../lib/errorLogs";
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
@@ -124,14 +125,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   setProfile(syncedProfile);
                 }
               })
-              .catch(() => {
+              .catch((error) => {
+                reportClientError({ source: "account", action: "account/profile-create", error, message: "A new account profile could not be created" });
                 if (active) {
                   setProfile(null);
                 }
               });
           }
         },
-        onError: () => {
+        onError: (error) => {
+          reportClientError({ source: "account", action: "account/profile-read", error, message: "An account profile could not be read" });
           if (active) {
             setProfile(null);
           }
@@ -166,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // A failed redirect result leaves the user signed out; the login page
         // remains available, so there is nothing further to recover here.
         console.error("Google redirect sign-in failed:", error);
+        reportClientError({ source: "auth", action: "auth/google-redirect", error, message: "Google redirect sign-in failed" });
       });
   }, []);
 
@@ -184,9 +188,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email?: string | null;
     } = {},
   ) => {
-    const syncedProfile = await syncUserProfile(authenticatedUser, options);
-    setProfile(syncedProfile);
-    return syncedProfile;
+    try {
+      const syncedProfile = await syncUserProfile(authenticatedUser, options);
+      setProfile(syncedProfile);
+      return syncedProfile;
+    } catch (error) {
+      reportClientError({
+        source: "account",
+        action: "account/profile-sync",
+        error,
+        message: "The account details could not be saved after signing in",
+        context: { method: options.currentMethod ?? null },
+      });
+      throw error;
+    }
   };
 
   const getPhoneLoginEmail = (phoneNumber: string) => {

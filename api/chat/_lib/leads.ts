@@ -1,3 +1,4 @@
+import { logError } from '../../_lib/errorLog.js';
 // Capturing chat requests as leads, and the phone/name parsing that fills them.
 //
 // A lead is deliberately NOT an order: the bot never creates one in `orders`.
@@ -148,7 +149,7 @@ export async function findOpenLead(db: any, conversationId: string): Promise<
 
     return { id: snapshot.docs[0].id, data: snapshot.docs[0].data() };
   } catch (err) {
-    console.error('[chat/leads] open lead lookup failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/leads', message: 'open lead lookup failed', error: err });
     return null;
   }
 }

@@ -9,6 +9,7 @@ import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 import { isGa4Configured, runBatchReport } from './_gaClient.js';
 import { requirePrivilegedCaller } from '../chat/_lib/auth.js';
 
+import { logError } from '../_lib/errorLog.js';
 interface ChartData {
   trend: Array<{ date: string; sessions: number }>;
   devices: Array<{ device: string; sessions: number }>;
@@ -154,7 +155,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     res.status(200).json(value);
   } catch (err) {
-    console.error('[analytics/charts] failed:', err);
+    await logError({ source: 'system', action: 'analytics/charts', message: 'failed', error: err });
     if (_memoryCache) {
       res.status(200).json(_memoryCache.value);
       return;

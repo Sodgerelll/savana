@@ -20,6 +20,7 @@ import {
 } from './facebook.js';
 import { markEventProcessed } from './guards.js';
 
+import { logError } from '../../_lib/errorLog.js';
 export const COMMENT_LOG_COLLECTION = 'chat_comment_replies';
 
 /** Public replies stay short — they sit under a post for everyone to read. */
@@ -137,7 +138,7 @@ export async function handleCommentEvent(
       maxOutputTokens: PUBLIC_REPLY_MAX_TOKENS,
     });
   } catch (err) {
-    console.error('[chat/comments] generation failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/comments', message: 'generation failed', error: err });
     return false;
   }
 
@@ -145,7 +146,7 @@ export async function handleCommentEvent(
   // public post, where an echoed instruction is visible to everyone who sees
   // the post and stays visible; the comment is left for a person instead.
   if (looksLikeOurOwnInstructions(reply, [systemPrompt])) {
-    console.error('[chat/comments] model echoed its own instructions; nothing posted');
+    await logError({ source: 'chat', action: 'chat/comments', message: 'model echoed its own instructions; nothing posted' });
     return false;
   }
 

@@ -14,6 +14,7 @@ const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 // Type-only, so nothing at runtime crosses between these two modules.
 import type { PromptPost } from './buildPrompt.js';
+import { logError } from '../../_lib/errorLog.js';
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Messenger caps a text message near 2000 chars; stay clear of the edge. */
@@ -144,7 +145,7 @@ async function graphPost(
     if (!res.ok) {
       const payload = (await res.json().catch(() => ({}))) as any;
       const detail = payload?.error?.message ?? `HTTP ${res.status}`;
-      console.error(`[chat/facebook] POST ${path} failed: ${detail}`);
+      await logError({ source: 'chat', action: 'chat/facebook', message: `Facebook refused POST ${path}: ${detail}`, context: { path, status: res.status } });
       if (throwOnError) {
         throw new Error(`Facebook рүү илгээж чадсангүй: ${detail}`);
       }

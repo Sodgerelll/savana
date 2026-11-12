@@ -16,6 +16,7 @@ import { sendText } from './facebook.js';
 import { checkRateLimit } from './guards.js';
 import { LEADS_COLLECTION } from './leads.js';
 
+import { logError } from '../../_lib/errorLog.js';
 /** How long a lead may sit without a phone number before we nudge. */
 export const NUDGE_AFTER_MS = 20 * 60 * 1000;
 /** Past this age the moment has gone; nudging then is just noise. */
@@ -112,7 +113,7 @@ export async function sweepStaleLeads(
       .get();
     candidates = snapshot.docs ?? [];
   } catch (err) {
-    console.error('[chat/followUp] scan failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/followUp', message: 'scan failed', error: err });
     return result;
   }
 

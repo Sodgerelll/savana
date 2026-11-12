@@ -16,6 +16,7 @@ import { appendMessage, setConversationStatus } from './_lib/conversation.js';
 import { sendText } from './_lib/facebook.js';
 import { loadChatSettings } from './_lib/settings.js';
 
+import { logError } from '../_lib/errorLog.js';
 export const config = { maxDuration: 30 };
 
 const MAX_REPLY_LENGTH = 2000;
@@ -119,7 +120,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     // Facebook's own wording reaches the admin: "could not send" alone gave
     // nobody anything to act on, and this endpoint is already admin-only.
     const detail = (err as Error).message;
-    console.error('[chat/reply] failed:', detail);
+    await logError({ source: 'chat', action: 'chat/reply', message: 'staff reply could not be sent', error: detail });
     res.status(502).json({ error: detail || 'Мессеж илгээж чадсангүй. Дахин оролдоно уу.' });
   }
 }

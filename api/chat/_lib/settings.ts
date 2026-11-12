@@ -7,6 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { resolvePageToken } from './pageToken.js';
 
+import { logError } from '../../_lib/errorLog.js';
 export const CHAT_SETTINGS_PATH = 'chat_settings/main';
 
 /**
@@ -252,7 +253,7 @@ export async function loadChatSettings(db: any): Promise<ServerChatSettings> {
     const settings = applyFacebookEnv(deserializeServerChatSettings(snapshot.exists ? snapshot.data() : null));
     return await withPageToken(db, settings);
   } catch (err) {
-    console.error('[chat/settings] load failed:', (err as Error).message);
+    await logError({ source: 'chat', action: 'chat/settings', message: 'load failed', error: err });
     return applyFacebookEnv(DEFAULT_SERVER_CHAT_SETTINGS);
   }
 }

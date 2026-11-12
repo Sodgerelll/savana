@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { createContactMessage } from "../lib/contactMessages";
 
+import { reportClientError } from "../lib/errorLogs";
 /**
  * "Let me know when it's back" for a sold-out product. The request lands in the
  * admin Messages inbox as an ordinary contact message, so there is nothing new
@@ -33,7 +34,8 @@ export default function RestockNotify({ productName, variant }: { productName: s
         message: `"${itemLabel}" бүтээгдэхүүн дахин ирэхэд ${contact} руу мэдэгдэнэ үү.`,
       });
       setStatus("sent");
-    } catch {
+    } catch (error) {
+      reportClientError({ source: "storefront", action: "restock/notify", error, message: "A restock request could not be sent" });
       setStatus("error");
     }
   };

@@ -50,6 +50,7 @@ import {
   type RetailReturnRecord,
 } from "./returns";
 
+import { reportClientError } from "./errorLogs";
 export const ORDERS_COLLECTION = "orders";
 
 /**
@@ -542,6 +543,14 @@ export async function registerOrderContact(orderId: string): Promise<void> {
     });
   } catch (error) {
     console.warn("[orders] customer directory sync failed:", error);
+    reportClientError({
+      source: "account",
+      action: "checkout/register-contact",
+      error,
+      message: "The buyer could not be added to the customer directory",
+      severity: "warning",
+      context: { orderId },
+    });
   }
 }
 

@@ -2,7 +2,31 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage, type Language } from "../context/LanguageContext";
+import { reportClientError } from "../lib/errorLogs";
 import "./Auth.css";
+
+/** Sign-in failures that are the person's own doing, not the system's: not worth an admin's attention. */
+const EXPECTED_AUTH_CODES = new Set([
+  "auth/wrong-password",
+  "auth/user-not-found",
+  "auth/invalid-credential",
+  "auth/invalid-email",
+  "auth/invalid-login-credentials",
+  "auth/email-already-in-use",
+  "auth/phone-already-in-use",
+  "auth/weak-password",
+  "auth/missing-password",
+  "auth/missing-phone-number",
+  "auth/invalid-phone-number",
+  "auth/popup-closed-by-user",
+  "auth/cancelled-popup-request",
+  "auth/popup-blocked",
+  "auth/network-request-failed",
+  "auth/too-many-requests",
+  "auth/user-disabled",
+  "phonePasswordRequired",
+  "passwordMismatch",
+]);
 
 type AuthMode = "login" | "register";
 type CredentialTab = "google" | "phone" | "guest";
@@ -171,6 +195,12 @@ export default function Login() {
         : undefined;
 
     setError(getAuthErrorMessage(code, language));
+
+    // A wrong password or a closed popup is the person, not the system; anything else is
+    // worth an admin knowing about.
+    if (!code || !EXPECTED_AUTH_CODES.has(code)) {
+      reportClientError({ source: "auth", action: "login/sign-in", error: authError, message: code ?? "Sign-in failed" });
+    }
   };
 
   const runAuthAction = async (action: string, callback: () => Promise<void>) => {

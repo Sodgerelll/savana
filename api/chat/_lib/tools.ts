@@ -14,6 +14,7 @@ import {
 } from './buildPrompt.js';
 import type { CarouselCard, QuickReply } from './facebook.js';
 
+import { logError } from '../../_lib/errorLog.js';
 export const TOOL_NAMES = {
   SHOW_PRODUCTS: 'show_products',
   SHOW_PROMOTIONS: 'show_promotions',
@@ -684,7 +685,7 @@ export async function runTool(
           return { text: 'Аль бүтээгдэхүүнийг захиалах вэ? Нэрийг нь хэлж өгөөч 🌿' };
         }
 
-        console.error('[chat/tools] confirm_order failed:', (err as Error).message);
+        await logError({ source: 'chat', action: 'chat/tools', message: 'confirm_order failed', error: err });
         return {
           text: 'Захиалга үүсгэж чадсангүй. Ажилтан руу холбоно уу ☎️',
           handoverReason: `Захиалга үүсгэхэд алдаа гарсан: ${(err as Error).message}`,

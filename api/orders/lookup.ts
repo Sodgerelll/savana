@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAdminFirestore } from '../bonum/_firebaseAdmin.js';
 
+import { logError } from '../_lib/errorLog.js';
 export default async function handler(req: any, res: any): Promise<void> {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -58,7 +59,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       createdAt: data.createdAt ?? null,
     });
   } catch (err) {
-    console.error('[orders/lookup] failed:', err);
+    await logError({ source: 'order', action: 'orders/lookup', message: 'order lookup failed', error: err });
     res.status(500).json({ error: 'Internal error' });
   }
 }

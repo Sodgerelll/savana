@@ -15,6 +15,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHash } from 'node:crypto';
 
+import { logError } from './errorLog.js';
 export const PUSH_SUBSCRIPTIONS_COLLECTION = 'pushSubscriptions';
 
 /** Mirrors isPrivilegedRole() in src/lib/userProfiles.ts — the roles that may read /orders. */
@@ -181,7 +182,7 @@ export async function notifyAdmins(db: any, payload: PushPayload): Promise<numbe
           if (status === 404 || status === 410) {
             await db.collection(PUSH_SUBSCRIPTIONS_COLLECTION).doc(id).delete().catch(() => undefined);
           } else {
-            console.warn(`[push] send failed (${Number.isFinite(status) ? status : 'network'}):`, (err as Error).message);
+            await logError({ source: 'notification', action: 'push/send', message: `push send failed (${Number.isFinite(status) ? status : 'network'})`, error: err, severity: 'warning' });
           }
           return false;
         }
@@ -189,7 +190,7 @@ export async function notifyAdmins(db: any, payload: PushPayload): Promise<numbe
     );
     return outcomes.filter(Boolean).length;
   } catch (err) {
-    console.error('[push] notify failed:', err);
+    await logError({ source: 'notification', action: 'push', message: 'notify failed', error: err });
     return 0;
   }
 }
@@ -210,7 +211,7 @@ async function notifyAboutOrder(
     }
     await notifyAdmins(db, build(orderId, snapshot.data() as Record<string, any>));
   } catch (err) {
-    console.error('[push] could not read order for notification:', err);
+    await logError({ source: 'notification', action: 'push', message: 'could not read order for notification', error: err });
   }
 }
 
