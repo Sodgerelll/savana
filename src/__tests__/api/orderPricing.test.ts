@@ -25,6 +25,8 @@ function inputs(overrides: Partial<OrderPricingInputs> = {}): OrderPricingInputs
       ],
       [3, { name: "Хуучин", category: "soap", price: 9000, status: "inactive" }],
       [4, { name: "Үнэгүй", category: "soap", price: 0 }],
+      // Base price deliberately not the size's: the base figure must never be charged.
+      [5, { name: "Чага саван", category: "soap", price: 8800, variants: [{ name: "95 гр", price: 12800 }] }],
     ]),
     discounts: [],
     settings: { shippingFee: 8000, freeShippingThreshold: 0, vatMode: "none" },
@@ -56,6 +58,33 @@ describe("priceWebOrder", () => {
     const { items } = priceWebOrder([{ productId: 2, variant: "500 мл", quantity: 1 }], inputs());
 
     expect(items[0]).toMatchObject({ unitPrice: 25000, variant: "500 мл" });
+  });
+
+  it("never charges a sized product's base price for a line without a size", () => {
+    // One size: that size, at its own price, named on the line so the paid step moves its stock.
+    const single = priceWebOrder([{ productId: 5, quantity: 2 }], inputs());
+    expect(single.items[0]).toMatchObject({ variant: "95 гр", unitPrice: 12800, lineTotal: 25600 });
+    expect(single.totals.grandTotal).toBe(25600 + 8000);
+
+    // Several sizes: the shopper has to choose.
+    expect(() => priceWebOrder([{ productId: 2, quantity: 1 }], inputs())).toThrow(
+      expect.objectContaining({ code: "VARIANT_REQUIRED" }),
+    );
+  });
+
+  it("invoices a mixed basket for the sum of every line's own price", () => {
+    const { items, totals } = priceWebOrder(
+      [
+        { productId: 1, quantity: 3 },
+        { productId: 2, variant: "250 мл", quantity: 1 },
+        { productId: 2, variant: "500 мл", quantity: 2 },
+        { productId: 5, variant: "95 гр", quantity: 1 },
+      ],
+      inputs(),
+    );
+
+    expect(items.map((item) => item.lineTotal)).toEqual([30000, 15000, 50000, 12800]);
+    expect(totals).toMatchObject({ subtotal: 107800, shippingFee: 8000, grandTotal: 115800 });
   });
 
   it("applies the live discount and records what it saved", () => {
@@ -115,7 +144,29 @@ describe("priceWebOrder", () => {
   it("refuses an order below the shop's delivery minimum", () => {
     expect(() =>
       priceWebOrder([{ productId: 1, quantity: 1 }], inputs({ settings: { minOrderForDelivery: 20000 } })),
-    ).toThrow(OrderPricingError);
+    ).toThrow(expect.objectContaining({ code: "BELOW_MINIMUM" }));
+  });
+
+  describe("pickup", () => {
+    const shop = { shippingFee: 8000, minOrderForDelivery: 40000 };
+
+    it("lets an order below the delivery minimum be collected, with no delivery fee", () => {
+      const { totals } = priceWebOrder([{ productId: 1, quantity: 1 }], inputs({ settings: shop }), "pickup");
+
+      expect(totals).toMatchObject({ subtotal: 10000, shippingFee: 0, grandTotal: 10000 });
+    });
+
+    it("charges no delivery fee on a collected order above the minimum either", () => {
+      const { totals } = priceWebOrder([{ productId: 1, quantity: 5 }], inputs({ settings: shop }), "pickup");
+
+      expect(totals).toMatchObject({ subtotal: 50000, shippingFee: 0, grandTotal: 50000 });
+    });
+
+    it("delivers from the minimum on, for the fee", () => {
+      const { totals } = priceWebOrder([{ productId: 1, quantity: 4 }], inputs({ settings: shop }), "delivery");
+
+      expect(totals).toMatchObject({ subtotal: 40000, shippingFee: 8000, grandTotal: 48000 });
+    });
   });
 
   it("refuses unknown, inactive and unpriced products, unknown variants and bad quantities", () => {

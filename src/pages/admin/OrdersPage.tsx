@@ -246,8 +246,17 @@ export default function OrdersPage({ ctx }: { ctx: AdminCtx }) {
                     </td>
                     <td>
                       <div className="admin-table-primary">
-                        <strong>{order.address.districtOrSoum || "-"}</strong>
-                        <small>{order.address.region || "-"}</small>
+                        {order.fulfillment === "pickup" ? (
+                          <>
+                            <strong>{language === "MN" ? "Өөрөө ирж авна" : "Pickup"}</strong>
+                            <small>{language === "MN" ? "Хүргэлтгүй" : "No delivery"}</small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>{order.address.districtOrSoum || "-"}</strong>
+                            <small>{order.address.region || "-"}</small>
+                          </>
+                        )}
                       </div>
                     </td>
                     <td>

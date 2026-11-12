@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { useStorefront } from "../../context/StorefrontContext";
@@ -105,6 +106,7 @@ export default function ChatWidget() {
   const { language } = useLanguage();
   const { user } = useAuth();
   const { addItem, setIsCartOpen } = useCart();
+  const navigate = useNavigate();
   const copy = COPY[language === "EN" ? "EN" : "MN"];
 
   const [config, setConfig] = useState<{ enabled: boolean; welcomeMessage: string } | null>(null);
@@ -280,6 +282,23 @@ export default function ChatWidget() {
     const product = products.find((entry) => entry.id === card.id);
     if (!product) {
       setError(copy.failed);
+      return;
+    }
+
+    // A variant product must go in with its size: without one the cart prices it at
+    // the base price and checks stock against the product total, and the order then
+    // fails when stock is taken. One buyable size is added as that size; a real
+    // choice is left to the product page.
+    if (product.variants?.length) {
+      const buyable = product.variants.filter(
+        (variant) => Number(variant.quantity ?? 0) - Number(variant.soldCount ?? 0) > 0,
+      );
+      if (buyable.length !== 1) {
+        navigate(`/product/${product.id}`);
+        return;
+      }
+      addItem(product, 1, buyable[0].name);
+      setIsCartOpen(true);
       return;
     }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, ChevronLeft, HandHeart, Leaf, PackageCheck, QrCode, RefreshCcw, ShieldCheck, Trash2, Truck, WalletCards } from "lucide-react";
+import { CheckCircle2, ChevronLeft, Clock, HandHeart, Leaf, MapPin, PackageCheck, Phone, QrCode, RefreshCcw, ShieldCheck, Store, Trash2, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -11,11 +11,14 @@ import {
   OrderInvoiceError,
   registerOrderContact,
   requestOrderInvoice,
+  type OrderFulfillment,
   type OrderItemPayload,
   type OrderPaymentPayload,
   type OrderTotalsPayload,
 } from "../lib/orders";
 import { applyDiscount, formatStorePrice, getActiveDiscount, getProductPrimaryImage } from "../lib/storefrontHelpers";
+import { SHOP_HOURS, SHOP_MAP_EMBED_SRC, SHOP_MAP_LINK } from "../lib/shopLocation";
+import { resolveFulfillment } from "../lib/fulfillment";
 import { useStorefront } from "../context/StorefrontContext";
 import { calculateVat } from "../lib/vat";
 import "./Checkout.css";
@@ -35,6 +38,7 @@ type CheckoutTotals = OrderTotalsPayload;
 interface CheckoutOrderState {
   id: string;
   orderNumber: string;
+  fulfillment: OrderFulfillment;
   items: OrderItemPayload[];
   totals: CheckoutTotals;
   payment: OrderPaymentPayload;
@@ -56,6 +60,7 @@ export default function Checkout() {
   const [paymentQrUrl, setPaymentQrUrl] = useState("");
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [paymentFeedback, setPaymentFeedback] = useState("");
+  const [fulfillmentChoice, setFulfillmentChoice] = useState<OrderFulfillment>("delivery");
   const [formState, setFormState] = useState<CheckoutFormState>({
     fullName: "",
     phoneNumber: "",
@@ -107,9 +112,9 @@ export default function Checkout() {
           sessionNotReady: "Checkout session хараахан бэлэн болоогүй байна. Түр хүлээгээд дахин оролдоно уу.",
           orderNotesHeading: "Захиалгын нөхцөл",
           orderNotes: [
-            "Та захиалсан барааны төлбөрөө 100% урьдчилан шилжүүлснээр захиалга баталгаажна. Төлбөр дутуу хийгдсэн тохиолдолд хүргэлт хийгдэх боломжгүй болохыг анхаарна уу.",
-            "Төлбөр баталгаажсанаас хойш 24-48 цагийн дотор хүргэнэ. Үнийн дүн 40,000₮-өөс дээш худалдан авалтад хүргэлт гарна. Хүргэлтийн төлбөр 5,000₮. Бүх нийтийн амралтын өдрүүдэд хүргэлт хийгдэхгүй болохыг анхаарна уу.",
-            "Хүргэлттэй холбоотой лавлах утас: 77770081.",
+            "Та захиалсан барааны төлбөрөө 100% урьдчилан шилжүүлснээр захиалга баталгаажна. Төлбөр дутуу хийгдсэн тохиолдолд хүргэлт хийгдэх боломжгүй болохыг анхаарна уу!",
+            "Төлбөр баталгаажсанаас хойш 24-48 цагийн дотор хүргэнэ. Үнийн дүн 40,000₮-өөс дээш худалдан авалтад хүргэлт гарна. Хүргэлтийн төлбөр 8,000₮. 40,000₮ хүрээгүй захиалгыг манай байрнаас өөрөө ирж авна. Бүх нийтийн амралтын өдрүүдэд хүргэлт хийгдэхгүй болохыг анхаарна уу!",
+            "Хүргэлттэй холбоотой лавлах утас: 77770081",
           ],
           stepsLabel: "Checkout алхмууд",
           deliveryTab: "Хаяг, хүргэлт",
@@ -178,7 +183,7 @@ export default function Checkout() {
           orderNotesHeading: "Order notes",
           orderNotes: [
             "Your order is confirmed only after the full 100% prepayment is received. Please note that delivery cannot be completed if the payment is incomplete.",
-            "Delivery is completed within 24-48 hours after payment confirmation. Delivery is available for purchases above 40,000₮. The delivery fee is 5,000₮. Please note that deliveries are not made on public holidays.",
+            "Delivery is completed within 24-48 hours after payment confirmation. Delivery is available for purchases above 40,000₮. The delivery fee is 8,000₮. Orders under 40,000₮ are picked up from our location. Please note that deliveries are not made on public holidays.",
             "Delivery hotline: 77770081.",
           ],
           stepsLabel: "Checkout steps",
@@ -241,14 +246,26 @@ export default function Checkout() {
     () => liveSummaryItems.reduce((sum, s, i) => sum + (items[i].unitPrice - s.unitPrice) * s.quantity, 0),
     [liveSummaryItems, items],
   );
+  // What the goods come to, before delivery — the figure the delivery minimum is set against.
+  const itemsSubtotal = totalPrice - discountSavings;
+  const minOrderForDelivery = settings.minOrderForDelivery;
+  // Below the shop's minimum it does not deliver; the shopper collects the order instead,
+  // and the server prices it the same way (api/_lib/orderPricing.ts).
+  const {
+    deliveryAvailable,
+    amountToDelivery,
+    fulfillment: liveFulfillment,
+  } = resolveFulfillment(itemsSubtotal, minOrderForDelivery, fulfillmentChoice);
   const liveTotals = useMemo<CheckoutTotals>(
     () => {
-      const subtotal = totalPrice - discountSavings;
+      const subtotal = itemsSubtotal;
       // Free above the threshold the shop set — which is what its own answer to
       // "how much is delivery" has always told customers, while the checkout
       // charged the flat fee regardless. 0 means no such promise was made.
+      // Collecting the order costs nothing.
       const chargedShipping =
-        settings.freeShippingThreshold > 0 && subtotal >= settings.freeShippingThreshold
+        liveFulfillment === "pickup" ||
+        (settings.freeShippingThreshold > 0 && subtotal >= settings.freeShippingThreshold)
           ? 0
           : shippingFee;
       // НӨАТ follows the shop-wide setting. Catalogue prices are shown to the shopper as
@@ -267,10 +284,14 @@ export default function Checkout() {
         vatAmount,
       };
     },
-    [shippingFee, totalPrice, discountSavings, settings.vatMode, settings.freeShippingThreshold],
+    [shippingFee, itemsSubtotal, discountSavings, liveFulfillment, settings.vatMode, settings.freeShippingThreshold],
   );
   const summaryItems = pendingOrder?.items ?? liveSummaryItems;
   const summaryTotals = pendingOrder?.totals ?? liveTotals;
+  const fulfillment = pendingOrder?.fulfillment ?? liveFulfillment;
+  const isPickup = fulfillment === "pickup";
+  const contactPhone = settings.contactPhone.trim();
+  const shopHours = SHOP_HOURS[language === "MN" ? "MN" : "EN"];
   const isOrderLocked = Boolean(pendingOrder);
   const isPaymentStep = activeStep === "payment";
   const isPaid = pendingOrder?.payment.status === "paid";
@@ -416,13 +437,13 @@ export default function Checkout() {
       return;
     }
 
-    // The shop's own floor for a delivered order. The server enforces it as well; checking
-    // here saves the shopper a round trip and an order that could never be invoiced.
-    if (settings.minOrderForDelivery > 0 && liveTotals.subtotal < settings.minOrderForDelivery) {
+    // The shop's own floor for a delivered order. The checkout already switches to pickup
+    // below it and the server enforces it as well; this only guards the order it sends.
+    if (liveFulfillment === "delivery" && !deliveryAvailable) {
       setSubmitError(
         language === "MN"
-          ? `${formatStorePrice(settings.minOrderForDelivery)}-өөс доош дүнтэй захиалгыг хүргэх боломжгүй.`
-          : `Orders under ${formatStorePrice(settings.minOrderForDelivery)} cannot be delivered.`,
+          ? `${formatStorePrice(minOrderForDelivery)}-өөс доош дүнтэй захиалгыг хүргэх боломжгүй. Өөрөө ирж авах сонголтыг сонгоно уу.`
+          : `Orders under ${formatStorePrice(minOrderForDelivery)} cannot be delivered. Please choose pickup.`,
       );
       return;
     }
@@ -449,13 +470,19 @@ export default function Checkout() {
           email: profile?.email ?? user.email ?? null,
           note: formState.note.trim(),
         },
-        address: {
-          region: DEFAULT_ADDRESS_REGION,
-          districtOrSoum: formState.districtOrSoum,
-          khorooOrBag: formState.khorooOrBag,
-          streetAddress: formState.streetAddress.trim(),
-          additionalAddress: formState.additionalAddress.trim(),
-        },
+        fulfillment: liveFulfillment,
+        // A collected order has nowhere to go; the district and khoroo pickers fill
+        // themselves in, so they are left out rather than saved as an address.
+        address:
+          liveFulfillment === "pickup"
+            ? { region: "", districtOrSoum: "", khorooOrBag: "", streetAddress: "", additionalAddress: "" }
+            : {
+                region: DEFAULT_ADDRESS_REGION,
+                districtOrSoum: formState.districtOrSoum,
+                khorooOrBag: formState.khorooOrBag,
+                streetAddress: formState.streetAddress.trim(),
+                additionalAddress: formState.additionalAddress.trim(),
+              },
         items: nextItems,
         totals: nextTotals,
       });
@@ -471,6 +498,7 @@ export default function Checkout() {
       setPendingOrder({
         id: result.id,
         orderNumber: result.orderNumber,
+        fulfillment: liveFulfillment,
         items: result.items,
         totals: result.totals,
         payment: result.payment,
@@ -492,6 +520,7 @@ export default function Checkout() {
         setPendingOrder({
           id: error.orderId,
           orderNumber: error.orderNumber,
+          fulfillment: liveFulfillment,
           items: nextItems,
           totals: nextTotals,
           payment: {
@@ -589,6 +618,121 @@ export default function Checkout() {
     );
   }
 
+  const isMN = language === "MN";
+  const feeText = formatStorePrice(shippingFee);
+  const minText = formatStorePrice(minOrderForDelivery);
+  const shippingLabel = isPickup ? (isMN ? "Хүлээн авах" : "Collection") : copy.shippingFee;
+  const shippingValue = isPickup
+    ? isMN ? "Өөрөө ирж авна · Үнэгүй" : "Pickup · Free"
+    : formatStorePrice(summaryTotals.shippingFee);
+
+  const pickupDetails = (
+    <div className="checkout-pickup-card">
+      <div className="checkout-pickup-head">
+        <MapPin size={18} />
+        <strong>{isMN ? "Ирж авах байршил" : "Pickup location"}</strong>
+      </div>
+      <div className="checkout-pickup-map">
+        <iframe
+          title={isMN ? "SAVANA байршил" : "SAVANA location"}
+          src={SHOP_MAP_EMBED_SRC}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
+      </div>
+      <div className="checkout-pickup-actions">
+        <a href={SHOP_MAP_LINK} target="_blank" rel="noopener noreferrer" className="btn btn-outline">
+          <MapPin size={16} />
+          {isMN ? "Газрын зураг дээр нээх" : "Open in Maps"}
+        </a>
+        {contactPhone && (
+          <a href={`tel:${contactPhone.replace(/\s+/g, "")}`} className="btn btn-outline">
+            <Phone size={16} />
+            {contactPhone}
+          </a>
+        )}
+      </div>
+      <p className="checkout-pickup-hours">
+        <Clock size={15} />
+        <span>
+          {shopHours.weekdays} {shopHours.weekdaysTime} · {shopHours.weekend} {shopHours.weekendTime}
+        </span>
+      </p>
+      <p className="checkout-pickup-note">
+        {isMN
+          ? `Ирэхээсээ өмнө ${contactPhone || "манай дугаар"} руу залгаж, захиалгын дугаараа хэлнэ үү. `
+          : `Please call ${contactPhone || "us"} before you come and give your order number. `}
+        <Link to="/contact">{isMN ? "Холбоо барих хуудас" : "Contact page"}</Link>
+      </p>
+    </div>
+  );
+
+  const fulfillmentSection = (
+    <section className="checkout-section">
+      <div className="checkout-section-head">
+        <Truck size={18} />
+        <h2>{isMN ? "Хүлээн авах арга" : "How you receive it"}</h2>
+      </div>
+
+      <div className="checkout-fulfillment-options" role="radiogroup">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={fulfillment === "delivery"}
+          className={`checkout-fulfillment-option ${fulfillment === "delivery" ? "active" : ""}`}
+          onClick={() => setFulfillmentChoice("delivery")}
+          disabled={isOrderLocked || !deliveryAvailable}
+        >
+          <Truck size={20} />
+          <span className="checkout-fulfillment-copy">
+            <strong>{isMN ? "Хүргэлт" : "Delivery"}</strong>
+            <small>
+              {deliveryAvailable
+                ? isMN ? "Төлбөр баталгаажсанаас хойш 24-48 цагт" : "Within 24-48 hours of payment"
+                : isMN ? `${minText}-өөс дээш захиалгад` : `For orders from ${minText}`}
+            </small>
+          </span>
+          <span className="checkout-fulfillment-price">{feeText}</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={fulfillment === "pickup"}
+          className={`checkout-fulfillment-option ${fulfillment === "pickup" ? "active" : ""}`}
+          onClick={() => setFulfillmentChoice("pickup")}
+          disabled={isOrderLocked}
+        >
+          <Store size={20} />
+          <span className="checkout-fulfillment-copy">
+            <strong>{isMN ? "Өөрөө ирж авах" : "Pick up yourself"}</strong>
+            <small>{isMN ? "Манай байрнаас" : "From our location"}</small>
+          </span>
+          <span className="checkout-fulfillment-price">{isMN ? "Үнэгүй" : "Free"}</span>
+        </button>
+      </div>
+
+      {!deliveryAvailable && !isOrderLocked && (
+        <div className="checkout-fulfillment-notice">
+          {isMN
+            ? `Таны захиалга ${minText} хүрээгүй тул зөвхөн манай байрнаас өөрөө ирж авах боломжтой. Дахиад ${formatStorePrice(amountToDelivery)}-ийн бараа нэмбэл ${feeText}-өөр хүргүүлж болно.`
+            : `Your order is under ${minText}, so it can only be picked up from our location. Add ${formatStorePrice(amountToDelivery)} more to have it delivered for ${feeText}.`}
+        </div>
+      )}
+      {fulfillment === "delivery" && (
+        <div className="checkout-fulfillment-notice checkout-fulfillment-notice-ok">
+          {summaryTotals.shippingFee > 0
+            ? isMN
+              ? `Хүргэлт хийгдэнэ. Хүргэлтийн төлбөр ${formatStorePrice(summaryTotals.shippingFee)} нийт дүнд нэмэгдсэн.`
+              : `Your order will be delivered. The ${formatStorePrice(summaryTotals.shippingFee)} delivery fee is included in the total.`
+            : isMN
+              ? "Хүргэлт хийгдэнэ. Энэ захиалгад хүргэлт үнэгүй."
+              : "Your order will be delivered. Delivery is free on this order."}
+        </div>
+      )}
+      {isPickup && pickupDetails}
+    </section>
+  );
+
   if (pendingOrder && isPaid) {
     return (
       <div className="checkout-page">
@@ -602,11 +746,12 @@ export default function Checkout() {
               <strong>{pendingOrder.orderNumber}</strong>
             </div>
             <div className="checkout-success-totals">
-              <span>{copy.shippingFee}</span>
-              <strong>{formatStorePrice(pendingOrder.totals.shippingFee)}</strong>
+              <span>{shippingLabel}</span>
+              <strong>{shippingValue}</strong>
               <span>{copy.grandTotal}</span>
               <strong>{formatStorePrice(pendingOrder.totals.grandTotal)}</strong>
             </div>
+            {isPickup && pickupDetails}
             <Link to="/collections" className="btn btn-primary">
               {copy.keepShopping}
             </Link>
@@ -720,9 +865,12 @@ export default function Checkout() {
                 </div>
               </section>
 
+              {fulfillmentSection}
+
+              {!isPickup && (
               <section className="checkout-section">
                 <div className="checkout-section-head">
-                  <Truck size={18} />
+                  <MapPin size={18} />
                   <h2>{copy.addressInfo}</h2>
                 </div>
 
@@ -788,6 +936,22 @@ export default function Checkout() {
                   </label>
                 </div>
               </section>
+              )}
+
+              {isPickup && (
+                <section className="checkout-section">
+                  <label className="checkout-field">
+                    <span>{isMN ? "Нэмэлт тайлбар" : "Note"}</span>
+                    <textarea
+                      value={formState.note}
+                      onChange={handleFieldChange("note")}
+                      placeholder={isMN ? "Хэзээ ирж авахаа бичиж болно." : "You can tell us when you plan to come."}
+                      rows={3}
+                      disabled={isOrderLocked}
+                    />
+                  </label>
+                </section>
+              )}
 
               <div className="checkout-trust-badges">
                 <div className="checkout-trust-badge">
@@ -845,6 +1009,10 @@ export default function Checkout() {
                     <div>
                       <span>{copy.paymentStatus}</span>
                       <strong>{pendingOrder.payment.status === "paid" ? copy.paymentPaid : copy.paymentPending}</strong>
+                    </div>
+                    <div>
+                      <span>{shippingLabel}</span>
+                      <strong>{shippingValue}</strong>
                     </div>
                   </div>
 
@@ -953,8 +1121,8 @@ export default function Checkout() {
               <strong>{formatStorePrice(summaryTotals.subtotal)}</strong>
             </div>
             <div className="checkout-summary-row">
-              <span>{copy.shippingFee}</span>
-              <strong>{formatStorePrice(summaryTotals.shippingFee)}</strong>
+              <span>{shippingLabel}</span>
+              <strong>{shippingValue}</strong>
             </div>
             <div className="checkout-summary-row total">
               <span>{copy.grandTotal}</span>

@@ -20,6 +20,7 @@ import { identifyCaller } from '../_lib/callerIdentity.js';
 import { notifyNewOrder } from '../_lib/pushNotify.js';
 import {
   OrderPricingError,
+  asFulfillment,
   loadOrderPricingInputs,
   priceWebOrder,
   type PricedOrderItem,
@@ -111,7 +112,11 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const pricing = priceWebOrder(data.items, await loadOrderPricingInputs(db, data.items, new Date()));
+    const pricing = priceWebOrder(
+      data.items,
+      await loadOrderPricingInputs(db, data.items, new Date()),
+      asFulfillment(data.fulfillment),
+    );
     const orderNumber = String(data.orderNumber ?? orderId);
 
     const invoice = await bonumPost<BonumInvoiceResponse>('/bonum-gateway/ecommerce/invoices', {

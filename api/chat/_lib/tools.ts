@@ -5,7 +5,7 @@
 // answers in prose or calls exactly one of these. Keep the descriptions written
 // for the model, not for a developer — they are the only spec it sees.
 
-import { findCatalogueProduct } from './catalogueMatch.js';
+import { findCatalogueProduct, resolveVariant } from './catalogueMatch.js';
 import {
   discountedPrice,
   formatTugrik,
@@ -321,6 +321,22 @@ export class SoldOutError extends Error {}
  */
 export class NotEnoughStockError extends Error {}
 
+/**
+ * Thrown when a product sold in several sizes reaches the order without one. Its
+ * base price is not any size's price, so the order waits for the customer to choose.
+ */
+export class VariantRequiredError extends Error {
+  readonly productName: string;
+  readonly sizes: string[];
+
+  constructor(productName: string, sizes: string[]) {
+    super(productName);
+    this.name = 'VariantRequiredError';
+    this.productName = productName;
+    this.sizes = sizes;
+  }
+}
+
 /** Mongolian mobile numbers are eight digits starting 6, 7, 8 or 9. */
 const PHONE_PATTERN = /^[6-9][0-9]{7}$/;
 
@@ -450,10 +466,8 @@ export async function runTool(
           productId: product?.id ?? null,
           // Matched against the catalogue rather than taken as typed, so a size
           // the model invented never reaches the order as though it were real.
-          variant:
-            product?.variants.find(
-              (v) => v.name.toLowerCase() === String(entry?.variant ?? '').trim().toLowerCase(),
-            )?.name ?? null,
+          // A product with one size takes it now, so the line is priced as that size.
+          variant: product ? resolveVariant(product.variants, entry?.variant).variant?.name ?? null : null,
           quantity,
         });
       }
@@ -500,6 +514,17 @@ export async function runTool(
         }
       }
 
+      // A size named for a product already set aside without one is the answer to
+      // "which size?", not a second line: the open line gives way to the sized one.
+      const sized = new Set(
+        basket.filter((item) => item.variant && item.productId !== null).map((item) => item.productId),
+      );
+      for (let i = basket.length - 1; i >= 0; i--) {
+        if (!basket[i].variant && basket[i].productId !== null && sized.has(basket[i].productId)) {
+          basket.splice(i, 1);
+        }
+      }
+
       // The whole basket goes back, not just this turn's additions: the caller
       // stores exactly what the customer was shown, so the two can never drift.
       const basketLeads = basket.map((item) => ({
@@ -513,14 +538,21 @@ export async function runTool(
       // zero would understate the total and tell the customer they are closer to
       // the delivery minimum than they are. confirm_order refuses it outright,
       // so it is dropped here rather than carried as free.
+      /** Sized products still waiting for a size: asked about, not priced. */
+      const sizeQuestions: string[] = [];
       const priced = basket.flatMap((item) => {
         const product = findCatalogueProduct(context.storefront.products, item.name, item.productId);
-        const variant = item.variant
-          ? product?.variants.find(
-              (entry) => entry.name.toLowerCase() === String(item.variant).toLowerCase(),
-            )
-          : undefined;
         if (!product) {
+          return [];
+        }
+        // Quoting the base price here and invoicing a size's price at confirm_order
+        // would tell the customer one total and put another on the QR.
+        const { variant, needsChoice } = resolveVariant(product.variants, item.variant);
+        if (needsChoice) {
+          const sizes = product.variants
+            .filter((entry) => entry.inStock && entry.price > 0)
+            .map((entry) => `${entry.name} ${formatTugrik(discountedPrice(entry.price, context.storefront.discounts, product.id))}`);
+          sizeQuestions.push(`"${product.name}" аль хэмжээгээр нь авах вэ? ${sizes.join(', ')}`);
           return [];
         }
 
@@ -555,6 +587,16 @@ export async function runTool(
             `${formatTugrik(context.storefront.shop.minOrderForDelivery)}-аас доош дүнтэй захиалгад хүргэлт хийгдэхгүй 📦`,
             'Өөр юу нэмэх вэ?',
           ].join('\n'),
+          needsOrderDetails: false,
+          leads: basketLeads,
+        };
+      }
+
+      if (sizeQuestions.length > 0) {
+        // Contact details wait until every line has a price: confirm_order would
+        // refuse the order anyway, after the customer had typed them all out.
+        return {
+          text: [...notices, ...(priced.length > 0 ? [running, ''] : []), ...sizeQuestions].join('\n'),
           needsOrderDetails: false,
           leads: basketLeads,
         };
@@ -619,6 +661,13 @@ export async function runTool(
           // there are — stock figures are the shop's business, not the buyer's.
           return {
             text: `"${err.message}" тэр тооны нөөц одоогоор хүрэлцэхгүй байна 🌿 Цөөн тоогоор захиалах уу?`,
+          };
+        }
+        if (err instanceof VariantRequiredError) {
+          return {
+            text:
+              `"${err.productName}" аль хэмжээгээр нь авах вэ? 🌿` +
+              (err.sizes.length > 0 ? `\n${err.sizes.map((size) => `• ${size}`).join('\n')}` : ''),
           };
         }
         if (err instanceof BelowDeliveryMinimumError) {

@@ -216,6 +216,16 @@
   margin-bottom: 1.5rem;
 }
 
+.pd-variants-missing .variant-btn:not(:disabled) {
+  border-color: #c0392b;
+}
+
+.pd-variant-hint {
+  margin: 0.5rem 0 0;
+  font-size: var(--fs-sm);
+  color: #c0392b;
+}
+
 .pd-size-label {
   display: flex;
   align-items: center;

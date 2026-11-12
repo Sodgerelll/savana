@@ -22,8 +22,17 @@ import {
 } from "../lib/storefrontHelpers";
 import "./ProductDetail.css";
 
+/**
+ * The route reuses one element when a related product is opened, so without a key
+ * the size, quantity and photo picked on the previous product carried over to the
+ * next one — often a size the new product does not have, which read as sold out.
+ */
 export default function ProductDetail() {
   const { id } = useParams();
+  return <ProductDetailView key={id} id={id} />;
+}
+
+function ProductDetailView({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const { addItem, items } = useCart();
   const { language, t } = useLanguage();
@@ -33,6 +42,7 @@ export default function ProductDetail() {
   const [selectedVariant, setSelectedVariant] = useState<string | undefined>();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [variantHint, setVariantHint] = useState(false);
   const productId = Number(id);
 
   useEffect(() => {
@@ -112,29 +122,54 @@ export default function ProductDetail() {
     .filter((p) => p.category === product.category && p.id !== product.id)
     .slice(0, 4);
 
-  const currentPrice = selectedVariant
-    ? product.variants?.find((v) => v.name === selectedVariant)?.price ?? product.price
+  const hasVariants = (product.variants?.length ?? 0) > 0;
+  // Units of a size that can be bought. A size without a price cannot be invoiced,
+  // so it counts as none left rather than going into the cart at 0₮.
+  const variantRemaining = (v: { price: number; quantity: number; soldCount?: number }) =>
+    Number(v.price) > 0 ? Number(v.quantity ?? 0) - Number(v.soldCount ?? 0) : 0;
+  const purchasableVariants = product.variants?.filter((v) => variantRemaining(v) > 0) ?? [];
+  // A pick only counts if it is still one of this product's sizes. When just
+  // one size can be bought there is nothing to choose, so it is chosen for the shopper:
+  // a single-size product used to leave the buy button disabled until someone clicked
+  // the only option, and nothing told them so.
+  const pickedVariant = product.variants?.some((v) => v.name === selectedVariant) ? selectedVariant : undefined;
+  const activeVariant =
+    pickedVariant ?? (purchasableVariants.length === 1 ? purchasableVariants[0].name : undefined);
+
+  const currentPrice = activeVariant
+    ? product.variants?.find((v) => v.name === activeVariant)?.price ?? product.price
     : product.price;
   const activeDiscount = getActiveDiscount(discounts, product.id, currentPrice);
   const effectivePrice = activeDiscount ? applyDiscount(currentPrice, activeDiscount) : currentPrice;
 
-  const hasVariants = (product.variants?.length ?? 0) > 0;
   // Remaining stock for the current selection (a variant must be picked first).
   const selectedRemaining = hasVariants
-    ? (selectedVariant
+    ? (activeVariant
         ? (() => {
-            const v = product.variants!.find((vv) => vv.name === selectedVariant);
-            return Number(v?.quantity ?? 0) - Number(v?.soldCount ?? 0);
+            const v = product.variants!.find((vv) => vv.name === activeVariant);
+            return v ? variantRemaining(v) : 0;
           })()
         : 0)
     : Number(product.totalStock ?? 0) - Number(product.soldCount ?? 0);
   const cartQtyForSelection =
-    items.find((i) => i.product.id === product.id && i.variant === selectedVariant)?.quantity ?? 0;
+    items.find((i) => i.product.id === product.id && i.variant === activeVariant)?.quantity ?? 0;
   const addableMax = Math.max(0, selectedRemaining - cartQtyForSelection);
-  const needsVariantSelection = hasVariants && !selectedVariant;
-  const addDisabled = needsVariantSelection || addableMax <= 0;
-
   const productSoldOut = isProductSoldOut(product);
+  const needsVariantSelection = hasVariants && !activeVariant && !productSoldOut;
+  // Still clickable while a size is missing: the click explains what is needed
+  // instead of a greyed-out button that silently ignores the shopper.
+  const addDisabled = !needsVariantSelection && addableMax <= 0;
+
+  const handleAddToCart = () => {
+    if (needsVariantSelection) {
+      setVariantHint(true);
+      document.getElementById("pd-variants")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    addItem(product, Math.min(quantity, addableMax), activeVariant);
+    setQuantity(1);
+  };
+
   const showRestockNotify = productSoldOut || (!needsVariantSelection && selectedRemaining <= 0);
   const reviewAverage = reviews.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
   const gradient = getCategoryGradient(collections, product.category);
@@ -241,16 +276,18 @@ export default function ProductDetail() {
             </div>
 
             {product.variants && product.variants.length > 0 ? (
-              <div className="pd-variants">
+              <div id="pd-variants" className={`pd-variants ${variantHint && needsVariantSelection ? "pd-variants-missing" : ""}`}>
                 <label className="pd-label">{t.variantLabel}</label>
                 <div className="variant-buttons">
                   {product.variants.map((variant) => {
-                    const remaining = variant.quantity - (variant.soldCount ?? 0);
+                    const remaining = variantRemaining(variant);
                     return (
                       <button
                         key={variant.name}
-                        className={`variant-btn ${selectedVariant === variant.name ? "active" : ""} ${remaining <= 0 ? "variant-btn-out" : ""}`}
-                        onClick={() => { setSelectedVariant(variant.name); setQuantity(1); }}
+                        type="button"
+                        className={`variant-btn ${activeVariant === variant.name ? "active" : ""} ${remaining <= 0 ? "variant-btn-out" : ""}`}
+                        aria-pressed={activeVariant === variant.name}
+                        onClick={() => { setSelectedVariant(variant.name); setQuantity(1); setVariantHint(false); }}
                         disabled={remaining <= 0}
                       >
                         <span>{variant.name} — {formatStorePrice(variant.price)}</span>
@@ -263,6 +300,11 @@ export default function ProductDetail() {
                     );
                   })}
                 </div>
+                {variantHint && needsVariantSelection && (
+                  <p className="pd-variant-hint" role="alert">
+                    {language === "MN" ? "Хэмжээгээ сонгоно уу" : "Please choose a size"}
+                  </p>
+                )}
               </div>
             ) : product.sizeLabel ? (
               <div className="pd-size-label">
@@ -295,8 +337,9 @@ export default function ProductDetail() {
             </div>
 
             <button
+              type="button"
               className="btn btn-primary pd-add-btn"
-              onClick={() => addItem(product, quantity, selectedVariant)}
+              onClick={handleAddToCart}
               disabled={addDisabled}
             >
               {needsVariantSelection
@@ -310,9 +353,9 @@ export default function ProductDetail() {
 
             {showRestockNotify && (
               <RestockNotify
-                key={`${product.id}-${selectedVariant ?? ""}`}
+                key={`${product.id}-${activeVariant ?? ""}`}
                 productName={product.name}
-                variant={productSoldOut ? undefined : selectedVariant}
+                variant={productSoldOut ? undefined : activeVariant}
               />
             )}
 

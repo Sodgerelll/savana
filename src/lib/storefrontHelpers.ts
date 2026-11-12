@@ -176,10 +176,26 @@ export function getCollectionsWithProducts(collections: Collection[], products: 
   );
 }
 
+/**
+ * Whether the product can be invoiced at all. The server refuses to raise a Bonum
+ * invoice for a line without a price (api/_lib/orderPricing.ts), so a product saved
+ * without one used to show as 0₮, go into the cart, and then fail at checkout with
+ * the order already written and no QR to pay it. Same rule the chat catalogue uses.
+ */
+export function isProductPriced(product: Product) {
+  return product.variants?.length
+    ? product.variants.some((variant) => Number(variant.price) > 0)
+    : Number(product.price) > 0;
+}
+
 export function getActiveProducts(products: Product[], collections: Collection[]) {
   const activeCollectionSlugs = new Set(getActiveCollections(collections).map((collection) => collection.slug));
   return products.filter(
-    (product) => isActiveStatus(product.status) && activeCollectionSlugs.has(product.category)
+    (product) =>
+      isActiveStatus(product.status) &&
+      activeCollectionSlugs.has(product.category) &&
+      product.name.trim().length > 0 &&
+      isProductPriced(product)
   );
 }
 

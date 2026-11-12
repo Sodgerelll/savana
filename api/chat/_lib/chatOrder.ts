@@ -15,13 +15,14 @@ import { bonumCallbackUrl, bonumPost } from '../../bonum/_client.js';
 import { notifyNewOrder } from '../../_lib/pushNotify.js';
 import { discountedPrice, type StorefrontContext } from './buildPrompt.js';
 import type { ChatChannel } from './conversation.js';
-import { findCatalogueProduct } from './catalogueMatch.js';
+import { findCatalogueProduct, resolveVariant } from './catalogueMatch.js';
 import { findOpenLead, updateChatLead } from './leads.js';
 import {
   BelowDeliveryMinimumError,
   NothingToOrderError,
   NotEnoughStockError,
   SoldOutError,
+  VariantRequiredError,
 } from './tools.js';
 
 
@@ -222,6 +223,87 @@ export async function createChatOrder(
 }
 
 /**
+ * Prices the lines a conversation gathered, from the catalogue alone.
+ *
+ * What the catalogue cannot place is left out and reported in `unmatched`; a
+ * sold-out line, too large a quantity, or a sized product whose size is still
+ * open throws, because each needs the customer's answer before anything is billed.
+ */
+export function priceChatLines(
+  rawItems: any[],
+  storefront: Pick<StorefrontContext, 'products' | 'discounts'>,
+): { items: ChatOrderItem[]; unmatched: string[] } {
+  /** Lines the catalogue has nothing for. Reported, not thrown. */
+  const unmatched: string[] = [];
+
+  const items = rawItems.flatMap((item): ChatOrderItem[] => {
+    const name = String(item?.name ?? '').trim();
+    const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
+    const product = findCatalogueProduct(storefront.products, name, item?.productId);
+
+    // One line the catalogue cannot place used to throw, and the throw took the
+    // whole order with it. A real customer lost a five-line order that way —
+    // three of the lines were fine, the phone and the address were in, and the
+    // last thing they asked was where to send the money. What we cannot place,
+    // we leave out and say so; the rest of the order goes through.
+    if (!product) {
+      unmatched.push(name || '?');
+      return [];
+    }
+
+    // A size carries its own price, so the base price would be the wrong one
+    // for every product sold in more than one.
+    // A sized product without a recognised size used to be invoiced at its base
+    // price, which for most of them is a different size's figure, and its stock
+    // was then moved on the product total rather than on any size. One size is
+    // that size; more than one is a question for the customer, not a guess.
+    const { variant, needsChoice } = resolveVariant(product.variants, item?.variant);
+    if (needsChoice) {
+      throw new VariantRequiredError(
+        product.name,
+        product.variants.filter((entry) => entry.inStock && entry.price > 0).map((entry) => entry.name),
+      );
+    }
+
+    // The catalogue is the authority on what can be sold, not the conversation:
+    // a product can sell out between the carousel and the confirmation.
+    if (variant ? !variant.inStock : !product.inStock) {
+      throw new SoldOutError(variant ? `${product.name} (${variant.name})` : product.name);
+    }
+    const available = variant ? variant.stock : product.stock;
+    if (available >= 0 && quantity > available) {
+      throw new NotEnoughStockError(product.name);
+    }
+
+    // Priced exactly as the storefront prices it: the bot announces the
+    // discount, so charging the list price would contradict what it just said.
+    const listPrice = variant ? variant.price : product.price;
+    // A size saved without a price would go on the invoice at 0₮ and the customer
+    // would pay only for the rest. Left out and named, like an unknown product.
+    if (!(listPrice > 0)) {
+      unmatched.push(variant ? `${product.name} (${variant.name})` : product.name);
+      return [];
+    }
+    const unitPrice = discountedPrice(listPrice, storefront.discounts, product.id);
+
+    return [{
+      productId: product.id,
+      name: product.name,
+      category: product.category,
+      // The photo is a data URI in Firestore; the order list resolves it the
+      // same way the carousel does, from the product id.
+      image: null,
+      variant: variant?.name ?? null,
+      quantity,
+      unitPrice,
+      lineTotal: unitPrice * quantity,
+    }];
+  });
+
+  return { items, unmatched };
+}
+
+/**
  * Turns what the conversation has gathered into a real order.
  *
  * The items come from the open lead, which start_order has been filling as the
@@ -243,59 +325,7 @@ export async function placeChatOrder(
     throw new NothingToOrderError('Захиалахыг хүссэн бүтээгдэхүүн бүртгэгдээгүй байна.');
   }
 
-  /** Lines the catalogue has nothing for. Reported, not thrown. */
-  const unmatched: string[] = [];
-
-  const items = rawItems.flatMap((item) => {
-    const name = String(item?.name ?? '').trim();
-    const quantity = Math.max(1, Math.floor(Number(item?.quantity) || 1));
-    const product = findCatalogueProduct(storefront.products, name, item?.productId);
-
-    // One line the catalogue cannot place used to throw, and the throw took the
-    // whole order with it. A real customer lost a five-line order that way —
-    // three of the lines were fine, the phone and the address were in, and the
-    // last thing they asked was where to send the money. What we cannot place,
-    // we leave out and say so; the rest of the order goes through.
-    if (!product) {
-      unmatched.push(name || '?');
-      return [];
-    }
-
-    // A size carries its own price, so the base price would be the wrong one
-    // for every product sold in more than one.
-    const wantedVariant = typeof item?.variant === 'string' ? item.variant.trim() : '';
-    const variant = wantedVariant
-      ? product.variants.find((entry) => entry.name.toLowerCase() === wantedVariant.toLowerCase())
-      : undefined;
-
-    // The catalogue is the authority on what can be sold, not the conversation:
-    // a product can sell out between the carousel and the confirmation.
-    if (variant ? !variant.inStock : !product.inStock) {
-      throw new SoldOutError(variant ? `${product.name} (${variant.name})` : product.name);
-    }
-    const available = variant ? variant.stock : product.stock;
-    if (available >= 0 && quantity > available) {
-      throw new NotEnoughStockError(product.name);
-    }
-
-    // Priced exactly as the storefront prices it: the bot announces the
-    // discount, so charging the list price would contradict what it just said.
-    const listPrice = variant ? variant.price : product.price;
-    const unitPrice = discountedPrice(listPrice, storefront.discounts, product.id);
-
-    return [{
-      productId: product.id,
-      name: product.name,
-      category: product.category,
-      // The photo is a data URI in Firestore; the order list resolves it the
-      // same way the carousel does, from the product id.
-      image: null,
-      variant: variant?.name ?? null,
-      quantity,
-      unitPrice,
-      lineTotal: unitPrice * quantity,
-    }];
-  });
+  const { items, unmatched } = priceChatLines(rawItems, storefront);
 
   if (items.length === 0) {
     throw new NothingToOrderError(

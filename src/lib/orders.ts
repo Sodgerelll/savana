@@ -107,6 +107,17 @@ export interface OrderItemPayload {
   lineTotal: number;
 }
 
+/**
+ * How the order reaches the shopper. "pickup" is collected from the shop and carries no
+ * delivery fee and no address; it is also the only option below the shop's delivery
+ * minimum. Orders written before this existed are all deliveries.
+ */
+export type OrderFulfillment = "delivery" | "pickup";
+
+export function normalizeOrderFulfillment(value: unknown): OrderFulfillment {
+  return value === "pickup" ? "pickup" : "delivery";
+}
+
 export interface OrderAddressPayload {
   region: string;
   districtOrSoum: string;
@@ -158,6 +169,8 @@ export interface CreateOrderInput {
     method: string;
   };
   customer: OrderCustomerPayload;
+  fulfillment: OrderFulfillment;
+  /** Empty for a pickup order. */
   address: OrderAddressPayload;
   items: OrderItemPayload[];
   totals: OrderTotalsPayload;
@@ -212,6 +225,7 @@ export interface OrderRecord {
   currency: string;
   auth: CreateOrderInput["auth"];
   customer: OrderCustomerPayload;
+  fulfillment: OrderFulfillment;
   address: OrderAddressPayload;
   items: OrderItemPayload[];
   totals: OrderTotalsPayload;
@@ -414,6 +428,7 @@ function deserializeOrder(snapshot: QueryDocumentSnapshot<DocumentData>): OrderR
       email: typeof customerData.email === "string" ? customerData.email : null,
       note: String(customerData.note ?? ""),
     },
+    fulfillment: normalizeOrderFulfillment(data.fulfillment),
     address: {
       region: String(addressData.region ?? ""),
       districtOrSoum: String(addressData.districtOrSoum ?? ""),
@@ -471,6 +486,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
     currency: "MNT",
     auth: input.auth,
     customer: input.customer,
+    fulfillment: input.fulfillment,
     address: input.address,
     items: input.items,
     totals: input.totals,

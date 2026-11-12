@@ -342,6 +342,7 @@ service cloud.firestore {
           "currency",
           "auth",
           "customer",
+          "fulfillment",
           "address",
           "items",
           "totals",
@@ -350,6 +351,7 @@ service cloud.firestore {
           "createdAt",
           "updatedAt",
         ])
+        && request.resource.data.get("fulfillment", "delivery") in ["delivery", "pickup"]
         && request.resource.data.source == "web"
         && request.resource.data.isManual == false
         && request.resource.data.auth.uid == request.auth.uid
@@ -359,14 +361,18 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == 1
         && request.resource.data.customer.phoneNumber is string
         && request.resource.data.customer.phoneNumber.size() > 0
-        && request.resource.data.address.region is string
-        && request.resource.data.address.region.size() > 0
-        && request.resource.data.address.districtOrSoum is string
-        && request.resource.data.address.districtOrSoum.size() > 0
-        && request.resource.data.address.khorooOrBag is string
-        && request.resource.data.address.khorooOrBag.size() > 0
-        && request.resource.data.address.streetAddress is string
-        && request.resource.data.address.streetAddress.size() > 0
+        // A pickup order is collected from the shop: no address, and no delivery fee.
+        && ((request.resource.data.get("fulfillment", "delivery") == "pickup"
+            && request.resource.data.totals.shippingFee == 0)
+          || (request.resource.data.get("fulfillment", "delivery") == "delivery"
+            && request.resource.data.address.region is string
+            && request.resource.data.address.region.size() > 0
+            && request.resource.data.address.districtOrSoum is string
+            && request.resource.data.address.districtOrSoum.size() > 0
+            && request.resource.data.address.khorooOrBag is string
+            && request.resource.data.address.khorooOrBag.size() > 0
+            && request.resource.data.address.streetAddress is string
+            && request.resource.data.address.streetAddress.size() > 0))
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
         // Rules cannot sum a list, so the line totals cannot be checked here — the server

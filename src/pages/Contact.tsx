@@ -3,6 +3,7 @@ import { Facebook, Instagram, Mail, Phone } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useStorefront } from "../context/StorefrontContext";
 import { createContactMessage } from "../lib/contactMessages";
+import { SHOP_HOURS, SHOP_MAP_EMBED_SRC } from "../lib/shopLocation";
 import { getPageBannerNavigationItem, getPageBannerStyle, getRenderableSettings } from "../lib/storefrontHelpers";
 import "./Contact.css";
 import { useDocumentMeta } from "../lib/seo";
@@ -23,8 +24,9 @@ export default function Contact() {
   const pageBannerStyle = getPageBannerStyle(pageBanner?.pageBannerImage);
   const contactPhone = visibleSettings.contactPhone.trim();
   const contactPhoneHref = contactPhone.replace(/\s+/g, "");
-  const mapEmbedSrc = "https://maps.google.com/maps?q=47.9167711,106.939625&z=17&output=embed";
+  const mapEmbedSrc = SHOP_MAP_EMBED_SRC;
   const isMN = language === "MN";
+  const hours = SHOP_HOURS[isMN ? "MN" : "EN"];
 
   const handleFieldChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
@@ -152,12 +154,12 @@ export default function Contact() {
                 <h3>{isMN ? "Ажлын цаг" : "Working hours"}</h3>
                 <div className="contact-hours">
                   <div className="contact-hours-row">
-                    <span>{isMN ? "Да – Ба" : "Mon – Fri"}</span>
-                    <span>09:00 – 18:00</span>
+                    <span>{hours.weekdays}</span>
+                    <span>{hours.weekdaysTime}</span>
                   </div>
                   <div className="contact-hours-row">
-                    <span>{isMN ? "Бя – Ня" : "Sat – Sun"}</span>
-                    <span>{isMN ? "Амарна" : "Closed"}</span>
+                    <span>{hours.weekend}</span>
+                    <span>{hours.weekendTime}</span>
                   </div>
                 </div>
               </div>

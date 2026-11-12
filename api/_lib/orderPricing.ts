@@ -23,6 +23,14 @@ const MAX_QUANTITY_PER_LINE = 1000;
 
 export type VatMode = 'none' | 'included' | 'added';
 
+/** Mirrors OrderFulfillment in src/lib/orders.ts. A pickup order pays no delivery fee. */
+export type Fulfillment = 'delivery' | 'pickup';
+
+/** Orders written before the choice existed are all deliveries. */
+export function asFulfillment(value: unknown): Fulfillment {
+  return value === 'pickup' ? 'pickup' : 'delivery';
+}
+
 /** Why an order could not be priced — the message is shown to the shopper as is. */
 export class OrderPricingError extends Error {
   readonly code: string;
@@ -151,6 +159,7 @@ function safeImage(value: unknown): string | null {
 export function priceWebOrder(
   clientItems: ClientOrderItem[],
   inputs: OrderPricingInputs,
+  fulfillment: Fulfillment = 'delivery',
 ): { items: PricedOrderItem[]; totals: PricedOrderTotals } {
   if (!Array.isArray(clientItems) || clientItems.length === 0) {
     throw new OrderPricingError('EMPTY', 'Захиалгад бүтээгдэхүүн байхгүй байна.');
@@ -175,11 +184,27 @@ export function priceWebOrder(
     }
 
     const name = String(product.name ?? '');
-    const variantName = typeof raw?.variant === 'string' && raw.variant.trim() ? raw.variant : null;
+    const variants = Array.isArray(product.variants) ? (product.variants as Array<Record<string, unknown>>) : [];
+    let variantName = typeof raw?.variant === 'string' && raw.variant.trim() ? raw.variant : null;
     let listPrice = Number(product.price ?? 0);
 
+    // A product sold in sizes has no price of its own to charge: the base price is
+    // whatever was typed when it was created and is often a different size's figure
+    // (Ванны давс: 13,200₮ against sizes from 4,400₮ to 66,000₮). A line without a
+    // size was invoiced at it all the same, and the paid step then moved only the
+    // product total, leaving every size's stock untouched. One size is that size;
+    // more than one has to be chosen.
+    if (!variantName && variants.length > 0) {
+      if (variants.length !== 1 || typeof variants[0]?.name !== 'string') {
+        throw new OrderPricingError(
+          'VARIANT_REQUIRED',
+          `"${name}" — хэмжээгээ сонгоно уу. Сагсаа шинэчилнэ үү.`,
+        );
+      }
+      variantName = variants[0].name as string;
+    }
+
     if (variantName) {
-      const variants = Array.isArray(product.variants) ? (product.variants as Array<Record<string, unknown>>) : [];
       const variant = variants.find((entry) => entry?.name === variantName);
       if (!variant) {
         throw new OrderPricingError(
@@ -219,17 +244,20 @@ export function priceWebOrder(
   );
 
   const settings = inputs.settings ?? {};
+  const pickup = fulfillment === 'pickup';
+  // The minimum is for delivery only; below it the shopper collects the order instead.
   const minOrder = asThreshold(settings.minOrderForDelivery);
-  if (minOrder > 0 && subtotal < minOrder) {
+  if (!pickup && minOrder > 0 && subtotal < minOrder) {
     throw new OrderPricingError(
       'BELOW_MINIMUM',
-      `${minOrder.toLocaleString('en-US')}₮-өөс доош дүнтэй захиалгыг хүргэх боломжгүй.`,
+      `${minOrder.toLocaleString('en-US')}₮-өөс доош дүнтэй захиалгыг хүргэх боломжгүй. ` +
+        'Өөрөө ирж авах сонголтыг сонгоно уу.',
     );
   }
 
   const fee = asShippingFee(settings.shippingFee);
   const threshold = asThreshold(settings.freeShippingThreshold);
-  const shippingFee = threshold > 0 && subtotal >= threshold ? 0 : fee;
+  const shippingFee = pickup || (threshold > 0 && subtotal >= threshold) ? 0 : fee;
   const vatMode = asVatMode(settings.vatMode);
   const vatAmount = vatFor(subtotal, vatMode);
   const grandTotal = subtotal + shippingFee + (vatMode === 'added' ? vatAmount : 0);

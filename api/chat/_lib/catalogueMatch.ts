@@ -72,3 +72,25 @@ export function findCatalogueProduct<T extends MatchableProduct>(
   }
   return best;
 }
+
+/**
+ * The size a basket line is for. The size the model named when the catalogue has
+ * it; the only size when there is just one; otherwise nothing, with `needsChoice`
+ * set when the product is sold in sizes and the customer still has to pick.
+ *
+ * A sized product's base price is not any size's price — "Ванны давс" lists
+ * 13,200₮ against sizes from 4,400₮ to 66,000₮ — so a line left without a size
+ * must never be priced, quoted or invoiced at it. The running total and the
+ * invoice both resolve the size here, so what the customer is told is what
+ * the QR asks for.
+ */
+export function resolveVariant<V extends { name: string }>(
+  variants: V[],
+  wanted: unknown,
+): { variant: V | undefined; needsChoice: boolean } {
+  const named = String(wanted ?? '').trim().toLowerCase();
+  const match = named ? variants.find((entry) => entry.name.toLowerCase() === named) : undefined;
+  if (match) return { variant: match, needsChoice: false };
+  if (variants.length === 1) return { variant: variants[0], needsChoice: false };
+  return { variant: undefined, needsChoice: variants.length > 1 };
+}
