@@ -42,7 +42,7 @@ import {
   redact,
   sanitizeContext,
 } from "../../../api/_lib/errorLog";
-import handler from "../../../api/logs/report";
+import handler from "../../../api/errorlog/report";
 
 beforeEach(() => {
   store.clear();
@@ -158,7 +158,7 @@ describe("what never reaches the log", () => {
   });
 });
 
-describe("POST /api/logs/report", () => {
+describe("POST /api/errorlog/report", () => {
   function call(body: unknown, headers: Record<string, string> = {}) {
     const res = {
       statusCode: 0,

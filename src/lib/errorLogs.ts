@@ -2,7 +2,7 @@
  * The system error log, browser side.
  *
  * Writing happens on the server (api/_lib/errorLog.ts): `reportClientError` posts a failure
- * to /api/logs/report, which stores it. Reading is for admins only — the Лог page subscribes
+ * to /api/errorlog/report, which stores it. Reading is for admins only — the Лог page subscribes
  * to /errorLogs, which firestore.rules open to admin and sysadmin alone.
  *
  * Reporting is a courtesy to the admin and must never be a problem for the shopper: it is
@@ -210,7 +210,7 @@ export function reportClientError(report: ClientErrorReport): void {
         // Reported as a guest; the report matters more than who sent it.
       }
 
-      await fetch("/api/logs/report", {
+      await fetch("/api/errorlog/report", {
         method: "POST",
         headers,
         keepalive: true,

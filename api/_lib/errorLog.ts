@@ -10,7 +10,7 @@
 // a couple of seconds. Callers should still `await` it where they can — a serverless
 // function may be frozen the moment its response is sent, and an un-awaited write is lost.
 //
-// The browser reports through api/logs/report.ts, which ends up here. Nothing but the Admin
+// The browser reports through api/errorlog/report.ts, which ends up here. Nothing but the Admin
 // SDK writes /errorLogs (firestore.rules), so a shopper cannot plant or erase a row.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
